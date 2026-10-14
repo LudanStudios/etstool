@@ -26,9 +26,12 @@ from urllib.parse import parse_qs, urlparse, urlsplit
 
 DEFAULT_ROOT = Path(__file__).resolve().parent
 DEFAULT_DEVTOOLS = "http://127.0.0.1:10086/json/list"
+DEFAULT_CONFIG = DEFAULT_ROOT / "ets_answer_config.yaml"
 APP_TITLE = "E听说"
 NEXT_CONFIRM_SECONDS = 1.2
+MIN_SKIP_CONFIRM_SECONDS = 0.15
 WATCH_INTERVAL_SECONDS = 0.15
+LAST_NEXT_CLICK_AT = 0.0
 QUESTION_JS = r"""(()=>{
  const f=document.querySelector('iframe.examIframe'),d=f?.contentDocument;
  if(!d)return JSON.stringify({ready:false});
@@ -226,6 +229,65 @@ def load_answers(pack_dir: Path) -> dict[str, str]:
     return answers
 
 
+def load_answer_config(path: Path = DEFAULT_CONFIG) -> tuple[float, str, float]:
+    """Read the small, flat YAML subset used for QA answer settings."""
+    if not path.is_file():
+        return 1.0, "default", 0.0
+    values: dict[str, str] = {}
+    try:
+        for raw_line in path.read_text(encoding="utf-8-sig").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            key, separator, value = line.partition(":")
+            if not separator:
+                raise ValueError(f"Expected key: value in {path.name}: {raw_line}")
+            value = value.split("#", 1)[0].strip().strip("\"'")
+            values[key.strip()] = value
+    except OSError as exc:
+        raise ValueError(f"Could not read {path.name}: {exc}") from exc
+
+    unknown = set(values) - {"accuracy_rate", "random_seed", "skip_interval_seconds"}
+    if unknown:
+        raise ValueError(f"Unknown setting(s) in {path.name}: {', '.join(sorted(unknown))}")
+    try:
+        accuracy = float(values.get("accuracy_rate", "1.0").removesuffix("%"))
+    except ValueError as exc:
+        raise ValueError("accuracy_rate must be a number from 0.0 to 1.0") from exc
+    if not 0.0 <= accuracy <= 1.0:
+        raise ValueError("accuracy_rate must be from 0.0 to 1.0 (for example, 0.8 means 80%)")
+    seed = values.get("random_seed", "default") or "default"
+    try:
+        skip_interval = float(values.get("skip_interval_seconds", "0.0"))
+    except ValueError as exc:
+        raise ValueError("skip_interval_seconds must be a number from 0.0 to 60.0") from exc
+    if not 0.0 <= skip_interval <= 60.0:
+        raise ValueError("skip_interval_seconds must be from 0.0 to 60.0")
+    return accuracy, seed, skip_interval
+
+
+def answer_for_accuracy(
+    question_id: str,
+    correct_answer: str,
+    option_count: int,
+    accuracy: float,
+    seed: str,
+    session_key: str,
+) -> str:
+    """Choose a repeatable QA response; incorrect responses use another visible option."""
+    available = "ABCD"[:min(option_count, 4)]
+    if correct_answer not in available or accuracy >= 1.0 or len(available) < 2:
+        return correct_answer
+    digest = hashlib.sha256(
+        f"{seed}|{session_key}|{question_id}".encode("utf-8")
+    ).digest()
+    rng = random.Random(int.from_bytes(digest[:8], "big"))
+    if rng.random() < accuracy:
+        return correct_answer
+    wrong_answers = [letter for letter in available if letter != correct_answer]
+    return wrong_answers[rng.randrange(len(wrong_answers))]
+
+
 def visible_questions(client: CDPClient) -> list[dict[str, Any]]:
     raw = client.evaluate(QUESTION_JS)
     if not raw:
@@ -263,8 +325,16 @@ def choose_answer(client: CDPClient, question: dict[str, Any], letter: str) -> b
     return state.get("id") == question_id and bool(state.get("selected"))
 
 
-def click_next(client: CDPClient, before_ids: set[str] | None = None) -> bool:
+def click_next(
+    client: CDPClient,
+    before_ids: set[str] | None = None,
+    skip_interval_seconds: float = 0.0,
+) -> bool:
     """Send a trusted mouse click and confirm that ETS actually changed questions."""
+    global LAST_NEXT_CLICK_AT
+    remaining_delay = skip_interval_seconds - (time.monotonic() - LAST_NEXT_CLICK_AT)
+    if remaining_delay > 0:
+        time.sleep(remaining_delay)
     if before_ids is None:
         before_ids = {str(item.get("id", "")) for item in visible_questions(client)}
     expr = r"(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.querySelector('.icon-nextQuestion'));if(!b||b.disabled||b.getAttribute('aria-disabled')==='true'||b.getClientRects().length===0)return '';const r=b.getBoundingClientRect();return JSON.stringify({x:r.left+r.width/2,y:r.top+r.height/2})})()"
@@ -274,10 +344,15 @@ def click_next(client: CDPClient, before_ids: set[str] | None = None) -> bool:
     try:
         point = json.loads(raw)
         old_url = client.evaluate("location.href")
+        LAST_NEXT_CLICK_AT = time.monotonic()
         client.click(float(point["x"]), float(point["y"]))
     except (TypeError, ValueError, KeyError, json.JSONDecodeError):
         return False
-    deadline = time.monotonic() + NEXT_CONFIRM_SECONDS
+    confirm_seconds = min(
+        NEXT_CONFIRM_SECONDS,
+        max(MIN_SKIP_CONFIRM_SECONDS, skip_interval_seconds),
+    )
+    deadline = time.monotonic() + confirm_seconds
     while time.monotonic() < deadline:
         time.sleep(0.1)
         current = visible_questions(client)
@@ -308,6 +383,10 @@ def run_once(
     endpoint: str = DEFAULT_DEVTOOLS,
     wait_seconds: float = 12.0,
     processed: set[str] | None = None,
+    accuracy: float = 1.0,
+    random_seed: str = "default",
+    session_key: str = "",
+    skip_interval_seconds: float = 0.0,
 ) -> tuple[str, str | None]:
     deadline = time.monotonic() + wait_seconds
     while time.monotonic() < deadline:
@@ -348,11 +427,11 @@ def run_once(
                 ]
                 if not pending:
                     remaining = [key for key in answers if key not in (processed or set())]
-                    if remaining and click_next(client, visible_ids):
+                    if remaining and click_next(client, visible_ids, skip_interval_seconds):
                         return "advanced", None
                     if not remaining:
                         last_id = max(answers, key=question_sort_key)
-                        if click_next(client, visible_ids):
+                        if click_next(client, visible_ids, skip_interval_seconds):
                             print("Advanced past the last local question group; ETS may complete the section automatically.", flush=True)
                             return "complete", last_id
                         print("Next button click was not confirmed; will retry while this ETS page remains open.", flush=True)
@@ -364,6 +443,10 @@ def run_once(
                     if not answer:
                         print(f"No local answer for visible question {question_id}", flush=True)
                         return "waiting", question_id
+                    answer = answer_for_accuracy(
+                        question_id, answer, len(question.get("options") or []),
+                        accuracy, random_seed, session_key,
+                    )
                     if not choose_answer(client, question, answer):
                         print(f"Could not verify a trusted click on question {question_id}", flush=True)
                         return "error", question_id
@@ -373,11 +456,11 @@ def run_once(
                     processed.update(selected_ids)
                 remaining = [key for key in answers if key not in (processed or set()) | selected_ids]
                 if remaining:
-                    if not click_next(client, visible_ids):
+                    if not click_next(client, visible_ids, skip_interval_seconds):
                         print("Next button did not advance the visible questions; will retry.", flush=True)
                         return "waiting", None
                 else:
-                    if click_next(client, visible_ids):
+                    if click_next(client, visible_ids, skip_interval_seconds):
                         print("Advanced past the last local question group; ETS may complete the section automatically.", flush=True)
                         return "complete", sorted(selected_ids, key=question_sort_key)[-1]
                     print("Last answers are selected, but ETS did not advance; will retry the next button.", flush=True)
@@ -395,7 +478,17 @@ def run_once(
 def watch(root: Path, endpoint: str) -> int:
     handled: set[tuple[str, str]] = set()
     processed: dict[tuple[str, str], set[str]] = {}
-    print(f"Auto-answer worker watching ETS on loopback DevTools at port {urlparse(endpoint).port}.", flush=True)
+    try:
+        accuracy, random_seed, skip_interval = load_answer_config(root / DEFAULT_CONFIG.name)
+    except ValueError as exc:
+        print(f"Invalid answer config: {exc}", flush=True)
+        return 1
+    print(
+        f"Auto-answer worker watching ETS on loopback DevTools at port "
+        f"{urlparse(endpoint).port}; configured answer accuracy: {accuracy:.0%}; "
+        f"skip retry interval: {skip_interval:g}s.",
+        flush=True,
+    )
     while True:
         try:
             for target in devtools_targets(endpoint):
@@ -428,7 +521,10 @@ def watch(root: Path, endpoint: str) -> int:
                         continue
                 answered = processed.setdefault(session_key, set())
                 status, content_id = run_once(
-                    root, endpoint, wait_seconds=0.5, processed=answered
+                    root, endpoint, wait_seconds=0.5, processed=answered,
+                    accuracy=accuracy, random_seed=random_seed,
+                    session_key="|".join(session_key),
+                    skip_interval_seconds=skip_interval,
                 )
                 if status == "selected" and content_id:
                     answered.add(content_id)
