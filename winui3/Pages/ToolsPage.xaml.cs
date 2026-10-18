@@ -1,0 +1,270 @@
+using System.Diagnostics;
+using System.IO.Compression;
+using System.Net.Http;
+using System.Text;
+using ETSAssistant.WinUI3.Services;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using Windows.ApplicationModel.DataTransfer;
+using Windows.Storage.Pickers;
+using Windows.UI;
+
+namespace ETSAssistant.WinUI3.Pages;
+
+public sealed partial class ToolsPage : Page
+{
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMilliseconds(1200) };
+    private readonly AssistantService _service = AssistantService.Current;
+    private readonly PacketCaptureService _capture = PacketCaptureService.Current;
+    private bool _portAvailable;
+    private bool _updatingCapture;
+
+    public ToolsPage()
+    {
+        InitializeComponent();
+        _capture.StatusChanged += OnCaptureStatusChanged;
+        Unloaded += (_, _) => _capture.StatusChanged -= OnCaptureStatusChanged;
+        Loaded += async (_, _) =>
+        {
+            RefreshLogSummary();
+            UpdateCaptureUi();
+            EnvironmentText.Text = BuildEnvironmentText();
+            await ProbePortAsync();
+        };
+    }
+
+    private void OnCaptureStatusChanged() => DispatcherQueue.TryEnqueue(UpdateCaptureUi);
+
+    private void UpdateCaptureUi()
+    {
+        if (!_updatingCapture)
+        {
+            _updatingCapture = true;
+            CaptureToggle.IsOn = _capture.IsEnabled;
+            CaptureStatusText.Text = _capture.Status;
+            CapturePathText.Text = "抓包文件：" + _capture.CapturePath;
+            _updatingCapture = false;
+        }
+    }
+
+    private void CaptureToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_updatingCapture) return;
+        if (CaptureToggle.IsOn) _capture.Enable();
+        else _capture.Disable();
+        UpdateCaptureUi();
+    }
+
+    private void OpenCapture_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (!File.Exists(_capture.CapturePath))
+            {
+                ShowMessage("暂无抓包文件", "启用抓包模式并完成一次答题提交后，这里会生成抓包记录。",
+                    InfoBarSeverity.Warning);
+                return;
+            }
+            Process.Start(new ProcessStartInfo(_capture.CapturePath) { UseShellExecute = true });
+        }
+        catch (Exception ex) { ShowMessage("无法打开抓包文件", ex.Message, InfoBarSeverity.Error); }
+    }
+
+    private async Task<bool> ProbePortAsync()
+    {
+        try
+        {
+            using HttpResponseMessage response = await Http.GetAsync("http://127.0.0.1:10086/json/version");
+            _portAvailable = response.IsSuccessStatusCode;
+        }
+        catch (Exception) { _portAvailable = false; }
+
+        PortDot.Fill = new SolidColorBrush(_portAvailable
+            ? Color.FromArgb(255, 34, 197, 94)
+            : Color.FromArgb(255, 148, 163, 184));
+        PortStatusText.Text = _portAvailable ? "端口可用" : "未连接";
+        EnvironmentText.Text = BuildEnvironmentText();
+        return _portAvailable;
+    }
+
+    private async void OpenList_Click(object sender, RoutedEventArgs e) => await ShowEndpointAsync("json/list");
+    private async void OpenVersion_Click(object sender, RoutedEventArgs e) => await ShowEndpointAsync("json/version");
+
+    private async Task ShowEndpointAsync(string path)
+    {
+        string url = $"http://127.0.0.1:10086/{path}";
+        try
+        {
+            using HttpResponseMessage response = await Http.GetAsync(url);
+            string body = await response.Content.ReadAsStringAsync();
+            if (!response.IsSuccessStatusCode)
+            {
+                ShowMessage("端口返回错误", $"{url} 返回 HTTP {(int)response.StatusCode}。", InfoBarSeverity.Warning);
+                return;
+            }
+
+            var viewer = new ScrollViewer
+            {
+                MaxHeight = 420,
+                Content = new TextBlock
+                {
+                    Text = body, FontFamily = new FontFamily("Consolas"), FontSize = 12,
+                    TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true
+                }
+            };
+            var dialog = new ContentDialog
+            {
+                Title = $"127.0.0.1:10086/{path}",
+                Content = viewer,
+                PrimaryButtonText = "复制 JSON",
+                CloseButtonText = "关闭",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = XamlRoot
+            };
+            if (await dialog.ShowAsync() == ContentDialogResult.Primary) CopyText(body);
+        }
+        catch (Exception)
+        {
+            ShowMessage("端口未开放", "请先打开带 --remote-debugging-port=10086 的 ETS，再查看调试端口。",
+                InfoBarSeverity.Warning);
+        }
+    }
+
+    private void CopyPort_Click(object sender, RoutedEventArgs e)
+    {
+        CopyText("http://127.0.0.1:10086/json/list");
+        ShowMessage("地址已复制", "调试端口地址已复制到剪贴板。", InfoBarSeverity.Success);
+    }
+
+    private async void RefreshPort_Click(object sender, RoutedEventArgs e)
+    {
+        bool available = await ProbePortAsync();
+        ShowMessage(available ? "端口可用" : "端口未连接",
+            available ? "127.0.0.1:10086 可以访问。" : "请先启动带调试端口的 ETS。",
+            available ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
+    }
+
+    private async void ExportLogs_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var picker = new FileSavePicker
+            {
+                SuggestedFileName = $"ets-logs-{DateTime.Now:yyyyMMdd-HHmmss}",
+                SuggestedStartLocation = PickerLocationId.DocumentsLibrary
+            };
+            picker.FileTypeChoices.Add("ZIP 压缩包", new List<string> { ".zip" });
+            MainWindow window = MainWindow.Current ?? throw new InvalidOperationException("窗口尚未准备好。");
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(window));
+
+            var file = await picker.PickSaveFileAsync();
+            if (file is null) return;
+            int count = await Task.Run(() => WriteLogArchive(file.Path));
+            RefreshLogSummary();
+            ShowMessage("日志已导出", $"已打包 {count} 个文件：{file.Path}", InfoBarSeverity.Success);
+        }
+        catch (Exception ex) { ShowMessage("导出失败", ex.Message, InfoBarSeverity.Error); }
+    }
+
+    private int WriteLogArchive(string destination)
+    {
+        if (File.Exists(destination)) File.Delete(destination);
+        using ZipArchive archive = ZipFile.Open(destination, ZipArchiveMode.Create);
+        int count = 0;
+        if (Directory.Exists(_service.DataRoot))
+        {
+            foreach (string file in Directory.EnumerateFiles(_service.DataRoot, "*.log").OrderBy(Path.GetFileName))
+            {
+                AddFile(archive, file, $"logs/{Path.GetFileName(file)}");
+                count++;
+            }
+        }
+
+        string config = Path.Combine(_service.AppRoot, "ets_answer_config.yaml");
+        if (File.Exists(config)) { AddFile(archive, config, "config/ets_answer_config.yaml"); count++; }
+        string installation = Path.Combine(_service.DataRoot, "ets_install_dir.txt");
+        if (File.Exists(installation)) { AddFile(archive, installation, "config/ets_install_dir.txt"); count++; }
+
+        ZipArchiveEntry entry = archive.CreateEntry("environment.txt", CompressionLevel.Optimal);
+        using (var writer = new StreamWriter(entry.Open(), new UTF8Encoding(false)))
+            writer.Write(BuildEnvironmentText());
+        return count + 1;
+    }
+
+    private static void AddFile(ZipArchive archive, string path, string entryName)
+    {
+        using var source = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        ZipArchiveEntry entry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
+        using Stream target = entry.Open();
+        source.CopyTo(target);
+    }
+
+    private void RefreshLogSummary()
+    {
+        if (!Directory.Exists(_service.DataRoot))
+        {
+            LogSummaryText.Text = "日志目录不存在。";
+            return;
+        }
+        var files = Directory.EnumerateFiles(_service.DataRoot, "*.log")
+            .Select(path => new FileInfo(path))
+            .OrderBy(info => info.Name)
+            .ToList();
+        LogSummaryText.Text = files.Count == 0
+            ? $"日志目录：{_service.DataRoot}\n暂无日志文件。"
+            : $"日志目录：{_service.DataRoot}\n" +
+              string.Join(" · ", files.Select(info => $"{info.Name} {info.Length / 1024.0:0.#} KB"));
+    }
+
+    private void CopyEnvironment_Click(object sender, RoutedEventArgs e)
+    {
+        CopyText(BuildEnvironmentText());
+        ShowMessage("环境信息已复制", "当前程序、数据目录和端口信息已复制到剪贴板。", InfoBarSeverity.Success);
+    }
+
+    private string BuildEnvironmentText()
+    {
+        var lines = new List<string>
+        {
+            $"时间：{DateTime.Now:yyyy-MM-dd HH:mm:ss}",
+            $"应用目录：{_service.AppRoot}",
+            $"数据目录：{_service.DataRoot}",
+            $"ETS 程序：{_service.EtsExe ?? "未找到"}",
+            $"后台引擎：{_service.EnginePath}",
+            $"调试端口：10086（{(_portAvailable ? "可用" : "未连接")}）",
+            $"ETS 进程：{(_service.IsEtsRunning ? "运行中" : "未运行")}",
+            $"系统：{Environment.OSVersion.VersionString}"
+        };
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static void CopyText(string text)
+    {
+        var package = new DataPackage { RequestedOperation = DataPackageOperation.Copy };
+        package.SetText(text);
+        Clipboard.SetContent(package);
+        Clipboard.Flush();
+    }
+
+    private void OpenData_Click(object sender, RoutedEventArgs e) => OpenFolder(_service.DataRoot);
+    private void OpenProgram_Click(object sender, RoutedEventArgs e) => OpenFolder(_service.AppRoot);
+
+    private void OpenFolder(string path)
+    {
+        try
+        {
+            if (!Directory.Exists(path)) throw new DirectoryNotFoundException("目录不存在：" + path);
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        catch (Exception ex) { ShowMessage("无法打开目录", ex.Message, InfoBarSeverity.Error); }
+    }
+
+    private void ShowMessage(string title, string message, InfoBarSeverity severity)
+    {
+        MessageBar.Title = title;
+        MessageBar.Message = message;
+        MessageBar.Severity = severity;
+        MessageBar.IsOpen = true;
+    }
+}

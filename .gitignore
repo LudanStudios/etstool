@@ -1,0 +1,21 @@
+# 构建工具链与缓存（体积大，按 README 重新构建时自动生成）
+.build/
+.build-tools/
+archive/
+
+# .NET 编译中间产物
+winui3/bin/
+winui3/obj/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 日志与临时文件
+*.log
+*.tmp
+Thumbs.db
+Desktop.ini
+.DS_Store

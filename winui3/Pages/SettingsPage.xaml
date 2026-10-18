@@ -1,0 +1,80 @@
+<Page
+    x:Class="ETSAssistant.WinUI3.Pages.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer>
+        <StackPanel Margin="30,26,30,30" Spacing="20">
+            <Grid ColumnDefinitions="28,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="5">
+                <SymbolIcon Symbol="Setting" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                            Width="28" Height="28" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="答题设置" FontSize="30" FontWeight="SemiBold" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="调整答题行为，保存后由监听器读取。" FontSize="15" Opacity="0.72" />
+            </Grid>
+            <Border Padding="24" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <StackPanel Spacing="18">
+                    <StackPanel Spacing="4">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <SymbolIcon Symbol="Accept" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                <TextBlock Text="目标正确率" FontSize="16" FontWeight="SemiBold" />
+                            </StackPanel>
+                            <TextBlock x:Name="AccuracyText" Grid.Column="1" Text="100%" FontSize="16"
+                                       FontWeight="SemiBold" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                        </Grid>
+                        <TextBlock Text="每题按此概率选择试卷包中的正确答案。" Opacity="0.7" />
+                        <Slider x:Name="AccuracySlider" Minimum="0" Maximum="1" StepFrequency="0.01"
+                                ValueChanged="AccuracySlider_ValueChanged" />
+                    </StackPanel>
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="18">
+                        <StackPanel Spacing="7">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <SymbolIcon Symbol="Shuffle" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                <TextBlock Text="随机种子" FontWeight="SemiBold" />
+                            </StackPanel>
+                            <TextBox x:Name="SeedBox" PlaceholderText="留空时使用 default" />
+                            <TextBlock Text="相同种子会产生可复现的选择结果。" FontSize="12" Opacity="0.68" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="7">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <SymbolIcon Symbol="Next" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                <TextBlock Text="跳题间隔（秒）" FontWeight="SemiBold" />
+                            </StackPanel>
+                            <NumberBox x:Name="SkipBox" Minimum="0" Maximum="60" SmallChange="0.5"
+                                       SpinButtonPlacementMode="Inline" Value="0" />
+                            <TextBlock Text="设置“下一步/跳过”按钮重试的最短间隔。" FontSize="12" Opacity="0.68" />
+                        </StackPanel>
+                    </Grid>
+                    <Rectangle Height="1" Fill="{ThemeResource CardStrokeColorDefaultBrush}" />
+                    <StackPanel Spacing="3">
+                        <CheckBox x:Name="AutostartCheck" Content="登录 Windows 时在后台启动监听器" />
+                        <TextBlock Text="开启后会等待 ETS 启动；ETS 打开时自动显示助手窗口。" FontSize="12" Opacity="0.68" />
+                    </StackPanel>
+                    <InfoBar x:Name="SaveInfoBar" IsOpen="False" />
+                    <Button Click="Save_Click" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Left">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <SymbolIcon Symbol="Save" />
+                            <TextBlock Text="保存设置" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Border>
+            <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <StackPanel Spacing="8">
+                    <StackPanel Orientation="Horizontal" Spacing="9">
+                        <SymbolIcon Symbol="Folder" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                        <TextBlock Text="ETS 安装目录" FontSize="16" FontWeight="SemiBold" />
+                    </StackPanel>
+                    <TextBlock x:Name="EtsPathText" TextWrapping="Wrap" Opacity="0.72" />
+                    <Button Click="Rescan_Click" HorizontalAlignment="Left">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <SymbolIcon Symbol="Refresh" />
+                            <TextBlock Text="重新扫描 ETS" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

@@ -11,8 +11,11 @@ PDF generation requires ReportLab and Pillow. If they are not installed, run:
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
+import hashlib
 import html
 import json
+import os
 import re
 import shutil
 import sys
@@ -558,6 +561,67 @@ def display_answer_results(markdown: str) -> None:
         print(answer)
 
 
+@contextmanager
+def conversion_lock(pack_path: Path):
+    """Serialize manual and automatic conversion of the same pack."""
+    pack_path = pack_path.resolve()
+    locks = pack_path.parent / "_assistant" / "conversion_locks"
+    locks.mkdir(parents=True, exist_ok=True)
+    name = hashlib.sha256(str(pack_path).casefold().encode("utf-8")).hexdigest() + ".lock"
+    with (locks / name).open("a+b") as stream:
+        if stream.tell() == 0:
+            stream.write(b"\0")
+            stream.flush()
+        if os.name == "nt":
+            import msvcrt
+
+            deadline = time.monotonic() + 60
+            while True:
+                stream.seek(0)
+                try:
+                    msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError("This exam pack is still being converted. Try again later.")
+                    time.sleep(0.2)
+            try:
+                yield
+            finally:
+                stream.seek(0)
+                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+
+
+def convert_exam_pack(pack_path: Path, output_dir: Path | None = None, name: str | None = None,
+                      markdown_only: bool = False, tolerate_pdf_error: bool = False) -> None:
+    with conversion_lock(pack_path):
+        pack = ExamPack(pack_path)
+        actual_output = (output_dir or (pack.root / "converted")).resolve()
+        base_name = name or f"exam_pack_{pack.root.name}"
+        markdown_path = actual_output / f"{base_name}.md"
+        pdf_path = actual_output / f"{base_name}.pdf"
+        builder = MarkdownBuilder(pack, markdown_path, actual_output / f"{base_name}_assets")
+        markdown = builder.build()
+        print(f"Markdown: {markdown_path}")
+        if not markdown_only:
+            try:
+                render_markdown_pdf(markdown_path, pdf_path)
+                print(f"PDF:      {pdf_path}")
+            except RuntimeError as exc:
+                if not tolerate_pdf_error:
+                    raise
+                print(f"PDF skipped: {exc}", file=sys.stderr)
+        display_answer_results(markdown)
+
+
 def directory_signature(path: Path) -> tuple[tuple[str, int], ...]:
     """Return a stable snapshot of files and sizes under a pack directory."""
     snapshot: list[tuple[str, int]] = []
@@ -600,27 +664,12 @@ def watch_for_new_packs(root: Path, output_dir: Path | None, name: str | None,
             if stable_count < 2:
                 continue
             try:
-                pack = ExamPack(folder)
-                actual_output = output_dir or (pack.root / "converted")
-                base_name = name or f"exam_pack_{pack.root.name}"
-                markdown_path = actual_output / f"{base_name}.md"
-                pdf_path = actual_output / f"{base_name}.pdf"
-                assets_dir = actual_output / f"{base_name}_assets"
-                builder = MarkdownBuilder(pack, markdown_path, assets_dir)
-                markdown = builder.build()
+                convert_exam_pack(folder, output_dir, name, markdown_only, tolerate_pdf_error=True)
                 # Markdown and answer extraction are complete; do not rediscover
                 # this folder if an optional PDF dependency is unavailable.
                 seen.add(folder_name)
                 candidates.pop(folder_name, None)
                 print(f"\nDetected and converted: {folder}")
-                print(f"Markdown: {markdown_path}")
-                if not markdown_only:
-                    try:
-                        render_markdown_pdf(markdown_path, pdf_path)
-                        print(f"PDF:      {pdf_path}")
-                    except RuntimeError as exc:
-                        print(f"PDF skipped: {exc}", file=sys.stderr)
-                display_answer_results(markdown)
             except (OSError, ValueError, json.JSONDecodeError, RuntimeError) as exc:
                 # A newly copied folder may still be incomplete; retry on the next scan.
                 print(f"Waiting for {folder_name} to become readable: {exc}", file=sys.stderr)
@@ -651,20 +700,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         if args.watch:
             watch_for_new_packs(args.pack, args.output_dir, args.name, args.markdown_only)
             return 0
-        pack = ExamPack(args.pack)
-        output_dir = (args.output_dir or (pack.root / "converted")).resolve()
-        base_name = args.name or f"exam_pack_{pack.root.name}"
-        markdown_path = output_dir / f"{base_name}.md"
-        pdf_path = output_dir / f"{base_name}.pdf"
-        assets_dir = output_dir / f"{base_name}_assets"
-
-        builder = MarkdownBuilder(pack, markdown_path, assets_dir)
-        markdown = builder.build()
-        print(f"Markdown: {markdown_path}")
-        if not args.markdown_only:
-            render_markdown_pdf(markdown_path, pdf_path)
-            print(f"PDF:      {pdf_path}")
-        display_answer_results(markdown)
+        convert_exam_pack(args.pack, args.output_dir, args.name, args.markdown_only)
         return 0
     except KeyboardInterrupt:
         print("\nStopped.")

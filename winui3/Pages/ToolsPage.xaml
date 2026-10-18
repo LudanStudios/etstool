@@ -1,0 +1,143 @@
+<Page
+    x:Class="ETSAssistant.WinUI3.Pages.ToolsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Margin="30,26,30,30" RowDefinitions="Auto,Auto,*" RowSpacing="16">
+        <Grid ColumnDefinitions="28,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="5">
+            <SymbolIcon Symbol="Repair" VerticalAlignment="Center" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+            <TextBlock Grid.Column="1" Text="测试工具" FontSize="30" FontWeight="SemiBold" />
+            <TextBlock Grid.Row="1" Grid.Column="1" Text="开发者用的端口、日志和程序信息工具。"
+                       FontSize="15" Opacity="0.72" />
+        </Grid>
+
+        <InfoBar x:Name="MessageBar" Grid.Row="1" IsOpen="False" />
+
+        <ScrollViewer Grid.Row="2">
+            <StackPanel Spacing="16">
+                <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                    <StackPanel Spacing="12">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Orientation="Horizontal" Spacing="9">
+                                <SymbolIcon Symbol="Globe" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                <TextBlock Text="本地调试端口" FontSize="17" FontWeight="SemiBold" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <Ellipse x:Name="PortDot" Width="9" Height="9" Fill="#94A3B8" />
+                                <TextBlock x:Name="PortStatusText" Text="检查中…" FontSize="13" FontWeight="SemiBold" />
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock Text="http://127.0.0.1:10086/json/list" FontFamily="Consolas" FontSize="14"
+                                   IsTextSelectionEnabled="True" />
+                        <TextBlock Text="ETS 需要使用 --remote-debugging-port=10086 启动；端口未开放时请先打开 ETS。"
+                                   FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Click="OpenList_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="Globe" />
+                                    <TextBlock Text="查看 /json/list" />
+                                </StackPanel>
+                            </Button>
+                            <Button Click="OpenVersion_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="Globe" />
+                                    <TextBlock Text="查看 /json/version" />
+                                </StackPanel>
+                            </Button>
+                            <Button Click="CopyPort_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="Copy" />
+                                    <TextBlock Text="复制地址" />
+                                </StackPanel>
+                            </Button>
+                            <Button Click="RefreshPort_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="Refresh" />
+                                    <TextBlock Text="刷新状态" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                    <StackPanel Spacing="10">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Orientation="Horizontal" Spacing="9">
+                                <SymbolIcon Symbol="World" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                <TextBlock Text="抓包模式" FontSize="17" FontWeight="SemiBold" />
+                            </StackPanel>
+                            <ToggleSwitch x:Name="CaptureToggle" Grid.Column="1" OnContent="" OffContent=""
+                                          Toggled="CaptureToggle_Toggled" />
+                        </Grid>
+                        <TextBlock Text="启用后连接 10086 的 DevTools 网络域。每次检测到答题提交完成，会等待 3 秒并把最近的数据包追加到抓包文件；导出日志时会一起打包。"
+                                   FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
+                        <TextBlock x:Name="CaptureStatusText" Text="未启用" FontSize="13" FontWeight="SemiBold" />
+                        <TextBlock x:Name="CapturePathText" FontFamily="Consolas" FontSize="12" Opacity="0.7"
+                                   TextWrapping="Wrap" />
+                        <Button Click="OpenCapture_Click" HorizontalAlignment="Left">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <SymbolIcon Symbol="Folder" />
+                                <TextBlock Text="打开抓包文件" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Border>
+
+                <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                    <StackPanel Spacing="12">
+                        <StackPanel Orientation="Horizontal" Spacing="9">
+                            <SymbolIcon Symbol="Document" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                            <TextBlock Text="日志与诊断" FontSize="17" FontWeight="SemiBold" />
+                        </StackPanel>
+                        <TextBlock x:Name="LogSummaryText" FontSize="13" Opacity="0.72" TextWrapping="Wrap" />
+                        <TextBlock Text="导出会把数据目录中的日志、配置和当前环境信息打包为 ZIP。"
+                                   FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Click="ExportLogs_Click" Style="{StaticResource AccentButtonStyle}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="Save" />
+                                    <TextBlock Text="导出日志 ZIP" />
+                                </StackPanel>
+                            </Button>
+                            <Button Click="OpenData_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="Folder" />
+                                    <TextBlock Text="打开日志目录" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                    <StackPanel Spacing="12">
+                        <StackPanel Orientation="Horizontal" Spacing="9">
+                            <SymbolIcon Symbol="ReportHacked" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                            <TextBlock Text="程序信息" FontSize="17" FontWeight="SemiBold" />
+                        </StackPanel>
+                        <TextBlock x:Name="EnvironmentText" FontFamily="Consolas" FontSize="12" Opacity="0.76"
+                                   TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Click="CopyEnvironment_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="Copy" />
+                                    <TextBlock Text="复制环境信息" />
+                                </StackPanel>
+                            </Button>
+                            <Button Click="OpenProgram_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="Folder" />
+                                    <TextBlock Text="打开程序目录" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Page>

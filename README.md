@@ -1,195 +1,64 @@
-# ETS 自动监听配置指南（新手版）
+# ETS Tool by @azursmelt（beta 1.0.1）
 
-这份指南按顺序说明：新电脑要准备什么、每一步要点哪里、需要输入什么，以及怎么确认程序已经启动。照着做时，先完成“首次配置”，之后日常使用只需看“每天怎么启动”。
+WinUI 3 版 ETS 助手，包含试卷监听、自动答题、试卷管理、答案提取、抓包调试和中英文界面。
 
-## 先认识这几个文件
+主程序：`_winui\ETS-Assistant-WinUI.exe`  
+后台引擎：`ETS-Assistant-Engine.exe` + `_internal_engine\`  
+数据与日志：`%APPDATA%\ETS`
 
-请把以下文件放在同一个目录：`%APPDATA%\ETS`（通常对应 `C:\Users\你的用户名\AppData\Roaming\ETS`）。
+## 在新电脑上运行
 
-| 文件 | 用途 |
-|---|---|
-| `exam_pack_to_markdown_pdf.py` | 发现新试卷包后解析题目和答案，输出 Markdown；可选生成 PDF。 |
-| `ets_answer_listener.py` | 等待 ETS 启动，并负责启动或停止另外两个脚本。 |
-| `ets_auto_answer.py` | 读取本机答案，通过 ETS 页面接口操作选择题。 |
-| `ets_answer_config.yaml` | 设置 QA 测试时的答题正确率和随机种子。 |
-| `setup_ets_autolistener.ps1` | 首次配置登录启动项和桌面快捷方式。 |
+把整个 `ETS` 文件夹复制到新电脑即可，不需要安装 Python、.NET 或 Windows App Runtime：
 
-还需要把要用的**完整试卷包文件夹**放在这个目录下。试卷包文件夹名称以数字开头，里面应保留原来的 JSON 文件和目录结构，例如：
+- `_winui` 已包含 .NET 8 和 Windows App SDK 自包含运行时。
+- `ETS-Assistant-Engine.exe` 和 `_internal_engine` 已包含 Python 运行时及依赖。
+- Python 源码只用于重新构建，运行程序时不需要 Python。
 
-```text
-ETS\
-├─ exam_pack_to_markdown_pdf.py
-├─ ets_answer_listener.py
-├─ ets_auto_answer.py
-├─ ets_answer_config.yaml
-├─ setup_ets_autolistener.ps1
-└─ 216809\
-   └─ ...\content.json
-```
+仍然需要：
 
-不要只复制 `content.json`；请复制完整的数字开头试卷包文件夹。
+1. Windows 10 1809+ 或 Windows 11，x64。
+2. 已安装 ETS（默认 `C:\Program Files (x86)\ETS`，也可以启动后在首页手动选择目录）。
+3. 当前 Windows 用户对 `%APPDATA%\ETS` 有读写权限。
+4. ETS 支持 `--remote-debugging-port=10086`，自动答题依赖这个本机调试端口。
+5. `_winui` 已随附 VC++ 2015–2022 运行库；如果目标系统有额外的策略限制，仍可能需要安装官方 VC++ 运行库。
 
-## 新电脑首次配置
+直接双击：
 
-### 第一步：安装 Python
+`_winui\ETS-Assistant-WinUI.exe`
 
-1. 在新电脑上安装 Python **3.10 或更新版本**。
-2. 安装时如果出现 **Add Python to PATH** 选项，请勾选它，再继续安装。
-3. 安装完成后，按键盘上的 `Win` 键，输入 `PowerShell`，点击打开 **Windows PowerShell** 或 **PowerShell 7**。
-4. 在窗口中输入下面一行，然后按 `Enter`：
+首次使用点击“初始化并打开 ETS”。程序会创建桌面快捷方式和当前用户的登录启动项，并启动后台监听器。以后打开 ETS 时会自动启动监听、转换和答题进程。
 
-   ```powershell
-   python --version
-   ```
+## 界面与设置
 
-5. 如果显示类似 `Python 3.14.0` 的版本号，继续下一步。如果显示“找不到命令”或类似错误，说明 Python 没有正确安装或没有加入 PATH；先重新安装并勾选 **Add Python to PATH**。
+- **运行概览**：ETS 状态、当前试卷、答题进度和答案。
+- **试卷管理**：试卷列表、打开目录、提取答案、分析并复制答案、删除。
+- **答题设置**：正确率、随机种子、跳题间隔、开机启动。
+- **运行记录**：最近的监听、转换和答题日志。
+- **测试工具**：10086 调试端口、JSON 查看、日志导出 ZIP、抓包模式。
+- **偏好设置**：应用外观（跟随系统 / 浅色 / 深色）和语言（中文 / English）。
+- **关于**：版本、发布时间、项目和作者信息。
 
-### 第二步：把文件复制到 ETS 文件夹
+配置和界面偏好保存在 `%APPDATA%\ETS`。桌面快捷方式和登录启动项只影响当前 Windows 用户，不修改 ETS 安装目录中的厂商文件。
 
-1. 按 `Win + E` 打开文件资源管理器。
-2. 点击窗口顶部的地址栏，输入下面这段路径，然后按 `Enter`：
+## 重新构建（开发用）
 
-   ```text
-   %APPDATA%\ETS
-   ```
+运行不需要 Python；重新打包才需要：
 
-3. 如果 Windows 询问是否创建文件夹，选择“是”。
-4. 把上面列出的五个文件和需要使用的完整数字开头试卷包文件夹复制到这里。
-5. 检查一下：五个文件应直接位于 `ETS` 文件夹中，试卷包也应直接放在 `ETS` 文件夹中，不要多套一层同名文件夹。
+- Python 3.10+（当前使用 3.14）
+- `pip install -r requirements-build.txt`（PyInstaller、Pillow、reportlab）
+- .NET 8 SDK
+- 运行 `build_ets_assistant_winui3.ps1`
 
-### 第三步：运行一次初始化脚本
+仓库不再随附 `.build-tools` 构建缓存；构建脚本会使用系统 Python/.NET，缺失时按上面的依赖安装。
 
-1. 按 `Win` 键，输入 `PowerShell`，打开 PowerShell。
-2. 复制下面第一行，粘贴到 PowerShell 窗口，再按 `Enter`：
+## 数据与排错
 
-   ```powershell
-   Set-Location "$env:APPDATA\ETS"
-   ```
+试卷包和日志位于 `%APPDATA%\ETS`。主要日志：
 
-3. 再复制下面一行，粘贴后按 `Enter`：
+- `ets_answer_listener.log`
+- `ets_auto_answer.log`
+- `ets_converter.log`
+- `ets_winui_startup.log`
+- `ets_packet_capture.log`（启用抓包模式后生成）
 
-   ```powershell
-   .\setup_ets_autolistener.ps1
-   ```
-
-4. 等待脚本运行结束并阅读屏幕上的提示。若提示缺少文件、Python 或找不到 ETS，请按提示修正后再运行一次。
-5. 初始化成功后，桌面上应出现 **ETS Answer Listener** 快捷方式。这个步骤只配置当前 Windows 用户的登录启动项，并创建桌面快捷方式；不会修改 `Program Files` 中的 ETS 安装文件。
-
-如果 PowerShell 提示“禁止运行脚本”，先不要执行网上随意找到的解除限制命令。把完整错误文字复制下来检查；有些电脑由组织策略管理，需按该电脑的策略处理。
-
-### 第四步：从桌面快捷方式打开 ETS
-
-1. 如果 ETS 已经开着，请先正常关闭它。
-2. 回到桌面，双击 **ETS Answer Listener** 快捷方式。
-3. 等 ETS 完全打开。监听器检测到 ETS 后，应该会弹出一个命令窗口，显示试卷包转换和答案输出信息。
-
-初始化脚本还会设置登录启动项：下次登录 Windows 时，监听器会在后台等待 ETS。ETS 关闭后，转换和自动答题子进程会结束；监听器继续等待 ETS 再次启动。
-
-## 检查自动答题所需的接口
-
-自动答题要求 ETS 在本机开放调试接口。ETS 打开后，按 `Win + R`，在“运行”框里输入下面的网址，再按 `Enter`：
-
-```text
-http://127.0.0.1:10086/json/version
-```
-
-如果浏览器显示一段包含版本信息的文本或 JSON，接口可访问。如果显示无法连接、拒绝连接或网页打不开，自动答题脚本就无法连接 ETS。
-
-桌面快捷方式会尝试用 `--remote-debugging-port=10086` 参数启动 ETS，但不同 ETS 版本可能不接受这个参数。若接口打不开：
-
-1. 确认 ETS 是通过桌面上的 **ETS Answer Listener** 快捷方式启动的。
-2. 关闭 ETS 后重新双击该快捷方式，再检查上面的网址。
-3. 仍然打不开时，当前 ETS 版本可能不支持这种启动方式。初始化脚本不会修改 ETS 安装文件或厂商配置；需要找到该版本支持的调试接口配置后才能使用自动填答。
-
-## 每天怎么启动
-
-1. 登录 Windows。
-2. 双击桌面的 **ETS Answer Listener** 快捷方式打开 ETS。
-3. 等待命令窗口显示监听/答案信息。
-4. 如果命令窗口没有出现，先确认监听器正在运行；也可以按下面“手动启动监听器”的步骤查看错误。
-
-若 ETS 是从其他图标或快捷方式启动的，可能没有带上调试端口参数。请使用 **ETS Answer Listener** 快捷方式启动。
-
-## 用 YAML 设置 QA 答题正确率
-
-`ets_answer_config.yaml` 控制自动答题在测试中的目标正确概率。用记事本打开这个文件，修改 `accuracy_rate` 后保存；下次自动答题 worker 启动时会读取新值。配置文件必须和 Python 脚本放在同一个 ETS 目录中。
-
-```yaml
-accuracy_rate: 0.8
-random_seed: 20261014
-skip_interval_seconds: 1.0
-```
-
-- `accuracy_rate: 1.0`：每题都选择答案包中的正确答案。
-- `accuracy_rate: 0.8`：每题有 80% 概率选择正确答案，其他时候从该题可见的错误选项中随机选一个。
-- `accuracy_rate: 0.0`：每题都选择一个错误选项（如果该题有至少两个可见选项）。
-- `random_seed`：固定随机结果。同一个种子、同一个答题会话和同一道题会得到一致的选择，方便复现问题。修改种子可生成另一组结果。
-- `skip_interval_seconds`：设置“下一步/跳过”按钮重试的最短间隔，单位为秒。`1.0` 表示两次尝试至少间隔 1 秒；`0.0` 表示不额外等待，页面确认后尽快重试。为了确认页面是否已切换，实际速度仍受页面响应和确认循环限制，不会在同一瞬间无间隔发送点击。
-
-正确率是**每题的概率**，不是保证每 10 题恰好错 2 题。`accuracy_rate` 必须是 `0.0` 到 `1.0` 之间的小数；`skip_interval_seconds` 必须是 `0.0` 到 `60.0` 之间的秒数。不需要安装 YAML 相关 Python 包。改完后关闭并重新打开 ETS，让自动答题 worker 重新读取配置。若配置格式或数值不正确，worker 会打印错误并停止，不会继续自动答题。
-
-## 手动启动监听器（排错用）
-
-1. 按 `Win` 键，输入 `PowerShell`，打开窗口。
-2. 输入下面两行，每行输入后按 `Enter`：
-
-   ```powershell
-   Set-Location "$env:APPDATA\ETS"
-   python .\ets_answer_listener.py
-   ```
-
-3. 让这个 PowerShell 窗口保持打开，然后再启动 ETS。窗口里如果出现错误信息，可以复制下来用于排查。
-4. 手动运行后要停止监听器时，先让 PowerShell 窗口成为当前窗口，再按 `Ctrl + C`。
-
-## 试卷包与答案匹配
-
-脚本会读取数字开头试卷包文件夹里的 JSON。目录中的试卷 ID 必须和 ETS 当前题目对应；选择题数据需要包含脚本能识别的选择题结构（例如 `structure_type=collector.choose`）和 A、B、C、D 答案。
-
-转换器的 `--watch` 模式只处理它开始监听后**新出现**的数字开头文件夹。监听开始前已经存在的文件夹会跳过。如果要处理旧试卷包，可在 PowerShell 里手动运行：
-
-```powershell
-Set-Location "$env:APPDATA\ETS"
-python .\exam_pack_to_markdown_pdf.py --help
-```
-
-按屏幕显示的用法，为已有试卷包运行一次转换命令。
-
-## PDF（可选）
-
-没有 PDF 库时，Markdown 和答案输出仍可使用，只是不会生成 PDF。若需要 PDF：
-
-1. 打开 PowerShell。
-2. 输入下面命令并按 `Enter`：
-
-   ```powershell
-   python -m pip install reportlab pillow
-   ```
-
-## 常见问题
-
-### 桌面没有出现快捷方式
-
-回到 PowerShell，按“第三步”重新运行初始化脚本。确认脚本没有报错，并确认 `setup_ets_autolistener.ps1` 就在 `%APPDATA%\ETS` 目录中。
-
-### 登录后没有命令窗口
-
-命令窗口通常在 ETS 启动后才出现。先双击 **ETS Answer Listener** 桌面快捷方式启动 ETS。如果仍没有窗口，按“手动启动监听器”操作并查看 PowerShell 输出。
-
-### ETS 打开了，但没有自动填答案
-
-按顺序检查：
-
-1. 是否通过 **ETS Answer Listener** 快捷方式启动 ETS。
-2. `http://127.0.0.1:10086/json/version` 是否能打开并显示版本信息。
-3. 完整试卷包是否放在 `%APPDATA%\ETS` 下。
-4. 试卷包 ID 是否和 ETS 当前题目对应，JSON 中是否有可识别的选择题答案。
-
-### 缺少 PDF 依赖
-
-这是可选功能。若不需要 PDF，可以忽略提示；需要 PDF 时按上面的安装步骤操作。
-
-## 功能范围
-
-- 当前自动操作面向 ETS 页面中的选择题。
-- 脚本可以选择答案并前进题目；不会主动点击 ETS 的最终提交按钮。
-- 自动答题依赖本机 `127.0.0.1:10086` 调试接口。接口是否能由启动参数开启，取决于安装的 ETS 版本。
+ETS 已打开但助手显示未连接时，先确认 `127.0.0.1:10086` 可访问；不可访问时关闭 ETS，通过助手重新打开。程序不会点击最终提交按钮，是否删除已提交试卷包由用户确认。

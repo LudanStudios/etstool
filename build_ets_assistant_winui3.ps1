@@ -1,0 +1,106 @@
+$ErrorActionPreference = 'Stop'
+
+$root = [IO.Path]::GetFullPath($PSScriptRoot)
+$buildDir = Join-Path $root '.build'
+$toolsDir = Join-Path $root '.build-tools'
+$buildId = Get-Date -Format 'yyyyMMdd-HHmmss'
+$stageRoot = Join-Path $buildDir ("winui3-release-" + $buildId)
+$stageUi = Join-Path $stageRoot '_winui'
+$stageEngine = Join-Path $stageRoot 'engine'
+$stageDist = Join-Path $stageRoot 'pyinstaller'
+$engineRuntime = '_internal_engine'
+$uiRuntime = '_winui'
+$targetEngine = Join-Path $root 'ETS-Assistant-Engine.exe'
+$targetEngineRuntime = Join-Path $root $engineRuntime
+$targetUi = Join-Path $root $uiRuntime
+$archive = Join-Path $root 'archive\previous-builds'
+New-Item -ItemType Directory -Force -Path $buildDir, $toolsDir, $stageRoot, $stageUi, $stageDist, $archive | Out-Null
+
+$localDotnet = Join-Path $toolsDir 'dotnet'
+if (Test-Path -LiteralPath (Join-Path $localDotnet 'dotnet.exe')) {
+    $env:DOTNET_ROOT = $localDotnet
+    $env:PATH = "$localDotnet;$env:PATH"
+}
+$sdkList = & dotnet --list-sdks 2>$null
+if ($LASTEXITCODE -ne 0 -or -not $sdkList) {
+    throw 'WinUI 3 build requires the .NET 8 SDK or later and the Windows App SDK NuGet package.'
+}
+$env:PYTHONPATH = if ($env:PYTHONPATH) { "$toolsDir;$env:PYTHONPATH" } else { $toolsDir }
+python -c "import PyInstaller, PIL, reportlab" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    throw 'Python build dependencies are missing. Install the packages listed in requirements-build.txt into .build-tools.'
+}
+
+$pyinstallerArgs = @(
+    '-m', 'PyInstaller', '--clean', '--noconfirm', '--onedir',
+    '--contents-directory', $engineRuntime, '--windowed',
+    '--name', 'ETS-Assistant-Engine', '--distpath', $stageDist,
+    '--workpath', (Join-Path $buildDir 'pyinstaller-engine'), '--specpath', $buildDir,
+    '--icon', (Join-Path $root 'winui3\Assets\ProgramIcon.ico'),
+    '--collect-all', 'reportlab', '--collect-all', 'PIL',
+    '--add-data', "$($root)\README.md;.",
+    (Join-Path $root 'ets_assistant.py')
+)
+python @pyinstallerArgs
+if ($LASTEXITCODE -ne 0) { throw "Engine build failed with exit code $LASTEXITCODE." }
+
+$stageEngineDir = Join-Path $stageDist 'ETS-Assistant-Engine'
+$stageEngineExe = Join-Path $stageEngineDir 'ETS-Assistant-Engine.exe'
+$stageEngineRuntime = Join-Path $stageEngineDir $engineRuntime
+if (-not (Test-Path -LiteralPath $stageEngineExe -PathType Leaf) -or -not (Test-Path -LiteralPath $stageEngineRuntime -PathType Container)) {
+    throw 'PyInstaller did not produce the engine and its runtime folder.'
+}
+
+$csproj = Join-Path $root 'winui3\ETSAssistant.WinUI3.csproj'
+if (-not (Test-Path -LiteralPath $csproj -PathType Leaf)) { throw "WinUI project not found: $csproj" }
+& dotnet publish $csproj --configuration Release --runtime win-x64 --self-contained true --output $stageUi
+if ($LASTEXITCODE -ne 0) { throw "WinUI 3 publish failed with exit code $LASTEXITCODE." }
+$stageUiExe = Join-Path $stageUi 'ETS-Assistant-WinUI.exe'
+if (-not (Test-Path -LiteralPath $stageUiExe -PathType Leaf)) { throw 'WinUI publish did not produce ETS-Assistant-WinUI.exe.' }
+$stageUiPri = Join-Path $stageUi 'ETS-Assistant-WinUI.pri'
+if (-not (Test-Path -LiteralPath $stageUiPri -PathType Leaf)) { throw 'WinUI 3 publish did not include its XAML resource index.' }
+
+$ownedExecutables = @($targetEngine, (Join-Path $targetUi 'ETS-Assistant-WinUI.exe'),
+    (Join-Path $root 'ETS-Assistant-Fast.exe'), (Join-Path $root 'ETS-Assistant.exe'))
+$running = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $ownedExecutables -contains $_.ExecutablePath })
+$running = @($running | Where-Object { $_.CommandLine -like '*--background-listener*' }) +
+           @($running | Where-Object { $_.CommandLine -notlike '*--background-listener*' })
+foreach ($process in $running) { Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue }
+if ($running.Count) { $running | ForEach-Object { Wait-Process -Id $_.ProcessId -Timeout 5 -ErrorAction SilentlyContinue } }
+foreach ($path in @($targetEngine, $targetEngineRuntime, $targetUi, $archive, $stageUi, $stageEngineRuntime)) {
+    $resolved = [IO.Path]::GetFullPath($path)
+    if (-not $resolved.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase)) { throw "Unsafe deployment path: $resolved" }
+    if (Test-Path -LiteralPath $resolved) {
+        if ((Get-Item -LiteralPath $resolved).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Refusing to replace a linked path: $resolved" }
+    }
+}
+if (Test-Path -LiteralPath $targetEngine) {
+    Move-Item -LiteralPath $targetEngine -Destination (Join-Path $archive ("ETS-Assistant-Engine-" + $buildId + '.exe'))
+}
+if (Test-Path -LiteralPath $targetEngineRuntime) {
+    Move-Item -LiteralPath $targetEngineRuntime -Destination (Join-Path $archive ($engineRuntime + '-' + $buildId))
+}
+if (Test-Path -LiteralPath $targetUi) {
+    Move-Item -LiteralPath $targetUi -Destination (Join-Path $archive ($uiRuntime + '-' + $buildId))
+}
+Move-Item -LiteralPath $stageEngineRuntime -Destination $targetEngineRuntime
+Move-Item -LiteralPath $stageEngineExe -Destination $targetEngine
+Move-Item -LiteralPath $stageUi -Destination $targetUi
+
+& (Join-Path $root 'install_ets_answer_listener.ps1')
+if (-not ('ETSAssistantBuild.IconCache' -as [type])) {
+    Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+namespace ETSAssistantBuild {
+    public static class IconCache {
+        [DllImport("shell32.dll")]
+        public static extern void SHChangeNotify(uint eventId, uint flags, IntPtr item1, IntPtr item2);
+    }
+}
+'@
+}
+[ETSAssistantBuild.IconCache]::SHChangeNotify(0x08000000, 0x1000, [IntPtr]::Zero, [IntPtr]::Zero)
+Write-Output "WinUI 3 assistant: $(Join-Path $targetUi 'ETS-Assistant-WinUI.exe')"
+Write-Output "Background engine: $targetEngine"
+Write-Output 'Updated login listener and desktop shortcuts; removed legacy assistant launchers.'

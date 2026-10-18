@@ -15,18 +15,22 @@ import json
 import os
 import random
 import re
+import shutil
 import socket
 import struct
 import time
 import urllib.request
+import uuid
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse, urlsplit
 
+from ets_activity import record_answer
 
-DEFAULT_ROOT = Path(__file__).resolve().parent
+
+DEFAULT_ROOT = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "ETS"
 DEFAULT_DEVTOOLS = "http://127.0.0.1:10086/json/list"
-DEFAULT_CONFIG = DEFAULT_ROOT / "ets_answer_config.yaml"
+DEFAULT_CONFIG = Path(__file__).resolve().parent / "ets_answer_config.yaml"
 APP_TITLE = "E听说"
 NEXT_CONFIRM_SECONDS = 1.2
 MIN_SKIP_CONFIRM_SECONDS = 0.15
@@ -229,6 +233,30 @@ def load_answers(pack_dir: Path) -> dict[str, str]:
     return answers
 
 
+def load_question_order(pack_dir: Path) -> dict[str, int]:
+    """Read the displayed question numbers; content IDs are not ordered IDs."""
+    order: dict[str, int] = {}
+    for content_file in sorted(pack_dir.glob("content_*/content2.json")):
+        try:
+            with content_file.open("r", encoding="utf-8-sig") as stream:
+                data = json.load(stream)
+        except (OSError, json.JSONDecodeError):
+            continue
+        info = data.get("info") or {}
+        content_id = str(info.get("stid") or content_file.parent.name.removeprefix("content_"))
+        for index, question in enumerate(info.get("xtlist") or [], start=1):
+            label = str(question.get("xt_nr") or "")
+            match = re.search(r"\d+", label)
+            if match:
+                question_number = str(question.get("xt_xh") or index)
+                order[f"{content_id}_{question_number}"] = int(match.group())
+    return order
+
+
+def question_order_key(question_id: str, order: dict[str, int]) -> tuple[int, tuple[int, int]]:
+    return order.get(question_id, 2**63 - 1), question_sort_key(question_id)
+
+
 def load_answer_config(path: Path = DEFAULT_CONFIG) -> tuple[float, str, float]:
     """Read the small, flat YAML subset used for QA answer settings."""
     if not path.is_file():
@@ -297,6 +325,73 @@ def visible_questions(client: CDPClient) -> list[dict[str, Any]]:
     except (TypeError, json.JSONDecodeError):
         return []
     return data.get("questions", []) if data.get("ready") else []
+
+
+def submission_complete(client: CDPClient) -> bool:
+    """Return true only when ETS displays a recognizable submitted/result page."""
+    raw = client.evaluate(
+        "JSON.stringify({url:location.href,text:[document.body?.innerText||'',"
+        "...[...document.querySelectorAll('iframe')].map(f=>{try{return f.contentDocument?.body?.innerText||''}catch(_){return ''}})"
+        "].join('\\n')})"
+    )
+    try:
+        page = json.loads(raw or "{}")
+    except json.JSONDecodeError:
+        return False
+    result_visible = bool(re.search(
+        r"提交成功|已提交|答题结果|练习结果|成绩|本次练习完成|练习完成|完成答题|正确率|得分",
+        page.get("text", ""),
+    ))
+    if result_visible:
+        return True
+    return False
+
+
+def confirm_and_delete_pack(root: Path, pack_dir: Path) -> bool:
+    """Ask before permanently deleting a numeric exam-pack folder under root."""
+    resolved_root = root.resolve()
+    resolved_pack = pack_dir.resolve()
+    if (
+        pack_dir.is_symlink()
+        or resolved_pack.parent != resolved_root
+        or not resolved_pack.name.isdigit()
+        or not resolved_pack.is_dir()
+    ):
+        print(f"Refusing to delete an unexpected exam-pack path: {pack_dir}", flush=True)
+        return False
+
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+
+        dialog = tk.Tk()
+        dialog.withdraw()
+        dialog.attributes("-topmost", True)
+        try:
+            should_delete = messagebox.askyesno(
+                "ETS 试卷清理",
+                f"试卷 {resolved_pack.name} 已提交。\n\n"
+                "是否永久删除这个试卷包及其中的转换文件以释放磁盘空间？\n"
+                "此操作不可撤销。",
+                default=messagebox.NO,
+                parent=dialog,
+            )
+        finally:
+            dialog.destroy()
+    except Exception as exc:
+        print(f"Could not show the exam-pack deletion prompt: {exc}", flush=True)
+        return False
+
+    if not should_delete:
+        print(f"Kept exam pack {resolved_pack.name} at the user's request.", flush=True)
+        return False
+    try:
+        shutil.rmtree(resolved_pack)
+    except OSError as exc:
+        print(f"Could not delete exam pack {resolved_pack.name}: {exc}", flush=True)
+        return False
+    print(f"Permanently deleted submitted exam pack {resolved_pack.name}.", flush=True)
+    return True
 
 
 def choose_answer(client: CDPClient, question: dict[str, Any], letter: str) -> bool:
@@ -387,7 +482,10 @@ def run_once(
     random_seed: str = "default",
     session_key: str = "",
     skip_interval_seconds: float = 0.0,
+    analysis_session_id: str | None = None,
+    expected_pack_id: str | None = None,
 ) -> tuple[str, str | None]:
+    analysis_session_id = analysis_session_id or uuid.uuid4().hex
     deadline = time.monotonic() + wait_seconds
     while time.monotonic() < deadline:
         try:
@@ -397,6 +495,8 @@ def run_once(
             continue
         for target in targets:
             pack_id = pack_id_from_url(str(target.get("url", "")))
+            if expected_pack_id is not None and pack_id != expected_pack_id:
+                continue
             pack_dir = root / pack_id if pack_id and pack_id.isdigit() else None
             if not pack_dir or not pack_dir.is_dir():
                 continue
@@ -404,6 +504,7 @@ def run_once(
                 answers = load_answers(pack_dir)
                 if not answers:
                     continue
+                question_order = load_question_order(pack_dir)
                 client = CDPClient(target["webSocketDebuggerUrl"])
             except (OSError, ValueError, json.JSONDecodeError, CDPError):
                 continue
@@ -413,14 +514,15 @@ def run_once(
                     continue
                 visible_ids = {str(question.get("id", "")) for question in questions}
                 if processed is not None and visible_ids:
-                    first_visible = min(visible_ids, key=question_sort_key)
-                    # A watcher may start after ETS has already advanced to a later group.
-                    # Earlier IDs are behind the current page and must not keep the final
-                    # group in the "more answers remain" branch forever.
-                    processed.update(
-                        key for key in answers
-                        if question_sort_key(key) < question_sort_key(first_visible)
-                    )
+                    ordered_visible = [question_order.get(question_id) for question_id in visible_ids]
+                    known_visible = [number for number in ordered_visible if number is not None]
+                    if known_visible:
+                        first_visible_number = min(known_visible)
+                        processed.update(
+                            question_id for question_id in answers
+                            if question_id in question_order
+                            and question_order[question_id] < first_visible_number
+                        )
                 pending = [
                     question for question in questions
                     if processed is None or str(question.get("id", "")) not in processed
@@ -430,7 +532,7 @@ def run_once(
                     if remaining and click_next(client, visible_ids, skip_interval_seconds):
                         return "advanced", None
                     if not remaining:
-                        last_id = max(answers, key=question_sort_key)
+                        last_id = max(answers, key=lambda question_id: question_order_key(question_id, question_order))
                         if click_next(client, visible_ids, skip_interval_seconds):
                             print("Advanced past the last local question group; ETS may complete the section automatically.", flush=True)
                             return "complete", last_id
@@ -443,6 +545,7 @@ def run_once(
                     if not answer:
                         print(f"No local answer for visible question {question_id}", flush=True)
                         return "waiting", question_id
+                    correct_answer = answer
                     answer = answer_for_accuracy(
                         question_id, answer, len(question.get("options") or []),
                         accuracy, random_seed, session_key,
@@ -451,6 +554,7 @@ def run_once(
                         print(f"Could not verify a trusted click on question {question_id}", flush=True)
                         return "error", question_id
                     selected_ids.add(question_id)
+                    record_answer(root, pack_dir, analysis_session_id, question_id, answer, correct_answer)
                     print(f"Selected {answer} for question {question_id}", flush=True)
                 if processed is not None:
                     processed.update(selected_ids)
@@ -462,10 +566,10 @@ def run_once(
                 else:
                     if click_next(client, visible_ids, skip_interval_seconds):
                         print("Advanced past the last local question group; ETS may complete the section automatically.", flush=True)
-                        return "complete", sorted(selected_ids, key=question_sort_key)[-1]
+                        return "complete", sorted(selected_ids, key=lambda question_id: question_order_key(question_id, question_order))[-1]
                     print("Last answers are selected, but ETS did not advance; will retry the next button.", flush=True)
                     return "waiting", None
-                return "selected", sorted(selected_ids, key=question_sort_key)[-1]
+                return "selected", sorted(selected_ids, key=lambda question_id: question_order_key(question_id, question_order))[-1]
             except (OSError, CDPError, ValueError, json.JSONDecodeError) as exc:
                 print(f"Auto-answer paused safely: {exc}", flush=True)
                 return "error", None
@@ -475,11 +579,16 @@ def run_once(
     return "waiting", None
 
 
-def watch(root: Path, endpoint: str) -> int:
+def watch(root: Path, endpoint: str, config_path: Path | None = None) -> int:
     handled: set[tuple[str, str]] = set()
     processed: dict[tuple[str, str], set[str]] = {}
+    pending_cleanup: dict[tuple[str, str], Path] = {}
+    cleanup_prompted: set[tuple[str, str]] = set()
+    analysis_sessions: dict[tuple[str, str], str] = {}
     try:
-        accuracy, random_seed, skip_interval = load_answer_config(root / DEFAULT_CONFIG.name)
+        accuracy, random_seed, skip_interval = load_answer_config(
+            config_path or (root / DEFAULT_CONFIG.name)
+        )
     except ValueError as exc:
         print(f"Invalid answer config: {exc}", flush=True)
         return 1
@@ -494,11 +603,63 @@ def watch(root: Path, endpoint: str) -> int:
             for target in devtools_targets(endpoint):
                 pack_id = pack_id_from_url(str(target.get("url", "")))
                 if not pack_id:
+                    # Some ETS versions drop set_id from the result-page URL.
+                    # If only one pack is awaiting its result page, use that page
+                    # to finish the pending confirmation.
+                    if len(pending_cleanup) == 1:
+                        session_key, pack_dir = next(iter(pending_cleanup.items()))
+                        try:
+                            client = CDPClient(target["webSocketDebuggerUrl"])
+                            try:
+                                submitted = submission_complete(client)
+                            finally:
+                                client.close()
+                            if submitted:
+                                cleanup_prompted.add(session_key)
+                                confirm_and_delete_pack(root, pack_dir)
+                                pending_cleanup.pop(session_key, None)
+                        except (OSError, CDPError, ValueError, json.JSONDecodeError):
+                            pass
                     continue
                 # A fresh homework_id indicates a fresh practice session.
                 fragment = urlsplit(urlparse(str(target.get("url", ""))).fragment)
                 params = parse_qs(fragment.query)
                 session_key = (pack_id, params.get("homework_id", [""])[0])
+                pending_matches = [key for key in pending_cleanup if key[0] == pack_id]
+                pending_key = (
+                    session_key if session_key in pending_cleanup
+                    else pending_matches[0] if len(pending_matches) == 1
+                    else None
+                )
+                if pending_key is not None:
+                    try:
+                        client = CDPClient(target["webSocketDebuggerUrl"])
+                        try:
+                            submitted = submission_complete(client)
+                        finally:
+                            client.close()
+                        if submitted:
+                            cleanup_prompted.add(pending_key)
+                            confirm_and_delete_pack(root, pending_cleanup.pop(pending_key))
+                    except (OSError, CDPError, ValueError, json.JSONDecodeError):
+                        pass
+                    continue
+                # Recover the deletion prompt if the worker was restarted after ETS
+                # reached its result page and its in-memory pending state was lost.
+                pack_dir = root / pack_id
+                if session_key not in cleanup_prompted and pack_dir.is_dir():
+                    try:
+                        client = CDPClient(target["webSocketDebuggerUrl"])
+                        try:
+                            submitted = submission_complete(client)
+                        finally:
+                            client.close()
+                        if submitted:
+                            cleanup_prompted.add(session_key)
+                            confirm_and_delete_pack(root, pack_dir)
+                            continue
+                    except (OSError, CDPError, ValueError, json.JSONDecodeError):
+                        pass
                 if session_key in handled:
                     # ETS can reuse the same homework_id when the user starts
                     # another practice attempt. Treat a return to the first
@@ -506,15 +667,23 @@ def watch(root: Path, endpoint: str) -> int:
                     try:
                         pack_dir = root / pack_id
                         answers = load_answers(pack_dir)
-                        first_id = min(answers, key=question_sort_key) if answers else None
                         client = CDPClient(target["webSocketDebuggerUrl"])
                         try:
                             current = visible_questions(client)
                         finally:
                             client.close()
-                        if current and str(current[0].get("id", "")) == first_id:
+                        # Content IDs are database identifiers, not exercise order.
+                        # Detect a restarted attempt from its cleared selections instead
+                        # of treating the numerically smallest ID as the first question.
+                        has_selection = any(
+                            "selected" in str(option.get("cls", ""))
+                            for question in current
+                            for option in question.get("options", [])
+                        )
+                        if current and not has_selection:
                             handled.discard(session_key)
                             processed.pop(session_key, None)
+                            analysis_sessions.pop(session_key, None)
                     except (OSError, ValueError, json.JSONDecodeError, CDPError):
                         pass
                     if session_key in handled:
@@ -525,25 +694,35 @@ def watch(root: Path, endpoint: str) -> int:
                     accuracy=accuracy, random_seed=random_seed,
                     session_key="|".join(session_key),
                     skip_interval_seconds=skip_interval,
+                    analysis_session_id=analysis_sessions.setdefault(session_key, uuid.uuid4().hex),
+                    expected_pack_id=pack_id,
                 )
                 if status == "selected" and content_id:
                     answered.add(content_id)
                 elif status == "complete":
                     handled.add(session_key)
+                    pack_dir = root / pack_id
+                    if pack_dir.is_dir():
+                        pending_cleanup[session_key] = pack_dir
+                        print(
+                            f"Answering is complete for pack {pack_id}; waiting for ETS to show its submitted/result page before asking about deletion.",
+                            flush=True,
+                        )
         except (OSError, ValueError, json.JSONDecodeError):
             pass
         time.sleep(WATCH_INTERVAL_SECONDS)
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    parser.add_argument("--config", type=Path, default=None)
     parser.add_argument("--devtools", default=DEFAULT_DEVTOOLS)
     parser.add_argument("--watch", action="store_true", help="wait for an active ETS question")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     try:
         if args.watch:
-            return watch(args.root.resolve(), args.devtools)
+            return watch(args.root.resolve(), args.devtools, args.config.resolve() if args.config else None)
         return 0 if run_once(args.root.resolve(), args.devtools) else 1
     except KeyboardInterrupt:
         print("Auto-answer worker stopped.", flush=True)
