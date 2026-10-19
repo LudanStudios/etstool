@@ -143,17 +143,31 @@ def worker_command(mode: str, *arguments: str) -> list[str]:
     return [*prefix, mode, *arguments]
 
 
+def open_log(path: Path):
+    """Open an append-only log, or return None when Windows blocks the path.
+
+    A low-integrity launch can read the data folder but cannot modify its
+    existing files. Answering still has to start in that case, so a log that
+    cannot be opened must never stop the worker.
+    """
+    try:
+        return path.open("a", encoding="utf-8")
+    except OSError:
+        return None
+
+
 def start_converter_watcher() -> subprocess.Popen[bytes]:
-    log_handle = (PACK_ROOT / "ets_converter.log").open("a", encoding="utf-8")
+    log_handle = open_log(PACK_ROOT / "ets_converter.log")
     process = subprocess.Popen(
         worker_command("--converter-watch", str(PACK_ROOT)),
         cwd=str(PACK_ROOT),
         stdin=subprocess.DEVNULL,
-        stdout=log_handle,
+        stdout=log_handle or subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
         creationflags=subprocess.CREATE_NO_WINDOW,
     )
-    log_handle.close()
+    if log_handle is not None:
+        log_handle.close()
     return process
 
 
@@ -184,7 +198,7 @@ def start_auto_answer_worker() -> subprocess.Popen[bytes] | None:
         log(f"Auto-answer worker is missing: {AUTO_ANSWER.name}")
         return None
     try:
-        log_handle = (PACK_ROOT / "ets_auto_answer.log").open("a", encoding="utf-8")
+        log_handle = open_log(PACK_ROOT / "ets_auto_answer.log")
         process = subprocess.Popen(
             worker_command(
                 "--answer-watch",
@@ -194,12 +208,13 @@ def start_auto_answer_worker() -> subprocess.Popen[bytes] | None:
             ),
             cwd=str(PACK_ROOT),
             stdin=subprocess.DEVNULL,
-            stdout=log_handle,
+            stdout=log_handle or subprocess.DEVNULL,
             stderr=subprocess.STDOUT,
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
         # Popen inherits this handle; closing the parent's copy does not stop logging.
-        log_handle.close()
+        if log_handle is not None:
+            log_handle.close()
         log("Auto-answer worker started; it will not click a final-submit button.")
         return process
     except OSError as exc:
