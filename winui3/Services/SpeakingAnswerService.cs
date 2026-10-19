@@ -7,6 +7,19 @@ namespace ETSAssistant.WinUI3.Services;
 public sealed record SpeakingQuestion(int Number, string Type, string Prompt, string StandardAnswer, string SourceText)
 {
     public string Display => $"{Number}. [{Type}] {Prompt}";
+
+    /// <summary>
+    /// Text actually sent to the model. For read-aloud tasks the sentence or
+    /// passage must be part of the request, otherwise the model only sees the
+    /// generic instruction and cannot answer.
+    /// </summary>
+    public string RequestText => Type switch
+    {
+        "朗读" => SourceText.Length > 0 ? $"{Prompt}:\n{SourceText}" : Prompt,
+        "看图说话" => SourceText.Length > 0 ? $"{Prompt}\n\nKey points:\n{SourceText}" : Prompt,
+        "口语问答" => SourceText.Length > 0 ? $"{Prompt}\n\nSource passage:\n{SourceText}" : Prompt,
+        _ => Prompt
+    };
 }
 
 public sealed record SpeakingPaper(string PackId, string Title, IReadOnlyList<SpeakingQuestion> Questions)
@@ -164,9 +177,10 @@ public sealed class SpeakingAnswerService
         string needle = Normalize(prompt);
         if (needle.Length == 0) return null;
         IReadOnlyList<SpeakingQuestion> questions = Load(packId);
-        return questions.FirstOrDefault(item => Normalize(item.Prompt) == needle)
+        return questions.FirstOrDefault(item => Normalize(item.Prompt) == needle || Normalize(item.RequestText) == needle)
                ?? questions.FirstOrDefault(item =>
                    Normalize(item.Prompt).Contains(needle, StringComparison.Ordinal) ||
+                   Normalize(item.RequestText).Contains(needle, StringComparison.Ordinal) ||
                    needle.Contains(Normalize(item.Prompt), StringComparison.Ordinal));
     }
 

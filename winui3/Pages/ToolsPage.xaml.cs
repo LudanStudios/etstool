@@ -201,7 +201,7 @@ public sealed partial class ToolsPage : Page
     private void SpeakingQuestionBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (SpeakingQuestionBox.SelectedItem is not SpeakingQuestion question) return;
-        SpeakingStemBox.Text = question.Prompt;
+        SpeakingStemBox.Text = question.RequestText;
         if (AppPreferencesService.Current.SpeakingMode != "standard") return;
         if (question.StandardAnswer.Length == 0)
         {
@@ -215,7 +215,7 @@ public sealed partial class ToolsPage : Page
     private async Task<SpeakingQuestion?> ResolveSpeakingQuestionAsync(string stem)
     {
         if (SpeakingQuestionBox.SelectedItem is SpeakingQuestion selected &&
-            string.Equals(selected.Prompt.Trim(), stem.Trim(), StringComparison.Ordinal))
+            string.Equals(selected.RequestText.Trim(), stem.Trim(), StringComparison.Ordinal))
             return selected;
 
         if (_speakingPackId is not null)
