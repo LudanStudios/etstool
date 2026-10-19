@@ -59,6 +59,22 @@ foreach ($runtimeFile in $requiredEngineRuntimeFiles) {
 if (-not (Get-ChildItem -LiteralPath $stageEngineRuntime -Filter 'python3*.dll' -File | Select-Object -First 1)) {
     throw "PyInstaller runtime is incomplete: missing the Python runtime DLL from $stageEngineRuntime."
 }
+if (Test-Path -LiteralPath (Join-Path $root '.git')) {
+    # A complete local runtime can still produce a broken GitHub download if Git ignores its files.
+    $runtimeRepositoryPaths = @(Get-ChildItem -LiteralPath $stageEngineRuntime -Recurse -File | ForEach-Object {
+        $engineRuntime + '/' + $_.FullName.Substring($stageEngineRuntime.Length + 1).Replace('\', '/')
+    })
+    $ignoredRuntimePaths = @()
+    for ($offset = 0; $offset -lt $runtimeRepositoryPaths.Count; $offset += 64) {
+        $last = [Math]::Min($offset + 63, $runtimeRepositoryPaths.Count - 1)
+        $batchPaths = $runtimeRepositoryPaths[$offset..$last]
+        $ignoredRuntimePaths += @(& git -C $root check-ignore --no-index -- $batchPaths)
+        if ($LASTEXITCODE -gt 1) { throw 'Could not verify the engine runtime against Git ignore rules.' }
+    }
+    if ($ignoredRuntimePaths.Count -gt 0) {
+        throw ("Engine runtime files would be missing from GitHub downloads because Git ignores them: " + ($ignoredRuntimePaths -join ', '))
+    }
+}
 
 $csproj = Join-Path $root 'winui3\ETSAssistant.WinUI3.csproj'
 if (-not (Test-Path -LiteralPath $csproj -PathType Leaf)) { throw "WinUI project not found: $csproj" }

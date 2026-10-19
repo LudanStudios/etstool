@@ -9,7 +9,8 @@ winui3/obj/
 
 # Python 缓存
 __pycache__/
-*.py[cod]
+*.py[co]
+# .pyd 是发布程序必需的原生扩展，不能作为 Python 缓存忽略。
 .venv/
 venv/
 

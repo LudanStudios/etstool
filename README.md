@@ -22,7 +22,7 @@ WinUI 3 版 ETS 助手，包含试卷监听、自动答题、试卷管理、答�
 4. ETS 支持 `--remote-debugging-port=10086`，自动答题依赖这个本机调试端口。
 5. `_winui` 已随附 VC++ 2015–2022 运行库；如果目标系统有额外的策略限制，仍可能需要安装官方 VC++ 运行库。
 
-如果启动时报 `No module named '_socket'`，请先检查程序目录中是否存在 `_internal_engine\_socket.pyd` 和 `python3*.dll`，并确认它们与 `ETS-Assistant-Engine.exe` 来自同一次完整构建。文件缺失通常表示复制或解压不完整，或安全软件隔离了运行库文件；重新解压完整程序包，并检查安全软件的隔离记录。不要只复制 `ETS-Assistant-Engine.exe`。
+如果启动时报 `No module named '_socket'`，请检查 `_internal_engine\_socket.pyd` 和该目录下的 `python3*.dll`。旧版仓库的 Git 忽略规则误排除了全部 `.pyd` 原生扩展，导致 GitHub 下载包缺文件；请重新下载修复后的完整程序包并完整解压，保留与 EXE 配套的整个 `_internal_engine` 目录。构建时也会检查发布文件是否被 Git 忽略。若新版解压后仍缺文件，再检查安全软件的隔离记录。
 
 直接双击：
 
