@@ -55,7 +55,7 @@ public sealed class CurrentPaperService
         }).ConfigureAwait(false);
     }
 
-    private static async Task<string?> FindActivePackIdAsync()
+    public static async Task<string?> FindActivePackIdAsync()
     {
         try
         {

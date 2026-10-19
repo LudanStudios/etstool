@@ -18,6 +18,9 @@ public sealed partial class ToolsPage : Page
     private readonly AssistantService _service = AssistantService.Current;
     private readonly PacketCaptureService _capture = PacketCaptureService.Current;
     private readonly DeepSeekService _deepSeek = new(AssistantService.Current.AppRoot);
+    private readonly SpeakingAnswerService _speaking = new(AssistantService.Current.DataRoot);
+    private bool _updatingSpeakingMode;
+    private string? _speakingPackId;
     private bool _portAvailable;
     private bool _updatingCapture;
 
@@ -30,6 +33,7 @@ public sealed partial class ToolsPage : Page
         {
             RefreshLogSummary();
             RefreshDeepSeekStatus();
+            UpdateSpeakingModeUi();
             UpdateCaptureUi();
             EnvironmentText.Text = BuildEnvironmentText();
             await ProbePortAsync();
@@ -137,7 +141,84 @@ public sealed partial class ToolsPage : Page
     {
         string keyState = ApiKeyStore.HasKey ? "API Key：已配置" : "API Key：未配置（请到“答题设置”填写）";
         string attachment = _deepSeek.FindAttachment() ?? "未找到 llm_stt.md";
-        DeepSeekStatusText.Text = $"{keyState} · 模型 {DeepSeekService.Model} · 附件：{attachment}";
+        string mode = AppPreferencesService.Current.SpeakingMode == "flexible" ? "灵活模式" : "标答模式";
+        DeepSeekStatusText.Text = $"{mode} · {keyState} · 模型 {DeepSeekService.Model} · 附件：{attachment}";
+    }
+
+    private void UpdateSpeakingModeUi()
+    {
+        _updatingSpeakingMode = true;
+        SpeakingModeBox.SelectedIndex = AppPreferencesService.Current.SpeakingMode == "flexible" ? 1 : 0;
+        _updatingSpeakingMode = false;
+        AskDeepSeekText.Text = AppPreferencesService.Current.SpeakingMode == "flexible"
+            ? "发送到 DeepSeek" : "提取标答";
+    }
+
+    private void SpeakingModeBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_updatingSpeakingMode) return;
+        if (SpeakingModeBox.SelectedItem is ComboBoxItem { Tag: string mode })
+        {
+            AppPreferencesService.Current.SetSpeakingMode(mode);
+            AskDeepSeekText.Text = mode == "flexible" ? "发送到 DeepSeek" : "提取标答";
+            RefreshDeepSeekStatus();
+        }
+    }
+
+    private async void LoadSpeakingQuestions_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string? packId = await CurrentPaperService.FindActivePackIdAsync().ConfigureAwait(true)
+                             ?? _speaking.FindRecentPackId();
+            if (packId is null)
+            {
+                ShowMessage("没有可读取的试卷", "先打开一份 ETS 试卷，等试卷转换完成后再试。",
+                    InfoBarSeverity.Warning);
+                return;
+            }
+
+            IReadOnlyList<SpeakingQuestion> questions = await Task.Run(() => _speaking.Load(packId));
+            _speakingPackId = packId;
+            SpeakingQuestionBox.ItemsSource = questions;
+            if (questions.Count == 0)
+            {
+                ShowMessage("没有口语题", $"试卷 {packId} 里没有找到朗读、看图或问答类口语题。",
+                    InfoBarSeverity.Warning);
+                return;
+            }
+            SpeakingQuestionBox.SelectedIndex = 0;
+            ShowMessage("已读取口语题", $"试卷 {packId} 共 {questions.Count} 道口语题。",
+                InfoBarSeverity.Success);
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("读取口语题失败", ex.Message, InfoBarSeverity.Error);
+        }
+    }
+
+    private void SpeakingQuestionBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (SpeakingQuestionBox.SelectedItem is not SpeakingQuestion question) return;
+        SpeakingStemBox.Text = question.Prompt;
+        if (AppPreferencesService.Current.SpeakingMode != "standard") return;
+        if (question.StandardAnswer.Length == 0)
+        {
+            ShowMessage("这道题没有标答", "试卷里没有为这道口语题提供推荐答案，请改用灵活模式。",
+                InfoBarSeverity.Warning);
+            return;
+        }
+        SpeakingResultBox.Text = question.StandardAnswer;
+    }
+
+    private async Task<SpeakingQuestion?> ResolveSpeakingQuestionAsync(string stem)
+    {
+        if (SpeakingQuestionBox.SelectedItem is SpeakingQuestion selected &&
+            string.Equals(selected.Prompt.Trim(), stem.Trim(), StringComparison.Ordinal))
+            return selected;
+
+        _speakingPackId ??= await CurrentPaperService.FindActivePackIdAsync() ?? _speaking.FindRecentPackId();
+        return _speakingPackId is null ? null : _speaking.Find(_speakingPackId, stem);
     }
 
     private async void AskDeepSeek_Click(object sender, RoutedEventArgs e)
@@ -146,6 +227,23 @@ public sealed partial class ToolsPage : Page
         if (stem.Length == 0)
         {
             ShowMessage("缺少题干", "请先输入口语题干，再发送到 DeepSeek。", InfoBarSeverity.Warning);
+            return;
+        }
+
+        if (AppPreferencesService.Current.SpeakingMode != "flexible")
+        {
+            SpeakingQuestion? question = await ResolveSpeakingQuestionAsync(stem);
+            if (question is null || question.StandardAnswer.Length == 0)
+            {
+                ShowMessage("没有找到标答",
+                    "当前试卷里没有匹配的标准答案。可以先点“读取当前试卷口语题”，或切换到灵活模式。",
+                    InfoBarSeverity.Warning);
+                return;
+            }
+            SpeakingResultBox.Text = question.StandardAnswer;
+            ShowMessage("已提取标答",
+                $"标答来自试卷 {_speakingPackId ?? "当前试卷"}，共 {question.StandardAnswer.Length} 个字符。",
+                InfoBarSeverity.Success);
             return;
         }
 

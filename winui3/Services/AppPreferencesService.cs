@@ -18,8 +18,10 @@ public sealed class AppPreferencesService
 
     public string Theme { get; private set; } = "System";
     public string Language { get; private set; } = "zh-CN";
+    public string SpeakingMode { get; private set; } = "standard";
     public event Action? ThemeChanged;
     public event Action? LanguageChanged;
+    public event Action? SpeakingModeChanged;
 
     public void SetTheme(string theme)
     {
@@ -37,6 +39,15 @@ public sealed class AppPreferencesService
         Save();
         LocalizationService.Current.Load(language);
         LanguageChanged?.Invoke();
+    }
+
+    public void SetSpeakingMode(string mode)
+    {
+        mode = mode == "flexible" ? "flexible" : "standard";
+        if (mode == SpeakingMode) return;
+        SpeakingMode = mode;
+        Save();
+        SpeakingModeChanged?.Invoke();
     }
 
     public void ApplyTheme(FrameworkElement root)
@@ -61,6 +72,9 @@ public sealed class AppPreferencesService
             if (document.RootElement.TryGetProperty("language", out JsonElement language) &&
                 language.ValueKind == JsonValueKind.String)
                 Language = language.GetString() == "en-US" ? "en-US" : "zh-CN";
+            if (document.RootElement.TryGetProperty("speaking_mode", out JsonElement speakingMode) &&
+                speakingMode.ValueKind == JsonValueKind.String)
+                SpeakingMode = speakingMode.GetString() == "flexible" ? "flexible" : "standard";
         }
         catch (Exception) { }
     }
@@ -70,7 +84,12 @@ public sealed class AppPreferencesService
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-            File.WriteAllText(_path, JsonSerializer.Serialize(new { theme = Theme, language = Language }));
+            File.WriteAllText(_path, JsonSerializer.Serialize(new
+            {
+                theme = Theme,
+                language = Language,
+                speaking_mode = SpeakingMode
+            }));
         }
         catch (Exception) { }
     }

@@ -99,6 +99,23 @@
                         <TextBlock Text="模型 deepseek-flash。每次请求都会附带题干和 llm_stt.md 附件，返回文本只包含模型输出正文。"
                                    FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                         <TextBlock x:Name="DeepSeekStatusText" FontSize="12" Opacity="0.72" TextWrapping="Wrap" />
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                            <ComboBox x:Name="SpeakingModeBox" MinWidth="180"
+                                      SelectionChanged="SpeakingModeBox_SelectionChanged">
+                                <ComboBoxItem Content="标答模式" Tag="standard" />
+                                <ComboBoxItem Content="灵活模式" Tag="flexible" />
+                            </ComboBox>
+                            <Button Grid.Column="1" Click="LoadSpeakingQuestions_Click" HorizontalAlignment="Left">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="OpenFile" />
+                                    <TextBlock Text="读取当前试卷口语题" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                        <ComboBox x:Name="SpeakingQuestionBox" HorizontalAlignment="Stretch"
+                                  DisplayMemberPath="Display"
+                                  PlaceholderText="选择当前试卷里的口语题（可选）"
+                                  SelectionChanged="SpeakingQuestionBox_SelectionChanged" />
                         <TextBox x:Name="SpeakingStemBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="110"
                                  PlaceholderText="输入口语题干，例如：朗读下面这段话……" />
                         <StackPanel Orientation="Horizontal" Spacing="8">
@@ -106,7 +123,7 @@
                                     Style="{StaticResource AccentButtonStyle}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Send" />
-                                    <TextBlock Text="发送到 DeepSeek" />
+                                    <TextBlock x:Name="AskDeepSeekText" Text="发送到 DeepSeek" />
                                 </StackPanel>
                             </Button>
                             <Button Click="ClearSpeaking_Click">

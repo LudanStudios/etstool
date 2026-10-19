@@ -8,6 +8,7 @@ namespace ETSAssistant.WinUI3.Pages;
 public sealed partial class SettingsPage : Page
 {
     private readonly AssistantService _service = AssistantService.Current;
+    private bool _loading;
 
     public SettingsPage()
     {
@@ -24,7 +25,17 @@ public sealed partial class SettingsPage : Page
         SkipBox.Value = settings.SkipInterval;
         AutostartCheck.IsChecked = settings.StartAtLogin;
         EtsPathText.Text = _service.EtsExe ?? "未找到 ETS 安装目录。";
+        _loading = true;
+        SpeakingModeBox.SelectedIndex = AppPreferencesService.Current.SpeakingMode == "flexible" ? 1 : 0;
+        _loading = false;
         UpdateApiKeyStatus();
+    }
+
+    private void SpeakingModeBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading) return;
+        if (SpeakingModeBox.SelectedItem is ComboBoxItem { Tag: string mode })
+            AppPreferencesService.Current.SetSpeakingMode(mode);
     }
 
     private void UpdateApiKeyStatus() =>
