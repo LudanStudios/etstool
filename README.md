@@ -8,7 +8,7 @@ WinUI 3 版 ETS 助手，包含试卷监听、自动答题、试卷管理、答�
 
 ## 在新电脑上运行
 
-把整个 `ETS` 文件夹复制到新电脑即可，不需要安装 Python、.NET 或 Windows App Runtime：
+把整个 `ETS` 文件夹复制到新电脑即可，不需要安装 Python、.NET 或 Windows App Runtime。必须保留 `ETS-Assistant-Engine.exe` 旁边的整个 `_internal_engine` 文件夹；不要只分发 EXE，也不要从文件夹中单独挑选文件。引擎依赖该目录中的 Python DLL、标准库扩展和第三方库。
 
 - `_winui` 已包含 .NET 8 和 Windows App SDK 自包含运行时。
 - `ETS-Assistant-Engine.exe` 和 `_internal_engine` 已包含 Python 运行时及依赖。
@@ -21,6 +21,8 @@ WinUI 3 版 ETS 助手，包含试卷监听、自动答题、试卷管理、答�
 3. 当前 Windows 用户对 `%APPDATA%\ETS` 有读写权限。
 4. ETS 支持 `--remote-debugging-port=10086`，自动答题依赖这个本机调试端口。
 5. `_winui` 已随附 VC++ 2015–2022 运行库；如果目标系统有额外的策略限制，仍可能需要安装官方 VC++ 运行库。
+
+如果启动时报 `No module named '_socket'`，请先检查程序目录中是否存在 `_internal_engine\_socket.pyd` 和 `python3*.dll`，并确认它们与 `ETS-Assistant-Engine.exe` 来自同一次完整构建。文件缺失通常表示复制或解压不完整，或安全软件隔离了运行库文件；重新解压完整程序包，并检查安全软件的隔离记录。不要只复制 `ETS-Assistant-Engine.exe`。
 
 直接双击：
 
@@ -44,7 +46,7 @@ WinUI 3 版 ETS 助手，包含试卷监听、自动答题、试卷管理、答�
 
 在“答题设置”页填入 DeepSeek API Key 并保存，密钥会用 Windows DPAPI 加密后存放在 `%APPDATA%\ETS\deepseek_api_key.bin`，不会写入配置文件或仓库。
 
-“测试工具”页的“DeepSeek 口语测试”卡片可以输入题干并发送：每次请求都会把题干和 `llm_stt.md` 附件一起发给 `ds-v4.1-flash`，返回的正文显示在下方，可直接复制。附件优先从程序目录、`_winui\Assets` 读取，找不到时回退到 `%USERPROFILE%\Downloads\llm_stt.md`。
+“测试工具”页的“DeepSeek 口语测试”卡片可以输入题干并发送：每次请求都会把题干和 `llm_stt.md` 附件一起发给 `deepseek-flash`，返回的正文显示在下方，可直接复制。附件优先从程序目录、`_winui\Assets` 读取，找不到时回退到 `%USERPROFILE%\Downloads\llm_stt.md`。
 
 ## 重新构建（开发用）
 

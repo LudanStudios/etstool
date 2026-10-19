@@ -50,6 +50,15 @@ $stageEngineRuntime = Join-Path $stageEngineDir $engineRuntime
 if (-not (Test-Path -LiteralPath $stageEngineExe -PathType Leaf) -or -not (Test-Path -LiteralPath $stageEngineRuntime -PathType Container)) {
     throw 'PyInstaller did not produce the engine and its runtime folder.'
 }
+$requiredEngineRuntimeFiles = @('_socket.pyd', '_multiprocessing.pyd')
+foreach ($runtimeFile in $requiredEngineRuntimeFiles) {
+    if (-not (Test-Path -LiteralPath (Join-Path $stageEngineRuntime $runtimeFile) -PathType Leaf)) {
+        throw "PyInstaller runtime is incomplete: missing $runtimeFile from $stageEngineRuntime."
+    }
+}
+if (-not (Get-ChildItem -LiteralPath $stageEngineRuntime -Filter 'python3*.dll' -File | Select-Object -First 1)) {
+    throw "PyInstaller runtime is incomplete: missing the Python runtime DLL from $stageEngineRuntime."
+}
 
 $csproj = Join-Path $root 'winui3\ETSAssistant.WinUI3.csproj'
 if (-not (Test-Path -LiteralPath $csproj -PathType Leaf)) { throw "WinUI project not found: $csproj" }

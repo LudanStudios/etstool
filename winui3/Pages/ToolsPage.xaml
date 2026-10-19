@@ -96,7 +96,7 @@
                             <ProgressRing x:Name="DeepSeekProgress" Grid.Column="1" Width="20" Height="20"
                                           IsActive="False" />
                         </Grid>
-                        <TextBlock Text="模型 ds-v4.1-flash。每次请求都会附带题干和 llm_stt.md 附件，返回文本只包含模型输出正文。"
+                        <TextBlock Text="模型 deepseek-flash。每次请求都会附带题干和 llm_stt.md 附件，返回文本只包含模型输出正文。"
                                    FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                         <TextBlock x:Name="DeepSeekStatusText" FontSize="12" Opacity="0.72" TextWrapping="Wrap" />
                         <TextBox x:Name="SpeakingStemBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="110"

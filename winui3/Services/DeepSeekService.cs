@@ -13,7 +13,7 @@ public sealed record DeepSeekResult(bool Success, string Text, string Error = ""
 /// </summary>
 public sealed class DeepSeekService
 {
-    public const string Model = "ds-v4.1-flash";
+    public const string Model = "deepseek-flash";
     private const string Endpoint = "https://api.deepseek.com/chat/completions";
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(120) };
     private readonly string _appRoot;
@@ -75,7 +75,7 @@ public sealed class DeepSeekService
             string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
                 return new DeepSeekResult(false, string.Empty,
-                    $"DeepSeek 返回 HTTP {(int)response.StatusCode}：{Shorten(body)}", (int)response.StatusCode);
+                    $"DeepSeek 返回 HTTP {(int)response.StatusCode}：{ExtractError(body)}", (int)response.StatusCode);
 
             using JsonDocument document = JsonDocument.Parse(body);
             if (!document.RootElement.TryGetProperty("choices", out JsonElement choices) ||
@@ -113,6 +113,24 @@ public sealed class DeepSeekService
         yield return Path.Combine(AppContext.BaseDirectory, "Assets", "llm_stt.md");
         yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             "Downloads", "llm_stt.md");
+    }
+
+    private static string ExtractError(string body)
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(body);
+            if (document.RootElement.TryGetProperty("error", out JsonElement error) &&
+                error.ValueKind == JsonValueKind.Object &&
+                error.TryGetProperty("message", out JsonElement message) &&
+                message.ValueKind == JsonValueKind.String)
+            {
+                string text = message.GetString() ?? string.Empty;
+                if (text.Length > 0) return text;
+            }
+        }
+        catch (JsonException) { }
+        return Shorten(body);
     }
 
     private static string Shorten(string value)
