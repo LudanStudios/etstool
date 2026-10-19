@@ -17,6 +17,7 @@ public sealed partial class ToolsPage : Page
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMilliseconds(1200) };
     private readonly AssistantService _service = AssistantService.Current;
     private readonly PacketCaptureService _capture = PacketCaptureService.Current;
+    private readonly DeepSeekService _deepSeek = new(AssistantService.Current.AppRoot);
     private bool _portAvailable;
     private bool _updatingCapture;
 
@@ -28,6 +29,7 @@ public sealed partial class ToolsPage : Page
         Loaded += async (_, _) =>
         {
             RefreshLogSummary();
+            RefreshDeepSeekStatus();
             UpdateCaptureUi();
             EnvironmentText.Text = BuildEnvironmentText();
             await ProbePortAsync();
@@ -129,6 +131,63 @@ public sealed partial class ToolsPage : Page
             ShowMessage("端口未开放", "请先打开带 --remote-debugging-port=10086 的 ETS，再查看调试端口。",
                 InfoBarSeverity.Warning);
         }
+    }
+
+    private void RefreshDeepSeekStatus()
+    {
+        string keyState = ApiKeyStore.HasKey ? "API Key：已配置" : "API Key：未配置（请到“答题设置”填写）";
+        string attachment = _deepSeek.FindAttachment() ?? "未找到 llm_stt.md";
+        DeepSeekStatusText.Text = $"{keyState} · 模型 {DeepSeekService.Model} · 附件：{attachment}";
+    }
+
+    private async void AskDeepSeek_Click(object sender, RoutedEventArgs e)
+    {
+        string stem = SpeakingStemBox.Text.Trim();
+        if (stem.Length == 0)
+        {
+            ShowMessage("缺少题干", "请先输入口语题干，再发送到 DeepSeek。", InfoBarSeverity.Warning);
+            return;
+        }
+
+        AskDeepSeekButton.IsEnabled = false;
+        DeepSeekProgress.IsActive = true;
+        try
+        {
+            DeepSeekResult result = await _deepSeek.AskSpeakingAsync(stem);
+            if (result.Success)
+            {
+                SpeakingResultBox.Text = result.Text;
+                ShowMessage("DeepSeek 已返回", $"模型 {DeepSeekService.Model} 返回 {result.Text.Length} 个字符。",
+                    InfoBarSeverity.Success);
+            }
+            else
+            {
+                ShowMessage("DeepSeek 调用失败", result.Error, InfoBarSeverity.Error);
+            }
+        }
+        finally
+        {
+            DeepSeekProgress.IsActive = false;
+            AskDeepSeekButton.IsEnabled = true;
+            RefreshDeepSeekStatus();
+        }
+    }
+
+    private void ClearSpeaking_Click(object sender, RoutedEventArgs e)
+    {
+        SpeakingStemBox.Text = string.Empty;
+        SpeakingResultBox.Text = string.Empty;
+    }
+
+    private void CopySpeakingResult_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(SpeakingResultBox.Text))
+        {
+            ShowMessage("暂无结果", "先发送一次口语题干，等模型返回后再复制。", InfoBarSeverity.Warning);
+            return;
+        }
+        CopyText(SpeakingResultBox.Text);
+        ShowMessage("结果已复制", "模型返回的文本已复制到剪贴板。", InfoBarSeverity.Success);
     }
 
     private void CopyPort_Click(object sender, RoutedEventArgs e)

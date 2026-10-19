@@ -21,7 +21,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
-    <Content Include="Assets\ProgramIcon.png;Assets\ProgramIcon.ico;Assets\AboutBackground.png">
+    <Content Include="Assets\ProgramIcon.png;Assets\ProgramIcon.ico;Assets\AboutBackground.png;Assets\llm_stt.md">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>

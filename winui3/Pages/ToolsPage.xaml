@@ -88,6 +88,48 @@
                 <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                     <StackPanel Spacing="12">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Orientation="Horizontal" Spacing="9">
+                                <SymbolIcon Symbol="Message" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                <TextBlock Text="DeepSeek 口语测试" FontSize="17" FontWeight="SemiBold" />
+                            </StackPanel>
+                            <ProgressRing x:Name="DeepSeekProgress" Grid.Column="1" Width="20" Height="20"
+                                          IsActive="False" />
+                        </Grid>
+                        <TextBlock Text="模型 ds-v4.1-flash。每次请求都会附带题干和 llm_stt.md 附件，返回文本只包含模型输出正文。"
+                                   FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
+                        <TextBlock x:Name="DeepSeekStatusText" FontSize="12" Opacity="0.72" TextWrapping="Wrap" />
+                        <TextBox x:Name="SpeakingStemBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="110"
+                                 PlaceholderText="输入口语题干，例如：朗读下面这段话……" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button x:Name="AskDeepSeekButton" Click="AskDeepSeek_Click"
+                                    Style="{StaticResource AccentButtonStyle}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="Send" />
+                                    <TextBlock Text="发送到 DeepSeek" />
+                                </StackPanel>
+                            </Button>
+                            <Button Click="ClearSpeaking_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="Delete" />
+                                    <TextBlock Text="清空" />
+                                </StackPanel>
+                            </Button>
+                            <Button Click="CopySpeakingResult_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="Copy" />
+                                    <TextBlock Text="复制结果" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                        <TextBox x:Name="SpeakingResultBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                                 MinHeight="150" PlaceholderText="模型返回的文本会显示在这里。" />
+                    </StackPanel>
+                </Border>
+
+                <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                    <StackPanel Spacing="12">
                         <StackPanel Orientation="Horizontal" Spacing="9">
                             <SymbolIcon Symbol="Document" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
                             <TextBlock Text="日志与诊断" FontSize="17" FontWeight="SemiBold" />
