@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Threading;
 using Microsoft.UI.Xaml.Controls;
 
 namespace ETSAssistant.WinUI3.Services;
@@ -18,23 +19,22 @@ public static class InfoBarPresenter
     public static void Show(InfoBar infoBar, string title, string message, InfoBarSeverity severity)
     {
         PendingUpdate pending = PendingUpdates.GetValue(infoBar, static _ => new PendingUpdate());
-        long version = ++pending.Version;
+        long version = Interlocked.Increment(ref pending.Version);
 
-        infoBar.IsOpen = false;
-        if (!infoBar.DispatcherQueue.TryEnqueue(() =>
+        void Apply()
         {
-            if (pending.Version != version) return;
+            if (Volatile.Read(ref pending.Version) != version) return;
 
-            infoBar.Title = title;
-            infoBar.Message = message;
-            infoBar.Severity = severity;
-            infoBar.IsOpen = true;
-        }))
-        {
+            infoBar.IsOpen = false;
             infoBar.Title = title;
             infoBar.Message = message;
             infoBar.Severity = severity;
             infoBar.IsOpen = true;
         }
+
+        if (infoBar.DispatcherQueue.HasThreadAccess)
+            Apply();
+        else
+            infoBar.DispatcherQueue.TryEnqueue(Apply);
     }
 }

@@ -366,18 +366,31 @@ public sealed partial class ToolsPage : Page
             AliyunTtsResult result = await _aliyunTts.SynthesizeToWavAsync(text);
             if (!result.Success)
             {
-                ShowMessage("阿里云 TTS 失败", result.Error, InfoBarSeverity.Error);
+                AliyunTtsStatusText.Text = $"合成失败：{result.Error}";
+                ShowMessage("阿里云 TTS 合成失败", result.Error, InfoBarSeverity.Error);
                 return;
             }
 
             AliyunTtsStatusText.Text = $"WAV 已保存：{result.FilePath}";
-            Process.Start(new ProcessStartInfo(result.FilePath) { UseShellExecute = true });
+            try
+            {
+                Process.Start(new ProcessStartInfo(result.FilePath) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                ShowMessage("WAV 已生成，但播放器无法打开",
+                    $"文件已保存：{result.FilePath}{Environment.NewLine}{ex.Message}",
+                    InfoBarSeverity.Warning);
+                return;
+            }
+
             ShowMessage("阿里云 TTS 已完成",
                 $"Betty 已合成并打开 WAV 文件（{result.ChunkCount} 段）。", InfoBarSeverity.Success);
         }
         catch (Exception ex)
         {
-            ShowMessage("阿里云 TTS 失败", ex.Message, InfoBarSeverity.Error);
+            AliyunTtsStatusText.Text = $"合成失败：{ex.Message}";
+            ShowMessage("阿里云 TTS 合成失败", ex.Message, InfoBarSeverity.Error);
         }
         finally
         {
