@@ -9,6 +9,11 @@ public sealed record SpeakingQuestion(int Number, string Type, string Prompt, st
     public string Display => $"{Number}. [{Type}] {Prompt}";
 }
 
+public sealed record SpeakingPaper(string PackId, string Title, IReadOnlyList<SpeakingQuestion> Questions)
+{
+    public string Display => $"{Title} · {Questions.Count} 道口语题";
+}
+
 /// <summary>
 /// Reads the standard answers that the pack already contains for speaking tasks
 /// (word/read/picture/dialogue), mirroring the fields used by the Markdown
@@ -21,8 +26,48 @@ public sealed class SpeakingAnswerService
     public SpeakingAnswerService(string dataRoot) =>
         _dataRoot = Path.GetFullPath(dataRoot).TrimEnd(Path.DirectorySeparatorChar);
 
-    public string? FindRecentPackId()
+    public IReadOnlyList<SpeakingPaper> LoadAllPapers()
     {
+        var papers = new List<SpeakingPaper>();
+        try
+        {
+            if (!Directory.Exists(_dataRoot)) return papers;
+            Dictionary<string, string> labels = ReadLabels();
+            foreach (string directory in Directory.EnumerateDirectories(_dataRoot))
+            {
+                string id = Path.GetFileName(directory);
+                if (!Regex.IsMatch(id, @"\A[0-9]+\z")) continue;
+                IReadOnlyList<SpeakingQuestion> questions = Load(id);
+                if (questions.Count == 0) continue;
+                papers.Add(new SpeakingPaper(id, labels.GetValueOrDefault(id, $"试卷 {id}"), questions));
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return papers;
+        }
+        return papers
+            .OrderByDescending(paper => Directory.GetLastWriteTime(Path.Combine(_dataRoot, paper.PackId)))
+            .ThenBy(paper => paper.PackId, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    private Dictionary<string, string> ReadLabels()
+    {
+        string path = Path.Combine(_dataRoot, "_assistant", "paper_labels.json");
+        try
+        {
+            if (!File.Exists(path)) return new Dictionary<string, string>(StringComparer.Ordinal);
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(path))
+                   ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            return new Dictionary<string, string>(StringComparer.Ordinal);
+        }
+    }
+
+    public string? FindRecentPackId()    {
         try
         {
             DateTime cutoff = DateTime.Now.AddDays(-1);

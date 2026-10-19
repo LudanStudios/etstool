@@ -21,6 +21,7 @@ public sealed partial class ToolsPage : Page
     private readonly SpeakingAnswerService _speaking = new(AssistantService.Current.DataRoot);
     private bool _updatingSpeakingMode;
     private string? _speakingPackId;
+    private IReadOnlyList<SpeakingPaper> _speakingPapers = Array.Empty<SpeakingPaper>();
     private bool _portAvailable;
     private bool _updatingCapture;
 
@@ -169,32 +170,32 @@ public sealed partial class ToolsPage : Page
     {
         try
         {
-            string? packId = await CurrentPaperService.FindActivePackIdAsync().ConfigureAwait(true)
-                             ?? _speaking.FindRecentPackId();
-            if (packId is null)
+            IReadOnlyList<SpeakingPaper> papers = await Task.Run(() => _speaking.LoadAllPapers());
+            _speakingPapers = papers;
+            SpeakingPaperBox.ItemsSource = papers;
+            if (papers.Count == 0)
             {
-                ShowMessage("没有可读取的试卷", "先打开一份 ETS 试卷，等试卷转换完成后再试。",
+                ShowMessage("没有口语题", "本机试卷里没有找到朗读、看图或问答类口语题。",
                     InfoBarSeverity.Warning);
                 return;
             }
-
-            IReadOnlyList<SpeakingQuestion> questions = await Task.Run(() => _speaking.Load(packId));
-            _speakingPackId = packId;
-            SpeakingQuestionBox.ItemsSource = questions;
-            if (questions.Count == 0)
-            {
-                ShowMessage("没有口语题", $"试卷 {packId} 里没有找到朗读、看图或问答类口语题。",
-                    InfoBarSeverity.Warning);
-                return;
-            }
-            SpeakingQuestionBox.SelectedIndex = 0;
-            ShowMessage("已读取口语题", $"试卷 {packId} 共 {questions.Count} 道口语题。",
+            SpeakingPaperBox.SelectedIndex = 0;
+            int total = papers.Sum(paper => paper.Questions.Count);
+            ShowMessage("已读取口语题", $"共 {papers.Count} 份试卷、{total} 道口语题。",
                 InfoBarSeverity.Success);
         }
         catch (Exception ex)
         {
             ShowMessage("读取口语题失败", ex.Message, InfoBarSeverity.Error);
         }
+    }
+
+    private void SpeakingPaperBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (SpeakingPaperBox.SelectedItem is not SpeakingPaper paper) return;
+        _speakingPackId = paper.PackId;
+        SpeakingQuestionBox.ItemsSource = paper.Questions;
+        if (paper.Questions.Count > 0) SpeakingQuestionBox.SelectedIndex = 0;
     }
 
     private void SpeakingQuestionBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -216,6 +217,18 @@ public sealed partial class ToolsPage : Page
         if (SpeakingQuestionBox.SelectedItem is SpeakingQuestion selected &&
             string.Equals(selected.Prompt.Trim(), stem.Trim(), StringComparison.Ordinal))
             return selected;
+
+        if (_speakingPackId is not null)
+        {
+            SpeakingQuestion? current = _speaking.Find(_speakingPackId, stem);
+            if (current is not null) return current;
+        }
+
+        foreach (SpeakingPaper paper in _speakingPapers)
+        {
+            SpeakingQuestion? match = _speaking.Find(paper.PackId, stem);
+            if (match is not null) return match;
+        }
 
         _speakingPackId ??= await CurrentPaperService.FindActivePackIdAsync() ?? _speaking.FindRecentPackId();
         return _speakingPackId is null ? null : _speaking.Find(_speakingPackId, stem);

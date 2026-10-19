@@ -78,7 +78,7 @@
   "标答模式不调用 DeepSeek；灵活模式使用上面的 API Key 和 llm_stt.md 生成回答。": "Standard mode skips DeepSeek; flexible mode uses the API key above and llm_stt.md.",
   "标答模式": "Standard mode",
   "灵活模式": "Flexible mode",
-  "读取当前试卷口语题": "Load speaking questions",
+  "读取所有试卷口语题": "Load all speaking questions",
   "提取标答": "Extract standard answer",
   "状态：已保存（本机加密）": "Status: saved (encrypted locally)",
   "状态：未配置": "Status: not configured",
