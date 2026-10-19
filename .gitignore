@@ -17,6 +17,7 @@ venv/
 # 日志与临时文件
 *.log
 *.tmp
+_winui/aliyun_tts_credentials.bin
 Thumbs.db
 Desktop.ini
 .DS_Store

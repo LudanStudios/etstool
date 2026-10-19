@@ -57,7 +57,7 @@ WinUI 3 版 ETS 助手，包含试卷监听、自动答题、试卷管理、答�
 
 ## 阿里云 TTS 测试
 
-在“测试工具”开发者页的阿里云 TTS 配置区填写 RAM AccessKey ID、AccessKey Secret 和智能语音交互项目 AppKey。助手会分别使用当前 Windows 用户的 DPAPI 加密，并保存两份：主程序 EXE 旁边的 `aliyun_tts_credentials.bin` 和 Windows 凭据管理器。每次启动先读 Windows 凭据管理器，再读程序目录；开发者页和导出的诊断信息会显示本次实际读取来源。如果其中一处不可写，状态会提示哪份副本未完成；两处都不可用时再回退到 `%APPDATA%`/`%LOCALAPPDATA%` 下的加密文件。旧位置的凭据会在读取时尝试迁移并补齐两份。只要保留原程序目录或当前 Windows 用户配置，重启后无需重新输入。DPAPI 文件绑定当前 Windows 用户，换用户或电脑后无法解密。建议只使用权限受限的 RAM 用户凭证。
+在“测试工具”开发者页的阿里云 TTS 配置区填写 RAM AccessKey ID、AccessKey Secret 和智能语音交互项目 AppKey。助手只使用主程序 EXE 旁边的 `aliyun_tts_credentials.bin` 保存凭据，并通过当前 Windows 用户的 DPAPI 加密。每次启动只从该程序目录读取；不会访问 Windows 凭据管理器、`%APPDATA%` 或 `%LOCALAPPDATA%` 中的凭据副本，也不会自动迁移旧凭据。保存失败时请检查程序目录的写入权限。DPAPI 文件绑定当前 Windows 用户，换用户、电脑或 Windows 安装后无法解密；移动程序时应一并保留该文件。建议只使用权限受限的 RAM 用户凭证。
 
 AccessKey ID/Secret 是用于认证的长期凭证；阿里云不提供长期有效的 NLS AccessToken。助手通过阿里云 SDK 调用 `CreateToken`，在进程内缓存 Token，并依据返回的 `ExpireTime` 在到期前重新获取。Token 和 AccessKey Secret 不写日志。
 

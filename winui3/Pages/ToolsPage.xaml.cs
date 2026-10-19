@@ -161,27 +161,15 @@ public sealed partial class ToolsPage : Page
     {
         try
         {
-            AliyunTtsCredentialSaveResult saveResult = AliyunTtsCredentialStore.Save(new AliyunTtsCredentials(
+            AliyunTtsCredentialStore.Save(new AliyunTtsCredentials(
                 AliyunAccessKeyIdBox.Text.Trim(),
                 AliyunAccessKeySecretBox.Password.Trim(),
                 AliyunAppKeyBox.Text.Trim()));
-            if (saveResult.Persisted)
-                AliyunAccessKeySecretBox.Password = string.Empty;
+            AliyunAccessKeySecretBox.Password = string.Empty;
             RefreshAliyunTtsStatus();
-            string title = saveResult.BothPrimaryCopiesSaved
-                ? "阿里云凭证已双份加密保存"
-                : saveResult.Persisted ? "阿里云凭证双份保存未完成" : "凭据保存失败";
-            string message = saveResult.BothPrimaryCopiesSaved
-                ? "已同时保存到程序目录和 Windows 凭据管理器。助手会自动获取并续期 NLS Token。"
-                : saveResult.ProgramDirectorySaved
-                    ? "程序目录副本已保存，但 Windows 凭据管理器副本写入失败。请检查状态提示。"
-                    : saveResult.CredentialManagerSaved
-                        ? "Windows 凭据管理器副本已保存，但程序目录副本写入失败。请检查程序目录权限。"
-                        : saveResult.UserDataFallbackSaved
-                            ? "程序目录和 Windows 凭据管理器均未写入；已退回用户数据目录的 DPAPI 加密文件。"
-                            : "两处凭据副本和用户数据目录均无法持久保存，凭据仅在本次运行期间有效。";
-            InfoBarPresenter.Show(AliyunTtsCredentialInfoBar, title, message,
-                saveResult.BothPrimaryCopiesSaved ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
+            InfoBarPresenter.Show(AliyunTtsCredentialInfoBar, "阿里云凭证已保存",
+                "凭据已 DPAPI 加密保存到程序目录。助手会自动获取并续期 NLS Token。",
+                InfoBarSeverity.Success);
         }
         catch (Exception ex)
         {
@@ -199,7 +187,7 @@ public sealed partial class ToolsPage : Page
             AliyunAppKeyBox.Text = string.Empty;
             RefreshAliyunTtsStatus();
             InfoBarPresenter.Show(AliyunTtsCredentialInfoBar, "阿里云凭证已清除",
-                "本机保存的阿里云 TTS 凭证已删除。", InfoBarSeverity.Informational);
+                "程序目录中的阿里云 TTS 凭据文件已删除。", InfoBarSeverity.Informational);
         }
         catch (Exception ex)
         {
