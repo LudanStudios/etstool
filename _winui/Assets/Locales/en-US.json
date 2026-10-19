@@ -41,6 +41,8 @@
   "试卷答案": "Paper answers",
   "绿色=一致 · 红色=不一致 · 灰色=未作答": "Green=match · Red=mismatch · Gray=unanswered",
   "一键复制所有答案": "Copy all answers",
+  "手动重置": "Manual reset",
+  "手动重置：在 ETS 中切到第 1 题后点击，助手会清空本轮进度并从当前题目重新作答。": "Manual reset: switch to question 1 in ETS, then click to clear this attempt and answer again from the current question.",
   "自动流程": "Automation",
   "打开 ETS 时启动助手窗口、试卷转换监听和答题监听。关闭 ETS 后，后台进程会停止并等待下次启动。": "Opening ETS starts the assistant window, paper converter and answer listener. They stop when ETS closes.",
   "试卷数据位置": "Paper data location",

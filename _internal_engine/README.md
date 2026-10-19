@@ -1,54 +1,64 @@
-# ETS 自动监听助手
+# ETS Tool by @azursmelt（beta 1.0.1）
 
-ETS 自动监听助手把试卷监听、Markdown/PDF 转换和 ETS 选择题辅助脚本放进一个 Windows 程序。程序使用 WinUI 3 原生界面，主程序位于 **_winui\ETS-Assistant-WinUI.exe**。后台引擎使用 **ETS-Assistant-Engine.exe** 和同目录的 **_internal_engine** 文件夹。请保留完整的 Codex Sandbox\ETS 文件夹；日常使用不需要手动运行 Python、PowerShell 初始化脚本或编辑 YAML。
+WinUI 3 版 ETS 助手，包含试卷监听、自动答题、试卷管理、答案提取、抓包调试和中英文界面。
 
+主程序：`_winui\ETS-Assistant-WinUI.exe`  
+后台引擎：`ETS-Assistant-Engine.exe` + `_internal_engine\`  
+数据与日志：`%APPDATA%\ETS`
 
-## 首次使用
+## 在新电脑上运行
 
-1. 确认 ETS 已安装。
-2. 将完整的数字编号试卷包文件夹放进 `%APPDATA%\ETS`。保留试卷包原有的 JSON 文件和目录结构。
-3. 打开 **_winui\ETS-Assistant-WinUI.exe**，并保留 **_winui**、**ETS-Assistant-Engine.exe** 和 **_internal_engine**。程序使用 Windows App Runtime 1.8；如果换到没有该运行时的电脑，请先安装[官方运行时](https://learn.microsoft.com/windows/apps/windows-app-sdk/downloads)。
-4. 程序会自动查找 ETS。首次初始化会创建桌面快捷方式和当前 Windows 用户的登录启动项，启动后台监听器，并打开 ETS。
-5. 后续可从桌面快捷方式或助手界面的“打开 ETS”启动。后台监听器检测到 ETS 启动时，会自动打开助手窗口并启动监听、转换和答题进程；ETS 关闭后监听和转换进程会结束，助手继续等待 ETS 下次打开。
+把整个 `ETS` 文件夹复制到新电脑即可，不需要安装 Python、.NET 或 Windows App Runtime：
 
-桌面的“ETS 自动监听助手”和“ETS 自动监听助手（快速启动）”均打开新版 WinUI 界面，“ETS”快捷方式打开 E听说。登录时只启动后台引擎。重新生成或运行安装脚本时，会停止旧版助手并移除 `ETS-Assistant-Fast.exe`、`ETS-Assistant.exe` 和 `_internal_fast`，立即由新引擎接管；新版不再包含旧界面回退入口。
+- `_winui` 已包含 .NET 8 和 Windows App SDK 自包含运行时。
+- `ETS-Assistant-Engine.exe` 和 `_internal_engine` 已包含 Python 运行时及依赖。
+- Python 源码只用于重新构建，运行程序时不需要 Python。
 
-如果找不到 ETS，程序会显示错误并停止初始化。它会检查 Windows 安装记录和常见安装目录。若 ETS 安装在未登记的自定义目录，请先使用常见安装方式重新安装。
+仍然需要：
 
-## 界面设置
+1. Windows 10 1809+ 或 Windows 11，x64。
+2. 已安装 ETS（默认 `C:\Program Files (x86)\ETS`，也可以启动后在首页手动选择目录）。
+3. 当前 Windows 用户对 `%APPDATA%\ETS` 有读写权限。
+4. ETS 支持 `--remote-debugging-port=10086`，自动答题依赖这个本机调试端口。
+5. `_winui` 已随附 VC++ 2015–2022 运行库；如果目标系统有额外的策略限制，仍可能需要安装官方 VC++ 运行库。
 
-- **目标正确率**：0% 到 100%。每题按该概率选试卷包中的正确答案；其余情况从可见错误选项中随机选择。
-- **随机种子**：固定随机结果，方便复现；留空时按 `default` 处理。
-- **跳题间隔**：设置“下一步/跳过”按钮重试的最短间隔，范围 0 到 60 秒。
-- **登录 Windows 时在后台启动监听器**：开启后，Windows 登录时会等待 ETS 启动。
+直接双击：
 
-点“保存设置”后，配置会写入助手程序所在目录的 `ets_answer_config.yaml`。随附版本默认位于 `Codex Sandbox\ETS`。答题 worker 会在启动时读取配置；若 ETS 已经打开，请先关闭再打开 ETS 以应用新设置。
+`_winui\ETS-Assistant-WinUI.exe`
 
-正确率是每题的概率，不保证每 10 题恰好答错固定题数。`1.0` 表示始终选择答案包里的正确答案，`0.0` 表示在至少有一个可见错误选项时选择错误选项。
+首次使用点击“初始化并打开 ETS”。程序会创建桌面快捷方式和当前用户的登录启动项，并启动后台监听器。以后打开 ETS 时会自动启动监听、转换和答题进程。
 
-## 试卷包处理
+## 界面与设置
 
-将完整试卷包目录直接放到 `%APPDATA%\ETS` 下，目录名称以数字开头。ETS 打开时，监听器会启动转换监视；监视开始后新出现的试卷包会被转换为 Markdown，并在系统支持 PDF 组件时同时生成 PDF。文件保存在试卷包的 `converted` 子目录。
+- **运行概览**：ETS 状态、当前试卷、答题进度和答案；在 ETS 中手动切到第 1 题后，可点“手动重置”重新开始答题。
+- **试卷管理**：试卷列表、打开目录、提取答案、分析并复制答案、删除。
+- **答题设置**：正确率、随机种子、跳题间隔、开机启动。
+- **运行记录**：最近的监听、转换和答题日志。
+- **测试工具**：10086 调试端口、JSON 查看、日志导出 ZIP、抓包模式。
+- **偏好设置**：应用外观（跟随系统 / 浅色 / 深色）和语言（中文 / English）。
+- **关于**：版本、发布时间、项目和作者信息。
 
-自动答题通过本机 `127.0.0.1:10086` 调试接口连接 ETS。助手会创建独立的桌面快捷方式，并尝试添加 `--remote-debugging-port=10086` 参数。是否接受该参数由安装的 ETS 版本决定。
+配置和界面偏好保存在 `%APPDATA%\ETS`。桌面快捷方式和登录启动项只影响当前 Windows 用户，不修改 ETS 安装目录中的厂商文件。
 
-脚本不会替你点击 ETS 的最终提交按钮。ETS 显示提交结果后，若检测到可识别的结果页面，程序会询问是否删除对应试卷包目录；选择删除会永久移除该目录及转换文件。
+## 重新构建（开发用）
 
-## 运行记录与排错
+运行不需要 Python；重新打包才需要：
 
-界面会显示最近的运行记录。日志文件位于 `%APPDATA%\ETS`：
+- Python 3.10+（当前使用 3.14）
+- `pip install -r requirements-build.txt`（PyInstaller、Pillow、reportlab）
+- .NET 8 SDK
+- 运行 `build_ets_assistant_winui3.ps1`
 
-- `ets_answer_listener.log`：ETS 检测、监听器和进程状态。
-- `ets_auto_answer.log`：答案匹配和页面处理状态。
-- `ets_converter.log`：试卷包转换状态。
+仓库不再随附 `.build-tools` 构建缓存；构建脚本会使用系统 Python/.NET，缺失时按上面的依赖安装。
 
-若 ETS 已打开但自动答题没有连接，请用浏览器打开 `http://127.0.0.1:10086/json/version`。页面无法打开时，先关闭 ETS，再通过助手或桌面快捷方式重新启动。若仍无法访问，当前 ETS 版本可能没有转发调试端口参数。
+## 数据与排错
 
-如果桌面快捷方式或登录启动项需要重新创建，可在助手中点击“初始化并启动”。这些设置只影响当前 Windows 用户，不会修改 ETS 安装目录里的厂商文件。
+试卷包和日志位于 `%APPDATA%\ETS`。主要日志：
 
-## 功能范围
+- `ets_answer_listener.log`
+- `ets_auto_answer.log`
+- `ets_converter.log`
+- `ets_winui_startup.log`
+- `ets_packet_capture.log`（启用抓包模式后生成）
 
-- 自动操作针对 ETS 页面中的选择题。
-- 答案来自本机试卷包，试卷 ID 需要与 ETS 当前内容匹配。
-- 自动答题依赖 ETS 页面提供本机调试接口。
-- 程序、配置和使用说明保存在 `Codex Sandbox\ETS`；试卷包和运行日志仍保存在 `%APPDATA%\ETS`。程序目录中包含 WinUI 3 和 Python 后台运行组件，日常使用不需要另装 Python 或 YAML 库。界面支持 Windows 10 1809 及以上版本和 Windows 11；WinUI 3 窗口和控件由 Windows App SDK 提供。
+ETS 已打开但助手显示未连接时，先确认 `127.0.0.1:10086` 可访问；不可访问时关闭 ETS，通过助手重新打开。程序不会点击最终提交按钮，是否删除已提交试卷包由用户确认。

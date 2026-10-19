@@ -31,6 +31,8 @@ from ets_activity import record_answer
 DEFAULT_ROOT = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "ETS"
 DEFAULT_DEVTOOLS = "http://127.0.0.1:10086/json/list"
 DEFAULT_CONFIG = Path(__file__).resolve().parent / "ets_answer_config.yaml"
+RESET_REQUEST_FILE = "reset_request.json"
+RESET_ACK_FILE = "reset_ack.json"
 APP_TITLE = "E听说"
 NEXT_CONFIRM_SECONDS = 1.2
 MIN_SKIP_CONFIRM_SECONDS = 0.15
@@ -214,6 +216,58 @@ def pack_id_from_url(page_url: str) -> str | None:
     fragment = urlparse(page_url).fragment
     route_query = urlsplit(fragment).query
     return parse_qs(route_query).get("set_id", [None])[0]
+
+
+def manual_reset_request(root: Path) -> tuple[float, str] | None:
+    """Read the reset request written by the WinUI app, if one is waiting.
+
+    The request lives outside the answer config so a reset never depends on
+    restarting the worker (which would lose its in-memory progress anyway).
+    """
+    path = root / "_assistant" / RESET_REQUEST_FILE
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    requested_at = data.get("requested_at")
+    if isinstance(requested_at, bool) or not isinstance(requested_at, (int, float)):
+        return None
+    return float(requested_at), str(data.get("pack_id") or "")
+
+
+def consume_manual_reset(root: Path, requested_at: float) -> None:
+    """Delete the handled request so a restarted worker cannot replay it."""
+    path = root / "_assistant" / RESET_REQUEST_FILE
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if float(data.get("requested_at", -1)) == requested_at:
+            path.unlink(missing_ok=True)
+    except (OSError, ValueError, TypeError, AttributeError):
+        pass
+
+
+def acknowledge_manual_reset(root: Path, requested_at: float, pack_id: str, status: str) -> None:
+    """Tell the WinUI app that the reset was applied (or why it was not)."""
+    path = root / "_assistant" / RESET_ACK_FILE
+    payload = {
+        "schema_version": 1,
+        "requested_at": int(round(requested_at)),
+        "applied_at": int(time.time()),
+        "pack_id": pack_id,
+        "status": status,
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        os.replace(temporary, path)
+    except OSError:
+        pass
 
 
 def load_answers(pack_dir: Path) -> dict[str, str]:
@@ -585,6 +639,7 @@ def watch(root: Path, endpoint: str, config_path: Path | None = None) -> int:
     pending_cleanup: dict[tuple[str, str], Path] = {}
     cleanup_prompted: set[tuple[str, str]] = set()
     analysis_sessions: dict[tuple[str, str], str] = {}
+    last_reset_at = 0.0
     try:
         accuracy, random_seed, skip_interval = load_answer_config(
             config_path or (root / DEFAULT_CONFIG.name)
@@ -600,6 +655,9 @@ def watch(root: Path, endpoint: str, config_path: Path | None = None) -> int:
     )
     while True:
         try:
+            reset_request = manual_reset_request(root)
+            if reset_request is not None and reset_request[0] <= last_reset_at:
+                reset_request = None
             for target in devtools_targets(endpoint):
                 pack_id = pack_id_from_url(str(target.get("url", "")))
                 if not pack_id:
@@ -625,6 +683,25 @@ def watch(root: Path, endpoint: str, config_path: Path | None = None) -> int:
                 fragment = urlsplit(urlparse(str(target.get("url", ""))).fragment)
                 params = parse_qs(fragment.query)
                 session_key = (pack_id, params.get("homework_id", [""])[0])
+                if reset_request is not None and (not reset_request[1] or reset_request[1] == pack_id):
+                    # The user switched ETS back to question 1 and asked for a
+                    # fresh pass: forget every cached decision for this pack and
+                    # let the normal loop answer the visible questions again.
+                    handled.discard(session_key)
+                    processed.pop(session_key, None)
+                    analysis_sessions.pop(session_key, None)
+                    cleanup_prompted.discard(session_key)
+                    for pending_key in [key for key in pending_cleanup if key[0] == pack_id]:
+                        pending_cleanup.pop(pending_key, None)
+                    last_reset_at = reset_request[0]
+                    consume_manual_reset(root, reset_request[0])
+                    acknowledge_manual_reset(root, reset_request[0], pack_id, "applied")
+                    print(
+                        f"Manual reset applied for pack {pack_id}; "
+                        "answering again from the visible question.",
+                        flush=True,
+                    )
+                    reset_request = None
                 pending_matches = [key for key in pending_cleanup if key[0] == pack_id]
                 pending_key = (
                     session_key if session_key in pending_cleanup

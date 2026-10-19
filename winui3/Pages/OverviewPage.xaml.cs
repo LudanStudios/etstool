@@ -20,6 +20,7 @@ public sealed partial class OverviewPage : Page
 
     private readonly AssistantService _service = AssistantService.Current;
     private readonly CurrentPaperService _paperService = new(AssistantService.Current.DataRoot);
+    private readonly AnswerResetService _resetService = new(AssistantService.Current.DataRoot);
     private DispatcherQueueTimer? _timer;
     private CurrentPaperSnapshot? _currentPaper;
     private string _paperSignature = "\0";
@@ -182,9 +183,11 @@ public sealed partial class OverviewPage : Page
             PaperMetaText.Text = "启动 ETS 并打开试卷后，这里会显示答题进度和本地答案。";
             PaperProgressPanel.Visibility = Visibility.Collapsed;
             AnswerChips.ItemsSource = null;
+            ManualResetButton.IsEnabled = false;
             return;
         }
 
+        ManualResetButton.IsEnabled = true;
         PaperStateText.Text = paper.Complete ? "已完成" : "已检测";
         PaperStateBadge.Background = paper.Complete ? CompleteBadgeBrush : ActiveBadgeBrush;
         PaperTitleText.Text = paper.Title;
@@ -232,6 +235,38 @@ public sealed partial class OverviewPage : Page
             GeneralInfoBar.IsOpen = true;
         }
         catch (Exception ex) { await ShowErrorAsync($"无法复制答案：{ex.Message}"); }
+    }
+
+    private async void ManualReset_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentPaper is null) return;
+        var confirm = new ContentDialog
+        {
+            Title = "重新开始答题？",
+            Content = "请先在 ETS 中手动切换到第 1 题，然后点击“开始重置”。\n\n" +
+                      "助手会清空本轮的答题进度（历史记录仍会保留），并从当前题目重新作答。",
+            PrimaryButtonText = "开始重置",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot
+        };
+        if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+
+        ManualResetButton.IsEnabled = false;
+        try
+        {
+            AnswerResetResult result = await _resetService.RequestAsync(_currentPaper.PackId);
+            bool applied = result.Status == AnswerResetStatus.Applied;
+            GeneralInfoBar.Severity = applied ? InfoBarSeverity.Success : InfoBarSeverity.Warning;
+            GeneralInfoBar.Title = applied ? "已重置答题进度" : "重置未完成";
+            GeneralInfoBar.Message = result.Message;
+            GeneralInfoBar.IsOpen = true;
+            if (applied) await RefreshPaperAsync();
+        }
+        finally
+        {
+            ManualResetButton.IsEnabled = _currentPaper is not null;
+        }
     }
 
     private sealed record AnswerChip(string NumberText, string Answer, string Tooltip, Brush Background);

@@ -106,13 +106,23 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        <Button x:Name="CopyAnswersButton" Click="CopyAnswers_Click"
-                                HorizontalAlignment="Left" Margin="0,4,0,0">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <SymbolIcon Symbol="Copy" />
-                                <TextBlock Text="一键复制所有答案" />
-                            </StackPanel>
-                        </Button>
+                        <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,4,0,0">
+                            <Button x:Name="CopyAnswersButton" Click="CopyAnswers_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="Copy" />
+                                    <TextBlock Text="一键复制所有答案" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="ManualResetButton" Click="ManualReset_Click" IsEnabled="False"
+                                    ToolTipService.ToolTip="先在 ETS 中手动切到第 1 题，再点击手动重置">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="Refresh" />
+                                    <TextBlock Text="手动重置" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                        <TextBlock Text="手动重置：在 ETS 中切到第 1 题后点击，助手会清空本轮进度并从当前题目重新作答。"
+                                   FontSize="12" Opacity="0.6" TextWrapping="Wrap" />
                     </StackPanel>
                 </StackPanel>
             </Border>
