@@ -19,6 +19,7 @@ public sealed partial class ToolsPage : Page
     private readonly PacketCaptureService _capture = PacketCaptureService.Current;
     private readonly DeepSeekService _deepSeek = new(AssistantService.Current.AppRoot);
     private readonly SpeakingAnswerService _speaking = new(AssistantService.Current.DataRoot);
+    private readonly AliyunTtsService _aliyunTts = new(AssistantService.Current.DataRoot);
     private bool _updatingSpeakingMode;
     private string? _speakingPackId;
     private IReadOnlyList<SpeakingPaper> _speakingPapers = Array.Empty<SpeakingPaper>();
@@ -34,6 +35,7 @@ public sealed partial class ToolsPage : Page
         {
             RefreshLogSummary();
             RefreshDeepSeekStatus();
+            RefreshAliyunTtsStatus();
             UpdateSpeakingModeUi();
             UpdateCaptureUi();
             EnvironmentText.Text = BuildEnvironmentText();
@@ -144,6 +146,65 @@ public sealed partial class ToolsPage : Page
         string attachment = _deepSeek.FindAttachment() ?? "未找到 llm_stt.md";
         string mode = AppPreferencesService.Current.SpeakingMode == "flexible" ? "灵活模式" : "标答模式";
         DeepSeekStatusText.Text = $"{mode} · {keyState} · 模型 {DeepSeekService.Model} · 附件：{attachment}";
+    }
+
+    private void RefreshAliyunTtsStatus()
+    {
+        string status = string.Join(Environment.NewLine,
+            AliyunTtsCredentialStore.ConfigurationStatus,
+            AliyunTtsCredentialStore.CredentialSourceStatus);
+        AliyunTtsCredentialStatusText.Text = status;
+        AliyunTtsStatusText.Text = status;
+    }
+
+    private void SaveAliyunTtsCredentials_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            AliyunTtsCredentialSaveResult saveResult = AliyunTtsCredentialStore.Save(new AliyunTtsCredentials(
+                AliyunAccessKeyIdBox.Text.Trim(),
+                AliyunAccessKeySecretBox.Password.Trim(),
+                AliyunAppKeyBox.Text.Trim()));
+            if (saveResult.Persisted)
+                AliyunAccessKeySecretBox.Password = string.Empty;
+            RefreshAliyunTtsStatus();
+            string title = saveResult.BothPrimaryCopiesSaved
+                ? "阿里云凭证已双份加密保存"
+                : saveResult.Persisted ? "阿里云凭证双份保存未完成" : "凭据保存失败";
+            string message = saveResult.BothPrimaryCopiesSaved
+                ? "已同时保存到程序目录和 Windows 凭据管理器。助手会自动获取并续期 NLS Token。"
+                : saveResult.ProgramDirectorySaved
+                    ? "程序目录副本已保存，但 Windows 凭据管理器副本写入失败。请检查状态提示。"
+                    : saveResult.CredentialManagerSaved
+                        ? "Windows 凭据管理器副本已保存，但程序目录副本写入失败。请检查程序目录权限。"
+                        : saveResult.UserDataFallbackSaved
+                            ? "程序目录和 Windows 凭据管理器均未写入；已退回用户数据目录的 DPAPI 加密文件。"
+                            : "两处凭据副本和用户数据目录均无法持久保存，凭据仅在本次运行期间有效。";
+            InfoBarPresenter.Show(AliyunTtsCredentialInfoBar, title, message,
+                saveResult.BothPrimaryCopiesSaved ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
+        }
+        catch (Exception ex)
+        {
+            InfoBarPresenter.Show(AliyunTtsCredentialInfoBar, "保存失败", ex.Message, InfoBarSeverity.Error);
+        }
+    }
+
+    private void ClearAliyunTtsCredentials_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            AliyunTtsCredentialStore.Clear();
+            AliyunAccessKeyIdBox.Text = string.Empty;
+            AliyunAccessKeySecretBox.Password = string.Empty;
+            AliyunAppKeyBox.Text = string.Empty;
+            RefreshAliyunTtsStatus();
+            InfoBarPresenter.Show(AliyunTtsCredentialInfoBar, "阿里云凭证已清除",
+                "本机保存的阿里云 TTS 凭证已删除。", InfoBarSeverity.Informational);
+        }
+        catch (Exception ex)
+        {
+            InfoBarPresenter.Show(AliyunTtsCredentialInfoBar, "清除失败", ex.Message, InfoBarSeverity.Error);
+        }
     }
 
     private void UpdateSpeakingModeUi()
@@ -301,6 +362,51 @@ public sealed partial class ToolsPage : Page
         ShowMessage("结果已复制", "模型返回的文本已复制到剪贴板。", InfoBarSeverity.Success);
     }
 
+    private async void AliyunTts_Click(object sender, RoutedEventArgs e)
+    {
+        string text = SpeakingResultBox.Text.Trim();
+        if (text.Length == 0)
+        {
+            ShowMessage("没有可合成的回答", "先提取标答或调用 DeepSeek 生成一条回答。", InfoBarSeverity.Warning);
+            return;
+        }
+
+        AliyunTtsButton.IsEnabled = false;
+        AliyunTtsProgress.IsActive = true;
+        try
+        {
+            AliyunTtsResult result = await _aliyunTts.SynthesizeToWavAsync(text);
+            if (!result.Success)
+            {
+                ShowMessage("阿里云 TTS 失败", result.Error, InfoBarSeverity.Error);
+                return;
+            }
+
+            AliyunTtsStatusText.Text = $"WAV 已保存：{result.FilePath}";
+            Process.Start(new ProcessStartInfo(result.FilePath) { UseShellExecute = true });
+            ShowMessage("阿里云 TTS 已完成",
+                $"Betty 已合成并打开 WAV 文件（{result.ChunkCount} 段）。", InfoBarSeverity.Success);
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("阿里云 TTS 失败", ex.Message, InfoBarSeverity.Error);
+        }
+        finally
+        {
+            AliyunTtsProgress.IsActive = false;
+            AliyunTtsButton.IsEnabled = true;
+            RefreshAliyunTtsStatusIfNoOutput();
+        }
+    }
+
+    private void RefreshAliyunTtsStatusIfNoOutput()
+    {
+        if (string.IsNullOrWhiteSpace(AliyunTtsStatusText.Text))
+            AliyunTtsStatusText.Text = string.Join(Environment.NewLine,
+                AliyunTtsCredentialStore.ConfigurationStatus,
+                AliyunTtsCredentialStore.CredentialSourceStatus);
+    }
+
     private void CopyPort_Click(object sender, RoutedEventArgs e)
     {
         CopyText("http://127.0.0.1:10086/json/list");
@@ -404,6 +510,8 @@ public sealed partial class ToolsPage : Page
             $"后台引擎：{_service.EnginePath}",
             $"调试端口：10086（{(_portAvailable ? "可用" : "未连接")}）",
             $"ETS 进程：{(_service.IsEtsRunning ? "运行中" : "未运行")}",
+            AliyunTtsCredentialStore.ConfigurationStatus,
+            AliyunTtsCredentialStore.CredentialSourceStatus,
             $"系统：{Environment.OSVersion.VersionString}"
         };
         return string.Join(Environment.NewLine, lines);
@@ -432,9 +540,6 @@ public sealed partial class ToolsPage : Page
 
     private void ShowMessage(string title, string message, InfoBarSeverity severity)
     {
-        MessageBar.Title = title;
-        MessageBar.Message = message;
-        MessageBar.Severity = severity;
-        MessageBar.IsOpen = true;
+        InfoBarPresenter.Show(MessageBar, title, message, severity);
     }
 }

@@ -85,6 +85,20 @@ if (-not (Test-Path -LiteralPath $stageUiExe -PathType Leaf)) { throw 'WinUI pub
 $stageUiPri = Join-Path $stageUi 'ETS-Assistant-WinUI.pri'
 if (-not (Test-Path -LiteralPath $stageUiPri -PathType Leaf)) { throw 'WinUI 3 publish did not include its XAML resource index.' }
 
+# Keep the VC++ runtime DLLs beside the unpackaged WinUI app in clean releases.
+$vcRuntimeFiles = @(
+    'concrt140.dll', 'msvcp140.dll', 'msvcp140_1.dll', 'msvcp140_2.dll',
+    'msvcp140_atomic_wait.dll', 'msvcp140_codecvt_ids.dll',
+    'vcruntime140.dll', 'vcruntime140_1.dll', 'vcruntime140_threads.dll'
+)
+foreach ($runtimeFile in $vcRuntimeFiles) {
+    $runtimeSource = Join-Path $targetUi $runtimeFile
+    if (-not (Test-Path -LiteralPath $runtimeSource -PathType Leaf)) {
+        throw \"Required VC++ runtime file not found in the current release: $runtimeSource\"
+    }
+    Copy-Item -LiteralPath $runtimeSource -Destination $stageUi -Force
+}
+
 $ownedExecutables = @($targetEngine, (Join-Path $targetUi 'ETS-Assistant-WinUI.exe'),
     (Join-Path $root 'ETS-Assistant-Fast.exe'), (Join-Path $root 'ETS-Assistant.exe'))
 $running = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $ownedExecutables -contains $_.ExecutablePath })

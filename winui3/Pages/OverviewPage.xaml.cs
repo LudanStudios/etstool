@@ -59,10 +59,7 @@ public sealed partial class OverviewPage : Page
         EtsErrorBar.IsOpen = !found;
         if (!string.IsNullOrWhiteSpace(_service.LastError))
         {
-            GeneralInfoBar.Severity = InfoBarSeverity.Warning;
-            GeneralInfoBar.Title = "需要注意";
-            GeneralInfoBar.Message = _service.LastError;
-            GeneralInfoBar.IsOpen = true;
+            InfoBarPresenter.Show(GeneralInfoBar, "需要注意", _service.LastError, InfoBarSeverity.Warning);
         }
         else if (found) GeneralInfoBar.IsOpen = false;
     }
@@ -116,12 +113,12 @@ public sealed partial class OverviewPage : Page
 
             string warnings = _service.ApplyEtsDirectory(validation.DirectoryPath);
             RefreshStatus();
-            GeneralInfoBar.Severity = warnings.Length == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning;
-            GeneralInfoBar.Title = warnings.Length == 0 ? "已应用新的 ETS 目录" : "目录已保存，但有需要注意的问题";
-            GeneralInfoBar.Message = warnings.Length == 0
+            string title = warnings.Length == 0 ? "已应用新的 ETS 目录" : "目录已保存，但有需要注意的问题";
+            string message = warnings.Length == 0
                 ? $"后续启动和监听将使用 {validation.ExecutablePath}。"
                 : warnings;
-            GeneralInfoBar.IsOpen = true;
+            InfoBarPresenter.Show(GeneralInfoBar, title, message,
+                warnings.Length == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
         }
         catch (Exception ex) { await ShowErrorAsync(ex.Message); }
     }
@@ -133,10 +130,10 @@ public sealed partial class OverviewPage : Page
             _service.RefreshEts();
             string warnings = _service.InitializeAndOpen(_service.LoadSettings());
             RefreshStatus();
-            GeneralInfoBar.Severity = warnings.Length == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning;
-            GeneralInfoBar.Title = warnings.Length == 0 ? "已完成初始化" : "ETS 已打开，但有需要注意的问题";
-            GeneralInfoBar.Message = warnings.Length == 0 ? "监听器已启动，ETS 正在打开。" : warnings;
-            GeneralInfoBar.IsOpen = true;
+            string title = warnings.Length == 0 ? "已完成初始化" : "ETS 已打开，但有需要注意的问题";
+            string message = warnings.Length == 0 ? "监听器已启动，ETS 正在打开。" : warnings;
+            InfoBarPresenter.Show(GeneralInfoBar, title, message,
+                warnings.Length == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
         }
         catch (Exception ex) { await ShowErrorAsync(ex.Message); }
     }
@@ -148,10 +145,8 @@ public sealed partial class OverviewPage : Page
             _service.RefreshEts();
             _service.EnsureListener();
             _service.OpenEts();
-            GeneralInfoBar.Severity = InfoBarSeverity.Success;
-            GeneralInfoBar.Title = "ETS 已启动";
-            GeneralInfoBar.Message = "后台监听器正在等待 ETS 页面加载。";
-            GeneralInfoBar.IsOpen = true;
+            InfoBarPresenter.Show(GeneralInfoBar, "ETS 已启动", "后台监听器正在等待 ETS 页面加载。",
+                InfoBarSeverity.Success);
             RefreshStatus();
         }
         catch (Exception ex) { await ShowErrorAsync(ex.Message); }
@@ -229,10 +224,8 @@ public sealed partial class OverviewPage : Page
             package.SetText(text);
             Clipboard.SetContent(package);
             Clipboard.Flush();
-            GeneralInfoBar.Severity = InfoBarSeverity.Success;
-            GeneralInfoBar.Title = "答案已复制";
-            GeneralInfoBar.Message = $"已复制 {_currentPaper.Answers.Count} 道题的答案，可直接粘贴使用。";
-            GeneralInfoBar.IsOpen = true;
+            InfoBarPresenter.Show(GeneralInfoBar, "答案已复制",
+                $"已复制 {_currentPaper.Answers.Count} 道题的答案，可直接粘贴使用。", InfoBarSeverity.Success);
         }
         catch (Exception ex) { await ShowErrorAsync($"无法复制答案：{ex.Message}"); }
     }
@@ -257,10 +250,8 @@ public sealed partial class OverviewPage : Page
         {
             AnswerResetResult result = await _resetService.RequestAsync(_currentPaper.PackId);
             bool applied = result.Status == AnswerResetStatus.Applied;
-            GeneralInfoBar.Severity = applied ? InfoBarSeverity.Success : InfoBarSeverity.Warning;
-            GeneralInfoBar.Title = applied ? "已重置答题进度" : "重置未完成";
-            GeneralInfoBar.Message = result.Message;
-            GeneralInfoBar.IsOpen = true;
+            InfoBarPresenter.Show(GeneralInfoBar, applied ? "已重置答题进度" : "重置未完成", result.Message,
+                applied ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
             if (applied) await RefreshPaperAsync();
         }
         finally

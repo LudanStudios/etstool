@@ -1,4 +1,4 @@
-# ETS Tool by @azursmelt（beta 1.0.1）
+# ETS Tool by @azursmelt（beta 1.1.0）
 
 WinUI 3 版 ETS 助手，包含试卷监听、自动答题、试卷管理、答案提取、抓包调试和中英文界面。
 
@@ -54,6 +54,14 @@ WinUI 3 版 ETS 助手，包含试卷监听、自动答题、试卷管理、答�
 “测试工具”页的“DeepSeek 口语测试”卡片可以输入题干并发送：每次请求都会把题干和 `llm_stt.md` 附件一起发给 `deepseek-flash`，返回的正文显示在下方，可直接复制。附件优先从程序目录、`_winui\Assets` 读取，找不到时回退到 `%USERPROFILE%\Downloads\llm_stt.md`。
 
 点击“读取所有试卷口语题”会像试卷列表一样扫描本机所有试卷包，列出其中有朗读、看图说话或问答类题目的试卷；先在试卷下拉框选一份，再选题。标答模式直接显示推荐答案，灵活模式则把题干送到 DeepSeek。
+
+## 阿里云 TTS 测试
+
+在“测试工具”开发者页的阿里云 TTS 配置区填写 RAM AccessKey ID、AccessKey Secret 和智能语音交互项目 AppKey。助手会分别使用当前 Windows 用户的 DPAPI 加密，并保存两份：主程序 EXE 旁边的 `aliyun_tts_credentials.bin` 和 Windows 凭据管理器。每次启动先读 Windows 凭据管理器，再读程序目录；开发者页和导出的诊断信息会显示本次实际读取来源。如果其中一处不可写，状态会提示哪份副本未完成；两处都不可用时再回退到 `%APPDATA%`/`%LOCALAPPDATA%` 下的加密文件。旧位置的凭据会在读取时尝试迁移并补齐两份。只要保留原程序目录或当前 Windows 用户配置，重启后无需重新输入。DPAPI 文件绑定当前 Windows 用户，换用户或电脑后无法解密。建议只使用权限受限的 RAM 用户凭证。
+
+AccessKey ID/Secret 是用于认证的长期凭证；阿里云不提供长期有效的 NLS AccessToken。助手通过阿里云 SDK 调用 `CreateToken`，在进程内缓存 Token，并依据返回的 `ExpireTime` 在到期前重新获取。Token 和 AccessKey Secret 不写日志。
+
+“测试工具”页的阿里云 TTS 按钮会把当前口语回答使用标准 TTS（Betty 美式英文女声、WAV 16 kHz）合成并打开播放。超过 300 个字符的回答会按句子/空格边界分段合成，再拼接为一个 WAV；文件保存在 `%APPDATA%\ETS\tts-test`。长文本 TTS 和 CosyVoice 流式合成不在此测试流程中。
 
 ## 重新构建（开发用）
 

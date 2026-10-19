@@ -1,6 +1,7 @@
 using System.Text;
 using System.Threading;
 using Microsoft.UI.Xaml;
+using ETSAssistant.WinUI3.Services;
 
 namespace ETSAssistant.WinUI3;
 
@@ -24,6 +25,7 @@ public partial class App : Application
         {
             _instanceMutex = new Mutex(true, "Local\\ETSAssistantWinUI3-v1", out bool createdNew);
             if (!createdNew) { Environment.Exit(0); return; }
+            AliyunTtsCredentialStore.Initialize();
             _window = new MainWindow();
             _window.Activate();
         }

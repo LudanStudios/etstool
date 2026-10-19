@@ -233,9 +233,6 @@ public sealed partial class PapersPage : Page
 
     private void ShowMessage(string title, string message, InfoBarSeverity severity)
     {
-        MessageBar.Title = title;
-        MessageBar.Message = message;
-        MessageBar.Severity = severity;
-        MessageBar.IsOpen = true;
+        InfoBarPresenter.Show(MessageBar, title, message, severity);
     }
 }

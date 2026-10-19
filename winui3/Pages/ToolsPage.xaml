@@ -145,6 +145,43 @@
                         </StackPanel>
                         <TextBox x:Name="SpeakingResultBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
                                  MinHeight="150" PlaceholderText="模型返回的文本会显示在这里。" />
+                        <TextBlock Text="阿里云标准 TTS · Betty 美式英文女声 · WAV 16 kHz。超过 300 字符会自动分段合成并拼接。"
+                                   FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
+                        <TextBlock Text="阿里云 TTS 凭证" FontSize="14" FontWeight="SemiBold" />
+                        <TextBlock Text="在此输入 RAM AccessKey ID、AccessKey Secret 和智能语音交互项目 AppKey。凭证会使用当前 Windows 用户的 DPAPI 加密，同时保存在程序目录和 Windows 凭据管理器；两处不可用时会尝试用户数据目录。保存后无需每次重新输入，NLS Token 会自动获取和续期。"
+                                   FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
+                        <TextBox x:Name="AliyunAccessKeyIdBox" PlaceholderText="AccessKey ID" />
+                        <PasswordBox x:Name="AliyunAccessKeySecretBox" PlaceholderText="AccessKey Secret（不会明文保存）"
+                                     PasswordRevealMode="Peek" />
+                        <TextBox x:Name="AliyunAppKeyBox" PlaceholderText="智能语音交互项目 AppKey" />
+                        <TextBlock x:Name="AliyunTtsCredentialStatusText" FontSize="12" Opacity="0.7" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Click="SaveAliyunTtsCredentials_Click" Style="{StaticResource AccentButtonStyle}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="Save" />
+                                    <TextBlock Text="保存并启用阿里云凭证" />
+                                </StackPanel>
+                            </Button>
+                            <Button Click="ClearAliyunTtsCredentials_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="Delete" />
+                                    <TextBlock Text="清除阿里云凭证" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                        <InfoBar x:Name="AliyunTtsCredentialInfoBar" IsOpen="False" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button x:Name="AliyunTtsButton" Click="AliyunTts_Click"
+                                    Style="{StaticResource AccentButtonStyle}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="Play" />
+                                    <TextBlock Text="阿里云 TTS 生成并播放" />
+                                </StackPanel>
+                            </Button>
+                            <ProgressRing x:Name="AliyunTtsProgress" Width="20" Height="20" IsActive="False" />
+                        </StackPanel>
+                        <TextBlock x:Name="AliyunTtsStatusText" FontSize="12" Opacity="0.72"
+                                   TextWrapping="Wrap" />
                     </StackPanel>
                 </Border>
 

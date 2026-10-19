@@ -46,10 +46,8 @@ public sealed partial class SettingsPage : Page
         string key = ApiKeyBox.Password.Trim();
         if (key.Length == 0)
         {
-            ApiKeyInfoBar.Severity = InfoBarSeverity.Warning;
-            ApiKeyInfoBar.Title = "尚未填写 API Key";
-            ApiKeyInfoBar.Message = "请先粘贴 DeepSeek API Key，再点击保存。";
-            ApiKeyInfoBar.IsOpen = true;
+            InfoBarPresenter.Show(ApiKeyInfoBar, "尚未填写 API Key",
+                "请先粘贴 DeepSeek API Key，再点击保存。", InfoBarSeverity.Warning);
             return;
         }
 
@@ -58,17 +56,12 @@ public sealed partial class SettingsPage : Page
             ApiKeyStore.Save(key);
             ApiKeyBox.Password = string.Empty;
             UpdateApiKeyStatus();
-            ApiKeyInfoBar.Severity = InfoBarSeverity.Success;
-            ApiKeyInfoBar.Title = "密钥已保存";
-            ApiKeyInfoBar.Message = "已使用 Windows DPAPI 加密保存到本机，测试工具页可以直接测试口语题。";
-            ApiKeyInfoBar.IsOpen = true;
+            InfoBarPresenter.Show(ApiKeyInfoBar, "密钥已保存",
+                "已使用 Windows DPAPI 加密保存到本机，测试工具页可以直接测试口语题。", InfoBarSeverity.Success);
         }
         catch (Exception ex)
         {
-            ApiKeyInfoBar.Severity = InfoBarSeverity.Error;
-            ApiKeyInfoBar.Title = "保存失败";
-            ApiKeyInfoBar.Message = ex.Message;
-            ApiKeyInfoBar.IsOpen = true;
+            InfoBarPresenter.Show(ApiKeyInfoBar, "保存失败", ex.Message, InfoBarSeverity.Error);
         }
     }
 
@@ -77,10 +70,8 @@ public sealed partial class SettingsPage : Page
         ApiKeyStore.Clear();
         ApiKeyBox.Password = string.Empty;
         UpdateApiKeyStatus();
-        ApiKeyInfoBar.Severity = InfoBarSeverity.Informational;
-        ApiKeyInfoBar.Title = "密钥已清除";
-        ApiKeyInfoBar.Message = "本机保存的 DeepSeek API Key 已删除。";
-        ApiKeyInfoBar.IsOpen = true;
+        InfoBarPresenter.Show(ApiKeyInfoBar, "密钥已清除", "本机保存的 DeepSeek API Key 已删除。",
+            InfoBarSeverity.Informational);
     }
 
     private void AccuracySlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
@@ -105,17 +96,13 @@ public sealed partial class SettingsPage : Page
             _service.SaveSettings(settings);
             string warning = _service.TryInstallAutostart(settings.StartAtLogin);
             if (settings.StartAtLogin) _service.EnsureListener();
-            SaveInfoBar.Severity = warning.Length == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning;
-            SaveInfoBar.Title = warning.Length == 0 ? "已保存" : "设置已保存，登录启动项未更新";
-            SaveInfoBar.Message = warning.Length == 0 ? "配置和 Windows 登录启动项已更新。" : warning;
-            SaveInfoBar.IsOpen = true;
+            InfoBarPresenter.Show(SaveInfoBar, warning.Length == 0 ? "已保存" : "设置已保存，登录启动项未更新",
+                warning.Length == 0 ? "配置和 Windows 登录启动项已更新。" : warning,
+                warning.Length == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
         }
         catch (Exception ex)
         {
-            SaveInfoBar.Severity = InfoBarSeverity.Error;
-            SaveInfoBar.Title = "保存失败";
-            SaveInfoBar.Message = ex.Message;
-            SaveInfoBar.IsOpen = true;
+            InfoBarPresenter.Show(SaveInfoBar, "保存失败", ex.Message, InfoBarSeverity.Error);
         }
     }
 }
