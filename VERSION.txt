@@ -1,11 +1,10 @@
-ETS Tool beta 1.5.0
-Build: 2026-10-22 00:34
+ETS Tool beta 1.5.1
+Build: 2026-10-22 00:38
 Root: C:\Users\CARLSON\Documents\Codex Sandbox\ETS
 Runtime: C:\Users\CARLSON\Documents\Codex Sandbox\ETS\_winui\ETS-Assistant-WinUI.exe
 Engine: C:\Users\CARLSON\Documents\Codex Sandbox\ETS\ETS-Assistant-Engine.exe
 
 最近更新：
-- 程序目录附带 VB-CABLE 安装包 tools\VBCABLE\VBCABLE_Setup_x64.exe
-- 检测 CABLE Input / CABLE Output 两端设备
-- 未安装时启动提醒；测试工具新增“安装/配置虚拟声卡”
-- 自动口语启动前检查虚拟声卡，缺失时提示先安装/启用
+- CablePlayer 改为 .NET 8 self-contained，新电脑不再需要安装 .NET 8
+- 虚拟声卡安装包继续随程序附带
+- 一键自动口语仅剩 Python 3.10+ 一个外部依赖
