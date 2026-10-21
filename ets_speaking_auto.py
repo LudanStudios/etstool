@@ -65,6 +65,7 @@ def page_state(client: CDPClient) -> dict:
         "JSON.stringify({"
         "text:document.body.innerText,"
         "stop:!!document.querySelector('button.btn-stopRecord'),"
+        "play:!!document.querySelector('button.btn-play'),"
         "next:[...document.querySelectorAll('button')].some(b=>b.offsetParent!==null&&b.innerText.trim()==='下一步'&&!b.disabled)"
         "})"
     )
@@ -75,6 +76,12 @@ def click_next(client: CDPClient) -> bool:
     return client.evaluate(
         "(()=>{const b=[...document.querySelectorAll('button')].find(e=>e.offsetParent!==null&&e.innerText.trim()==='下一步'&&!e.disabled);"
         "if(!b)return false;b.click();return true;})()"
+    ) is True
+
+
+def click_play(client: CDPClient) -> bool:
+    return client.evaluate(
+        "(()=>{const b=document.querySelector('button.btn-play');if(!b)return false;b.click();return true;})()"
     ) is True
 
 
@@ -167,6 +174,9 @@ def main(argv: list[str] | None = None) -> int:
             if state["next"]:
                 click_next(client)
                 time.sleep(1.6)
+            elif state["play"]:
+                click_play(client)
+                time.sleep(2.0)
             else:
                 time.sleep(0.5)
     finally:
