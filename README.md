@@ -1,4 +1,4 @@
-# ETS Tool by @azursmelt（beta 1.4.1）
+# ETS Tool by @azursmelt（beta 1.4.2）
 
 WinUI 3 版 ETS 助手，包含试卷监听、自动答题、试卷管理、答案提取、抓包调试和中英文界面。
 
@@ -114,6 +114,7 @@ ETS 已打开但助手显示未连接时，先确认 `127.0.0.1:10086` 可访问
 ## 运行位置与权限
 
 监听器需要写入 `%APPDATA%\ETS`（日志和答题历史）。如果程序目录位于 Windows 沙箱或受完整性级别限制的位置（例如 `Codex Sandbox` 工作区），Windows 会以低完整性级别启动程序，监听器写不了日志，答题进程也就不会启动。此时请把运行目录放到普通用户目录（例如 `%LOCALAPPDATA%\Programs\ETS-Assistant`），并让桌面快捷方式和登录启动项指向该目录。
+
 
 
 

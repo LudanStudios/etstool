@@ -70,8 +70,10 @@ public sealed partial class SpeakingPrepWindow : Window
     public static SpeakingPrepWindow? ActiveWindow { get; private set; }
 
     private readonly ObservableCollection<SpeakingPrepItem> _items = new();
+    private readonly SpeakingAutoRunner _autoRunner = new();
     private string _packId = string.Empty;
     private CancellationTokenSource? _cancellation;
+    private bool _sessionReady;
 
     public SpeakingPrepWindow()
     {
@@ -85,9 +87,16 @@ public sealed partial class SpeakingPrepWindow : Window
         ApplyTheme();
         ConfigureWindow();
         AppPreferencesService.Current.ThemeChanged += ApplyTheme;
+        _autoRunner.Output += line => DispatcherQueue.TryEnqueue(() => StatusText.Text = line);
+        _autoRunner.Exited += () => DispatcherQueue.TryEnqueue(() =>
+        {
+            StartAutoButtonText.Text = "开始自动口语";
+            StatusText.Text = "自动口语已结束。";
+        });
         Closed += (_, _) =>
         {
             AppPreferencesService.Current.ThemeChanged -= ApplyTheme;
+            _autoRunner.Stop();
             _cancellation?.Cancel();
             if (ActiveWindow == this) ActiveWindow = null;
         };
@@ -108,6 +117,10 @@ public sealed partial class SpeakingPrepWindow : Window
         ProgressCountText.Text = $"0/{questions.Count}";
         StatusText.Text = "开始生成 TTS 音频…";
         ErrorBar.IsOpen = false;
+        _sessionReady = false;
+        StartAutoButton.Visibility = Visibility.Collapsed;
+        HeaderStatusText.Visibility = Visibility.Visible;
+        StartAutoButtonText.Text = "开始自动口语";
         SetHeaderStatus("生成中", "AccentTextFillColorPrimaryBrush");
         _ = PrepareAsync();
     }
@@ -162,7 +175,10 @@ public sealed partial class SpeakingPrepWindow : Window
             else
             {
                 ErrorBar.IsOpen = false;
-                SetHeaderStatus("已就绪", "SystemFillColorSuccessBrush");
+                _sessionReady = true;
+                HeaderStatusText.Visibility = Visibility.Collapsed;
+                StartAutoButton.Visibility = Visibility.Visible;
+                StartAutoButtonText.Text = "开始自动口语";
             }
         }
         catch (OperationCanceledException)
@@ -184,6 +200,28 @@ public sealed partial class SpeakingPrepWindow : Window
     {
         HeaderStatusText.Text = text;
         HeaderStatusText.Foreground = SpeakingPrepItem.ResolveBrush(brushKey);
+    }
+
+    private void StartAuto_Click(object sender, RoutedEventArgs e)
+    {
+        if (_autoRunner.IsRunning)
+        {
+            _autoRunner.Stop();
+            StartAutoButtonText.Text = "开始自动口语";
+            StatusText.Text = "正在停止自动口语…";
+            return;
+        }
+        if (!_sessionReady) return;
+
+        if (!_autoRunner.Start(AssistantService.Current.AppRoot, out string error))
+        {
+            ErrorBar.Severity = InfoBarSeverity.Error;
+            ErrorBar.Message = error;
+            ErrorBar.IsOpen = true;
+            return;
+        }
+        StartAutoButtonText.Text = "停止自动口语";
+        StatusText.Text = "自动口语运行中…";
     }
 
     private void ApplyTheme()
