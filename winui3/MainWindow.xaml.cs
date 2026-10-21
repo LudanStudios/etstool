@@ -54,7 +54,11 @@ public sealed partial class MainWindow : Window
 
         RootNavigation.SelectedItem = RootNavigation.MenuItems[0];
         PageFrame.Navigate(typeof(Pages.OverviewPage));
-        RootGrid.Loaded += async (_, _) => await ShowCredentialsReminderAsync();
+        RootGrid.Loaded += async (_, _) =>
+        {
+            await ShowCredentialsReminderAsync();
+            await CheckVirtualCableAsync();
+        };
 
         _paperTimer = DispatcherQueue.CreateTimer();
         _paperTimer.Interval = TimeSpan.FromSeconds(3);
@@ -116,6 +120,46 @@ public sealed partial class MainWindow : Window
     }
 
     private bool _credentialReminderShown;
+
+    private async Task CheckVirtualCableAsync()
+    {
+        AppPreferencesService preferences = AppPreferencesService.Current;
+        if (preferences.VirtualCableReminderShown) return;
+
+        var cable = new VirtualCableService();
+        try { await cable.RefreshAsync(); }
+        catch (Exception) { return; }
+        if (cable.IsReady) return;
+
+        string message = !cable.IsAvailable
+            ? "未检测到 VB-CABLE 虚拟声卡。自动口语需要把 TTS 播放到 CABLE Input，再由 ETS 从 CABLE Output 录音。程序目录里已附带安装包，可在“测试工具 → 自动口语测试”里一键安装。"
+            : "检测到 CABLE Input，但没有找到录音端 CABLE Output。请打开录音设备，启用 CABLE Output，并把 ETS 麦克风设为它。";
+        var dialog = new ContentDialog
+        {
+            Title = "虚拟声卡未配置",
+            Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap },
+            PrimaryButtonText = cable.IsAvailable ? "打开录音设备" : "去测试工具",
+            CloseButtonText = "稍后",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = RootGrid.XamlRoot
+        };
+        ContentDialogResult result = await dialog.ShowAsync();
+        preferences.MarkVirtualCableReminderShown();
+        if (result != ContentDialogResult.Primary) return;
+        if (cable.IsAvailable)
+        {
+            VirtualCableSetupService.OpenRecordingDevices();
+            return;
+        }
+        foreach (object item in RootNavigation.MenuItems)
+        {
+            if (item is NavigationViewItem nav && (nav.Tag as string) == "tools")
+            {
+                RootNavigation.SelectedItem = nav;
+                break;
+            }
+        }
+    }
 
     private async Task ShowCredentialsReminderAsync()
     {

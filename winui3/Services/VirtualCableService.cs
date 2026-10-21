@@ -16,7 +16,10 @@ public sealed class VirtualCableService
     private MediaPlayer? _previewPlayer;
 
     public VirtualCableDevice? Current { get; private set; }
+    public VirtualCableDevice? Capture { get; private set; }
     public bool IsAvailable => Current is not null;
+    public bool HasCapture => Capture is not null;
+    public bool IsReady => IsAvailable && HasCapture;
     public event Action? PlaybackEnded;
 
     public async Task<VirtualCableDevice?> RefreshAsync()
@@ -29,6 +32,14 @@ public sealed class VirtualCableService
             .Select(item => item.Device)
             .FirstOrDefault();
         Current = match is null ? null : new VirtualCableDevice(match.Name, match);
+
+        DeviceInformationCollection captureDevices = await DeviceInformation.FindAllAsync(DeviceClass.AudioCapture);
+        DeviceInformation? captureMatch = captureDevices
+            .Where(device => device.Name.Contains("CABLE Output", StringComparison.OrdinalIgnoreCase) ||
+                             device.Name.Contains("VB-Audio", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(device => device.Name.Contains("CABLE Output", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .FirstOrDefault();
+        Capture = captureMatch is null ? null : new VirtualCableDevice(captureMatch.Name, captureMatch);
         return Current;
     }
 

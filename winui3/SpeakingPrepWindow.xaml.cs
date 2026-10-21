@@ -202,7 +202,7 @@ public sealed partial class SpeakingPrepWindow : Window
         HeaderStatusText.Foreground = SpeakingPrepItem.ResolveBrush(brushKey);
     }
 
-    private void StartAuto_Click(object sender, RoutedEventArgs e)
+    private async void StartAuto_Click(object sender, RoutedEventArgs e)
     {
         if (_autoRunner.IsRunning)
         {
@@ -212,6 +212,19 @@ public sealed partial class SpeakingPrepWindow : Window
             return;
         }
         if (!_sessionReady) return;
+
+        var cable = new VirtualCableService();
+        try { await cable.RefreshAsync(); }
+        catch (Exception) { }
+        if (!cable.IsReady)
+        {
+            ErrorBar.Severity = InfoBarSeverity.Warning;
+            ErrorBar.Message = cable.IsAvailable
+                ? "检测到 CABLE Input，但没有启用录音端 CABLE Output。请打开录音设备启用它，并把 ETS 麦克风设为 CABLE Output。"
+                : "未安装 VB-CABLE 虚拟声卡。请到“测试工具 → 自动口语测试”点“安装/配置虚拟声卡”。";
+            ErrorBar.IsOpen = true;
+            return;
+        }
 
         if (!_autoRunner.Start(AssistantService.Current.AppRoot, out string error))
         {

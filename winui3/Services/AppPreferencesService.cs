@@ -20,6 +20,7 @@ public sealed class AppPreferencesService
     public string Language { get; private set; } = "zh-CN";
     public string SpeakingMode { get; private set; } = "standard";
     public bool CredentialsReminderShown { get; private set; }
+    public bool VirtualCableReminderShown { get; private set; }
     public event Action? ThemeChanged;
     public event Action? LanguageChanged;
     public event Action? SpeakingModeChanged;
@@ -58,6 +59,13 @@ public sealed class AppPreferencesService
         Save();
     }
 
+    public void MarkVirtualCableReminderShown()
+    {
+        if (VirtualCableReminderShown) return;
+        VirtualCableReminderShown = true;
+        Save();
+    }
+
     public void ApplyTheme(FrameworkElement root)
     {
         root.RequestedTheme = Theme switch
@@ -86,6 +94,9 @@ public sealed class AppPreferencesService
             if (document.RootElement.TryGetProperty("credentials_reminder_shown", out JsonElement reminder) &&
                 reminder.ValueKind is JsonValueKind.True or JsonValueKind.False)
                 CredentialsReminderShown = reminder.GetBoolean();
+            if (document.RootElement.TryGetProperty("virtual_cable_reminder_shown", out JsonElement cableReminder) &&
+                cableReminder.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                VirtualCableReminderShown = cableReminder.GetBoolean();
         }
         catch (Exception) { }
     }
@@ -100,7 +111,8 @@ public sealed class AppPreferencesService
                 theme = Theme,
                 language = Language,
                 speaking_mode = SpeakingMode,
-                credentials_reminder_shown = CredentialsReminderShown
+                credentials_reminder_shown = CredentialsReminderShown,
+                virtual_cable_reminder_shown = VirtualCableReminderShown
             }));
         }
         catch (Exception) { }

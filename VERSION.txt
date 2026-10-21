@@ -1,10 +1,11 @@
-ETS Tool beta 1.4.3
-Build: 2026-10-22 00:23
+ETS Tool beta 1.5.0
+Build: 2026-10-22 00:34
 Root: C:\Users\CARLSON\Documents\Codex Sandbox\ETS
 Runtime: C:\Users\CARLSON\Documents\Codex Sandbox\ETS\_winui\ETS-Assistant-WinUI.exe
 Engine: C:\Users\CARLSON\Documents\Codex Sandbox\ETS\ETS-Assistant-Engine.exe
 
 最近更新：
-- 自动口语遇到“练习结束”页面会自动点“订正”重新开始
-- 修复已结束页面直接启动时只清理不播放的问题
-- 未实际播放时保留 WAV；运行日志写到 temp\speaking_auto.log
+- 程序目录附带 VB-CABLE 安装包 tools\VBCABLE\VBCABLE_Setup_x64.exe
+- 检测 CABLE Input / CABLE Output 两端设备
+- 未安装时启动提醒；测试工具新增“安装/配置虚拟声卡”
+- 自动口语启动前检查虚拟声卡，缺失时提示先安装/启用

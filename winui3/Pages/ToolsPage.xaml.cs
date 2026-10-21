@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.Http;
@@ -243,9 +244,19 @@ public sealed partial class ToolsPage : Page
         try
         {
             VirtualCableDevice? device = await _cable.RefreshAsync();
-            CableStatusText.Text = device is null
-                ? "虚拟声卡：未检测到 CABLE Input（安装 VB-CABLE 后点“刷新虚拟声卡”）"
-                : $"虚拟声卡：{device.Name}";
+            if (_cable.IsReady)
+            {
+                CableStatusText.Text = $"虚拟声卡：{_cable.Current!.Name} → {_cable.Capture!.Name}";
+            }
+            else if (_cable.IsAvailable)
+            {
+                CableStatusText.Text =
+                    $"虚拟声卡：{_cable.Current!.Name}；未检测到 CABLE Output。打开录音设备，启用 CABLE Output 并把 ETS 麦克风设为它。";
+            }
+            else
+            {
+                CableStatusText.Text = "虚拟声卡：未检测到 CABLE Input。点“安装/配置虚拟声卡”安装 VB-CABLE。";
+            }
         }
         catch (Exception ex)
         {
@@ -256,9 +267,12 @@ public sealed partial class ToolsPage : Page
     private async void RefreshCable_Click(object sender, RoutedEventArgs e)
     {
         await RefreshCableAsync();
-        ShowMessage(_cable.IsAvailable ? "虚拟声卡已连接" : "未检测到虚拟声卡",
-            _cable.Current?.Name ?? "请安装 VB-CABLE，安装后点“刷新虚拟声卡”。",
-            _cable.IsAvailable ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
+        if (_cable.IsReady)
+            ShowMessage("虚拟声卡已就绪", $"{_cable.Current!.Name} → {_cable.Capture!.Name}", InfoBarSeverity.Success);
+        else if (_cable.IsAvailable)
+            ShowMessage("缺少 CABLE Output", "CABLE Input 已安装，请启用录音端的 CABLE Output。", InfoBarSeverity.Warning);
+        else
+            ShowMessage("未检测到虚拟声卡", "请点“安装/配置虚拟声卡”安装 VB-CABLE。", InfoBarSeverity.Warning);
     }
 
     private void OpenSoundSettings_Click(object sender, RoutedEventArgs e)
@@ -270,6 +284,86 @@ public sealed partial class ToolsPage : Page
         catch (Exception ex)
         {
             ShowMessage("无法打开声音设置", ex.Message, InfoBarSeverity.Error);
+        }
+    }
+
+    private async void VirtualCableSetup_Click(object sender, RoutedEventArgs e)
+    {
+        await RefreshCableAsync();
+        if (_cable.IsReady)
+        {
+            ShowMessage("虚拟声卡已就绪",
+                $"{_cable.Current!.Name} → {_cable.Capture!.Name}。请在 ETS 里把麦克风设为 CABLE Output。",
+                InfoBarSeverity.Success);
+            VirtualCableSetupService.OpenRecordingDevices();
+            return;
+        }
+        if (_cable.IsAvailable)
+        {
+            ShowMessage("缺少 CABLE Output",
+                "CABLE Input 已安装，但录音端 CABLE Output 没有启用。打开录音设备，右键显示禁用设备，启用 CABLE Output，再把它设为 ETS 麦克风。",
+                InfoBarSeverity.Warning);
+            VirtualCableSetupService.OpenRecordingDevices();
+            return;
+        }
+
+        string installer = VirtualCableSetupService.InstallerPath(_service.AppRoot);
+        if (!File.Exists(installer))
+        {
+            ShowMessage("找不到 VB-CABLE 安装包", $"缺少 {installer}", InfoBarSeverity.Error);
+            return;
+        }
+
+        var content = new StackPanel { Spacing = 8 };
+        content.Children.Add(new TextBlock
+        {
+            Text = "将运行随程序附带的 VB-CABLE 安装程序。需要管理员权限，安装完成后建议重启电脑。",
+            TextWrapping = TextWrapping.Wrap
+        });
+        content.Children.Add(new TextBlock
+        {
+            Text = $"安装包：{installer}",
+            FontSize = 12,
+            Opacity = 0.65,
+            TextWrapping = TextWrapping.Wrap
+        });
+        var dialog = new ContentDialog
+        {
+            Title = "安装 VB-CABLE 虚拟声卡",
+            Content = content,
+            PrimaryButtonText = "开始安装",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+
+        try
+        {
+            ShowMessage("正在安装", "请在安装程序中允许管理员权限，完成后回到这里。",
+                InfoBarSeverity.Informational);
+            await VirtualCableSetupService.RunInstallerAsync(_service.AppRoot);
+            await RefreshCableAsync();
+            if (_cable.IsReady)
+            {
+                ShowMessage("安装完成", "虚拟声卡已就绪。请在 ETS 里把麦克风设为 CABLE Output。",
+                    InfoBarSeverity.Success);
+            }
+            else
+            {
+                ShowMessage("安装完成，需要配置",
+                    "如果声音设备里还没有 CABLE Output，请重启电脑后再打开录音设备启用它，并把 ETS 麦克风设为 CABLE Output。",
+                    InfoBarSeverity.Warning);
+            }
+            VirtualCableSetupService.OpenRecordingDevices();
+        }
+        catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            ShowMessage("已取消安装", "没有获得管理员权限，VB-CABLE 未安装。", InfoBarSeverity.Warning);
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("安装失败", ex.Message, InfoBarSeverity.Error);
         }
     }
 
@@ -888,7 +982,7 @@ public sealed partial class ToolsPage : Page
         StartAutoSpeaking();
     }
 
-    private void StartAutoSpeaking()
+    private async void StartAutoSpeaking()
     {
         _session ??= _sessionStore.Load();
         if (_session is null || _session.Items.Count == 0)
@@ -905,6 +999,16 @@ public sealed partial class ToolsPage : Page
         {
             ShowMessage("音频文件缺失",
                 "这些 TTS 文件已经不在了，请重新预生成整卷 TTS：" + Environment.NewLine + string.Join(Environment.NewLine, missing),
+                InfoBarSeverity.Warning);
+            return;
+        }
+        await RefreshCableAsync();
+        if (!_cable.IsReady)
+        {
+            ShowMessage("虚拟声卡未就绪",
+                _cable.IsAvailable
+                    ? "检测到 CABLE Input，但缺少 CABLE Output。点“安装/配置虚拟声卡”打开录音设备并启用它。"
+                    : "未安装 VB-CABLE。点“安装/配置虚拟声卡”安装后再启动自动口语。",
                 InfoBarSeverity.Warning);
             return;
         }
