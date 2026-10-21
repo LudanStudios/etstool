@@ -13,6 +13,7 @@ public sealed record VirtualCableDevice(string Name, DeviceInformation Device);
 public sealed class VirtualCableService
 {
     private MediaPlayer? _player;
+    private MediaPlayer? _previewPlayer;
 
     public VirtualCableDevice? Current { get; private set; }
     public bool IsAvailable => Current is not null;
@@ -49,6 +50,17 @@ public sealed class VirtualCableService
     }
 
     public void Stop() => _player?.Pause();
+
+    /// <summary>Plays a WAV through the normal speakers so the operator can hear it.</summary>
+    public void PlayPreview(string wavPath)
+    {
+        if (!File.Exists(wavPath)) throw new FileNotFoundException("找不到要试听的 WAV。", wavPath);
+        _previewPlayer ??= new MediaPlayer { AutoPlay = false };
+        _previewPlayer.Source = MediaSource.CreateFromUri(new Uri(wavPath));
+        _previewPlayer.Play();
+    }
+
+    public void StopPreview() => _previewPlayer?.Pause();
 
     private static int Score(string name)
     {

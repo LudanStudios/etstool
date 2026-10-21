@@ -1,4 +1,4 @@
-# ETS Tool by @azursmelt（beta 1.2.0）
+# ETS Tool by @azursmelt（beta 1.2.1）
 
 WinUI 3 版 ETS 助手，包含试卷监听、自动答题、试卷管理、答案提取、抓包调试和中英文界面。
 

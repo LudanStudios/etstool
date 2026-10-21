@@ -12,27 +12,39 @@ public sealed record SpeakingSessionItem(int Number, string Type, string Prompt,
 public sealed record SpeakingSession(string PackId, string Mode, DateTimeOffset CreatedAt,
     IReadOnlyList<SpeakingSessionItem> Items);
 
-/// <summary>Persists the pre-generated TTS list for a whole speaking paper.</summary>
+/// <summary>
+/// Persists the pre-generated TTS list for a whole speaking paper. The file
+/// lives beside the generated WAVs under the program folder so a portable
+/// (possibly low-integrity) build can still save it.
+/// </summary>
 public sealed class SpeakingSessionStore
 {
     private readonly string _path;
+    private readonly string _legacyPath;
 
-    public SpeakingSessionStore(string dataRoot) =>
-        _path = Path.Combine(Path.GetFullPath(dataRoot), "_assistant", "speaking_session.json");
+    public SpeakingSessionStore(string programRoot)
+    {
+        _path = Path.Combine(Path.GetFullPath(programRoot), "temp", "speaking_session.json");
+        _legacyPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "ETS", "_assistant", "speaking_session.json");
+    }
 
     public string FilePath => _path;
 
     public SpeakingSession? Load()
     {
-        try
+        foreach (string path in new[] { _path, _legacyPath })
         {
-            if (!File.Exists(_path)) return null;
-            return JsonSerializer.Deserialize<SpeakingSession>(File.ReadAllText(_path));
+            try
+            {
+                if (!File.Exists(path)) continue;
+                return JsonSerializer.Deserialize<SpeakingSession>(File.ReadAllText(path));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+            { }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
-        {
-            return null;
-        }
+        return null;
     }
 
     public void Save(SpeakingSession session)
@@ -45,7 +57,10 @@ public sealed class SpeakingSessionStore
 
     public void Clear()
     {
-        try { File.Delete(_path); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        foreach (string path in new[] { _path, _legacyPath })
+        {
+            try { File.Delete(path); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
     }
 }

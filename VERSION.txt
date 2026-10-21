@@ -1,12 +1,10 @@
-ETS Tool beta 1.2.0
-Build: 2026-10-21 21:33
+ETS Tool beta 1.2.1
+Build: 2026-10-21 21:45
 Root: C:\Users\CARLSON\Documents\Codex Sandbox\ETS
 Runtime: C:\Users\CARLSON\Documents\Codex Sandbox\ETS\_winui\ETS-Assistant-WinUI.exe
 Engine: C:\Users\CARLSON\Documents\Codex Sandbox\ETS\ETS-Assistant-Engine.exe
 
 最近更新：
-- 测试工具按“自动听力 / 自动口语 / 诊断维护”分组
-- 整卷口语题预生成 TTS、虚拟声卡 CABLE 播放
-- TTS WAV 头长度修正
-- 完全重置（监听、快捷方式、凭证、虚拟麦克风文件）
-- DeepSeek 标答/灵活模式、全部试卷口语题读取
+- 口语播放新增“本地试听”（走默认扬声器），虚拟声卡播放仍是静音仅供 ETS 录音
+- 播放列表默认选中第一条，播放失败提示更明确
+- 整卷 TTS 会话改存到程序目录 temp\speaking_session.json，便携/受限目录也能保存

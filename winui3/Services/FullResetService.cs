@@ -183,6 +183,7 @@ public sealed class FullResetService
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        if (DeleteFile(Path.Combine(_appRoot, "temp", "speaking_session.json"))) removed++;
         return removed;
     }
 

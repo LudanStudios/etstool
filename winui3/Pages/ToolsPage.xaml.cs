@@ -20,7 +20,7 @@ public sealed partial class ToolsPage : Page
     private readonly DeepSeekService _deepSeek = new(AssistantService.Current.AppRoot);
     private readonly SpeakingAnswerService _speaking = new(AssistantService.Current.DataRoot);
     private readonly AliyunTtsService _aliyunTts = new(AssistantService.Current.AppRoot);
-    private readonly SpeakingSessionStore _sessionStore = new(AssistantService.Current.DataRoot);
+    private readonly SpeakingSessionStore _sessionStore = new(AssistantService.Current.AppRoot);
     private readonly VirtualCableService _cable = new();
     private SpeakingSession? _session;
     private int _sessionIndex;
@@ -282,9 +282,18 @@ public sealed partial class ToolsPage : Page
             return;
         }
         SessionStatusText.Text = $"试卷 {_session.PackId} · {_session.Items.Count} 条音频 · {_session.Mode}";
-        if (_session.Items.Count > 0 && SessionItemBox.SelectedIndex < 0)
+        if (_session.Items.Count > 0)
+        {
             SessionItemBox.SelectedIndex = 0;
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (SessionItemBox.SelectedIndex < 0) SessionItemBox.SelectedIndex = 0;
+            });
+        }
     }
+
+    private SpeakingSessionItem? SelectedSessionItem() =>
+        SessionItemBox.SelectedItem as SpeakingSessionItem ?? _session?.Items.FirstOrDefault();
 
     private async void GenerateSession_Click(object sender, RoutedEventArgs e)
     {
@@ -375,12 +384,32 @@ public sealed partial class ToolsPage : Page
 
     private void PlaySessionItem_Click(object sender, RoutedEventArgs e)
     {
-        if (SessionItemBox.SelectedItem is not SpeakingSessionItem item)
+        SpeakingSessionItem? item = SelectedSessionItem();
+        if (item is null)
         {
             ShowMessage("没有选中音频", "先从播放列表里选一条。", InfoBarSeverity.Warning);
             return;
         }
         PlaySessionItem(item);
+    }
+
+    private void PreviewSessionItem_Click(object sender, RoutedEventArgs e)
+    {
+        SpeakingSessionItem? item = SelectedSessionItem();
+        if (item is null)
+        {
+            ShowMessage("没有可试听的音频", "先从播放列表里选一条。", InfoBarSeverity.Warning);
+            return;
+        }
+        try
+        {
+            _cable.PlayPreview(item.WavPath);
+            SessionStatusText.Text = $"本地试听第 {item.Number} 题：{item.WavName}";
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("试听失败", ex.Message, InfoBarSeverity.Error);
+        }
     }
 
     private void PlayNextSessionItem_Click(object sender, RoutedEventArgs e)
@@ -412,6 +441,7 @@ public sealed partial class ToolsPage : Page
     private void StopSessionPlayback_Click(object sender, RoutedEventArgs e)
     {
         _cable.Stop();
+        _cable.StopPreview();
         SessionStatusText.Text = "已停止播放。";
     }
 
