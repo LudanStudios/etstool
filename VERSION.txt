@@ -1,11 +1,10 @@
-ETS Tool beta 1.4.0
-Build: 2026-10-21 23:40
+ETS Tool beta 1.4.1
+Build: 2026-10-22 00:08
 Root: C:\Users\CARLSON\Documents\Codex Sandbox\ETS
 Runtime: C:\Users\CARLSON\Documents\Codex Sandbox\ETS\_winui\ETS-Assistant-WinUI.exe
 Engine: C:\Users\CARLSON\Documents\Codex Sandbox\ETS\ETS-Assistant-Engine.exe
 
 最近更新：
-- 打开含口语题的新试卷时，自动弹出横向 WinUI 准备窗口
-- 自动生成整卷口语 TTS，展示题目列表和总进度条
-- 已准备好的试卷不重复生成，直接复用现有音频
-- 生成结果保存为 speaking_session.json，供自动口语使用
+- 口语题准备窗口改为原生 WinUI 3 / Windows 11 设置风格
+- 使用 Mica、主题资源、Settings 卡片、原生进度条与状态图标
+- 跟随应用的亮色/暗色主题

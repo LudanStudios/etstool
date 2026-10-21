@@ -16,7 +16,7 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>ETS-Assistant-WinUI</AssemblyName>
     <RootNamespace>ETSAssistant.WinUI3</RootNamespace>
-    <Version>1.4.0</Version>
+    <Version>1.4.1</Version>
     <WindowsSdkPackageVersion>10.0.26100.56</WindowsSdkPackageVersion>
   </PropertyGroup>
   <ItemGroup>
@@ -48,5 +48,6 @@
     </ItemGroup>
   </Target>
 </Project>
+
 
 

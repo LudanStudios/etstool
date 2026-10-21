@@ -3,8 +3,10 @@ using System.ComponentModel;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
+using Windows.UI;
 using WinRT.Interop;
 using ETSAssistant.WinUI3.Services;
 
@@ -12,15 +14,21 @@ namespace ETSAssistant.WinUI3;
 
 public sealed class SpeakingPrepItem : INotifyPropertyChanged
 {
-    public SpeakingPrepItem(int number, string title)
+    private string _status = "等待";
+    private string _statusGlyph = "\uE823";
+    private Brush _statusBrush = ResolveBrush("TextFillColorTertiaryBrush");
+
+    public SpeakingPrepItem(int number, string kind, string prompt)
     {
         Number = number.ToString();
-        Title = title;
+        Kind = kind;
+        Prompt = prompt;
     }
 
     public string Number { get; }
-    public string Title { get; }
-    private string _status = "等待";
+    public string Kind { get; }
+    public string Prompt { get; }
+
     public string Status
     {
         get => _status;
@@ -28,11 +36,33 @@ public sealed class SpeakingPrepItem : INotifyPropertyChanged
         {
             if (_status == value) return;
             _status = value;
+            (_statusGlyph, _statusBrush) = value switch
+            {
+                "完成" => ("\uE73E", ResolveBrush("SystemFillColorSuccessBrush")),
+                "生成中" => ("\uE895", ResolveBrush("AccentTextFillColorPrimaryBrush")),
+                "失败" => ("\uEA39", ResolveBrush("SystemFillColorCriticalBrush")),
+                _ => ("\uE823", ResolveBrush("TextFillColorTertiaryBrush"))
+            };
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Status)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusGlyph)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusBrush)));
         }
     }
 
+    public string StatusGlyph => _statusGlyph;
+    public Brush StatusBrush => _statusBrush;
+
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    internal static Brush ResolveBrush(string key)
+    {
+        if (Application.Current.Resources.TryGetValue(key, out object? value))
+        {
+            if (value is Brush brush) return brush;
+            if (value is Color color) return new SolidColorBrush(color);
+        }
+        return new SolidColorBrush(Colors.Gray);
+    }
 }
 
 public sealed partial class SpeakingPrepWindow : Window
@@ -48,10 +78,16 @@ public sealed partial class SpeakingPrepWindow : Window
         InitializeComponent();
         ActiveWindow = this;
         Title = "口语题准备";
+        SystemBackdrop = new MicaBackdrop();
+        ExtendsContentIntoTitleBar = true;
+        SetTitleBar(AppTitleBar);
         QuestionList.ItemsSource = _items;
+        ApplyTheme();
         ConfigureWindow();
+        AppPreferencesService.Current.ThemeChanged += ApplyTheme;
         Closed += (_, _) =>
         {
+            AppPreferencesService.Current.ThemeChanged -= ApplyTheme;
             _cancellation?.Cancel();
             if (ActiveWindow == this) ActiveWindow = null;
         };
@@ -61,17 +97,18 @@ public sealed partial class SpeakingPrepWindow : Window
     {
         _packId = packId;
         Title = $"口语题准备 · {paperTitle}";
-        TitleText.Text = $"口语题准备 · {paperTitle}";
         PackText.Text = $"试卷 {packId} · {questions.Count} 道口语题";
         _items.Clear();
         foreach (SpeakingQuestion question in questions)
-            _items.Add(new SpeakingPrepItem(question.Number, $"{question.Type} · {Trim(question.Prompt)}"));
+            _items.Add(new SpeakingPrepItem(question.Number, question.Type, Trim(question.Prompt)));
 
         OverallProgress.Minimum = 0;
         OverallProgress.Maximum = Math.Max(1, questions.Count);
         OverallProgress.Value = 0;
+        ProgressCountText.Text = $"0/{questions.Count}";
         StatusText.Text = "开始生成 TTS 音频…";
-        ErrorText.Text = string.Empty;
+        ErrorBar.IsOpen = false;
+        SetHeaderStatus("生成中", "AccentTextFillColorPrimaryBrush");
         _ = PrepareAsync();
     }
 
@@ -83,6 +120,7 @@ public sealed partial class SpeakingPrepWindow : Window
         {
             OverallProgress.Maximum = Math.Max(1, update.Total);
             OverallProgress.Value = Math.Min(update.Completed, update.Total);
+            ProgressCountText.Text = $"{Math.Min(update.Completed, update.Total)}/{update.Total}";
             StatusText.Text = update.Message;
             for (int index = 0; index < _items.Count; index++)
             {
@@ -100,49 +138,111 @@ public sealed partial class SpeakingPrepWindow : Window
             if (outcome.Session is null)
             {
                 StatusText.Text = "没有生成音频。";
-                ErrorText.Text = string.Join(Environment.NewLine, outcome.Errors.Take(3));
+                ProgressCountText.Text = $"0/{_items.Count}";
+                ErrorBar.Severity = InfoBarSeverity.Error;
+                ErrorBar.Message = string.Join(Environment.NewLine, outcome.Errors.Take(3));
+                ErrorBar.IsOpen = true;
+                SetHeaderStatus("失败", "SystemFillColorCriticalBrush");
                 return;
             }
 
             OverallProgress.Value = outcome.Session.Items.Count;
+            ProgressCountText.Text = $"{outcome.Session.Items.Count}/{_items.Count}";
             StatusText.Text = $"完成：{outcome.Session.Items.Count} 条音频，可以开始自动口语。";
             foreach (SpeakingPrepItem item in _items)
                 if (item.Status != "完成") item.Status = "失败";
+
             if (outcome.Errors.Count > 0)
-                ErrorText.Text = string.Join(Environment.NewLine, outcome.Errors.Take(2));
+            {
+                ErrorBar.Severity = InfoBarSeverity.Warning;
+                ErrorBar.Message = string.Join(Environment.NewLine, outcome.Errors.Take(2));
+                ErrorBar.IsOpen = true;
+                SetHeaderStatus("部分完成", "SystemFillColorCautionBrush");
+            }
+            else
+            {
+                ErrorBar.IsOpen = false;
+                SetHeaderStatus("已就绪", "SystemFillColorSuccessBrush");
+            }
         }
         catch (OperationCanceledException)
         {
             StatusText.Text = "已取消。";
+            SetHeaderStatus("已取消", "TextFillColorSecondaryBrush");
         }
         catch (Exception ex)
         {
             StatusText.Text = "准备失败。";
-            ErrorText.Text = ex.Message;
+            ErrorBar.Severity = InfoBarSeverity.Error;
+            ErrorBar.Message = ex.Message;
+            ErrorBar.IsOpen = true;
+            SetHeaderStatus("失败", "SystemFillColorCriticalBrush");
+        }
+    }
+
+    private void SetHeaderStatus(string text, string brushKey)
+    {
+        HeaderStatusText.Text = text;
+        HeaderStatusText.Foreground = SpeakingPrepItem.ResolveBrush(brushKey);
+    }
+
+    private void ApplyTheme()
+    {
+        AppPreferencesService.Current.ApplyTheme(RootGrid);
+        UpdateTitleBarColors();
+    }
+
+    private void UpdateTitleBarColors()
+    {
+        try
+        {
+            AppWindowTitleBar bar = GetAppWindow().TitleBar;
+            bool dark = RootGrid.ActualTheme == ElementTheme.Dark ||
+                        (RootGrid.ActualTheme == ElementTheme.Default &&
+                         Application.Current.RequestedTheme == ApplicationTheme.Dark);
+            bar.ButtonBackgroundColor = Microsoft.UI.Colors.Transparent;
+            bar.ButtonInactiveBackgroundColor = Microsoft.UI.Colors.Transparent;
+            bar.ButtonForegroundColor = dark ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.Black;
+            bar.ButtonInactiveForegroundColor = dark
+                ? Color.FromArgb(0xFF, 148, 163, 184)
+                : Color.FromArgb(0xFF, 100, 116, 139);
+            bar.ButtonHoverBackgroundColor = dark
+                ? Color.FromArgb(40, 255, 255, 255)
+                : Color.FromArgb(30, 0, 0, 0);
+            bar.ButtonPressedBackgroundColor = dark
+                ? Color.FromArgb(64, 255, 255, 255)
+                : Color.FromArgb(45, 0, 0, 0);
+        }
+        catch (Exception)
+        {
         }
     }
 
     private static string Trim(string text) =>
-        text.Length <= 40 ? text : text[..40] + "…";
+        text.Length <= 46 ? text : text[..46] + "…";
 
-    private void Close_Click(object sender, RoutedEventArgs e) => Close();
+    private AppWindow GetAppWindow()
+    {
+        nint hwnd = WindowNative.GetWindowHandle(this);
+        Microsoft.UI.WindowId id = Win32Interop.GetWindowIdFromWindow(hwnd);
+        return AppWindow.GetFromWindowId(id);
+    }
 
     private void ConfigureWindow()
     {
         try
         {
-            nint hwnd = WindowNative.GetWindowHandle(this);
-            WindowId windowId = Win32Interop.GetWindowIdFromWindow(hwnd);
-            AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
-            const int width = 1000;
-            const int height = 450;
+            AppWindow appWindow = GetAppWindow();
+            const int width = 960;
+            const int height = 620;
             appWindow.Resize(new SizeInt32(width, height));
             appWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "ProgramIcon.ico"));
-            DisplayArea area = DisplayArea.GetFromWindowId(windowId, DisplayAreaFallback.Primary);
+            DisplayArea area = DisplayArea.GetFromWindowId(appWindow.Id, DisplayAreaFallback.Primary);
             RectInt32 work = area.WorkArea;
             appWindow.Move(new PointInt32(
                 work.X + Math.Max(0, (work.Width - width) / 2),
-                work.Y + Math.Max(0, work.Height - height - 48)));
+                work.Y + Math.Max(0, (work.Height - height) / 2)));
+            UpdateTitleBarColors();
         }
         catch (Exception)
         {
