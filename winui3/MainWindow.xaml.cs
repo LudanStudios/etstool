@@ -48,6 +48,61 @@ public sealed partial class MainWindow : Window
 
         RootNavigation.SelectedItem = RootNavigation.MenuItems[0];
         PageFrame.Navigate(typeof(Pages.OverviewPage));
+        RootGrid.Loaded += async (_, _) => await ShowCredentialsReminderAsync();
+    }
+
+    private bool _credentialReminderShown;
+
+    private async Task ShowCredentialsReminderAsync()
+    {
+        if (_credentialReminderShown) return;
+        _credentialReminderShown = true;
+        AppPreferencesService preferences = AppPreferencesService.Current;
+        if (preferences.CredentialsReminderShown) return;
+
+        bool hasDeepSeek = ApiKeyStore.HasKey;
+        bool hasAliyun = AliyunTtsCredentialStore.HasCredentials;
+        if (hasDeepSeek && hasAliyun) return;
+
+        var lines = new List<string>();
+        if (!hasDeepSeek) lines.Add("• DeepSeek API Key（生成模式需要）");
+        if (!hasAliyun) lines.Add("• 阿里云 TTS 凭证（语音合成需要）");
+
+        var content = new StackPanel { Spacing = 8 };
+        content.Children.Add(new TextBlock { Text = "检测到以下凭据还没有填写：", TextWrapping = TextWrapping.Wrap });
+        content.Children.Add(new TextBlock
+        {
+            Text = string.Join(Environment.NewLine, lines),
+            TextWrapping = TextWrapping.Wrap
+        });
+        content.Children.Add(new TextBlock
+        {
+            Text = "标答模式可以跳过 DeepSeek，但 TTS 仍需要阿里云凭证。",
+            FontSize = 12,
+            Opacity = 0.7,
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        var dialog = new ContentDialog
+        {
+            Title = "完善 API 凭据",
+            Content = content,
+            PrimaryButtonText = "去填写",
+            CloseButtonText = "稍后",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = RootGrid.XamlRoot
+        };
+        ContentDialogResult result = await dialog.ShowAsync();
+        preferences.MarkCredentialsReminderShown();
+        if (result != ContentDialogResult.Primary) return;
+        foreach (object item in RootNavigation.MenuItems)
+        {
+            if (item is NavigationViewItem nav && (nav.Tag as string) == "settings")
+            {
+                RootNavigation.SelectedItem = nav;
+                break;
+            }
+        }
     }
 
     private void ApplyTheme()

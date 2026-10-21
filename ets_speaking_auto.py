@@ -19,7 +19,13 @@ from pathlib import Path
 from ets_auto_answer import CDPClient, devtools_targets
 
 ROOT = Path(__file__).resolve().parent
-CABLE_PLAYER = ROOT / ".build" / "tools" / "cableplayer" / "out" / "CablePlayer.exe"
+CABLE_PLAYER = next(
+    (path for path in (
+        ROOT / "tools" / "CablePlayer" / "CablePlayer.exe",
+        ROOT / ".build" / "tools" / "cableplayer" / "out" / "CablePlayer.exe",
+    ) if path.is_file()),
+    ROOT / "tools" / "CablePlayer" / "CablePlayer.exe",
+)
 
 
 def find_session(explicit: str | None) -> Path:

@@ -19,6 +19,7 @@ public sealed class AppPreferencesService
     public string Theme { get; private set; } = "System";
     public string Language { get; private set; } = "zh-CN";
     public string SpeakingMode { get; private set; } = "standard";
+    public bool CredentialsReminderShown { get; private set; }
     public event Action? ThemeChanged;
     public event Action? LanguageChanged;
     public event Action? SpeakingModeChanged;
@@ -50,6 +51,13 @@ public sealed class AppPreferencesService
         SpeakingModeChanged?.Invoke();
     }
 
+    public void MarkCredentialsReminderShown()
+    {
+        if (CredentialsReminderShown) return;
+        CredentialsReminderShown = true;
+        Save();
+    }
+
     public void ApplyTheme(FrameworkElement root)
     {
         root.RequestedTheme = Theme switch
@@ -75,6 +83,9 @@ public sealed class AppPreferencesService
             if (document.RootElement.TryGetProperty("speaking_mode", out JsonElement speakingMode) &&
                 speakingMode.ValueKind == JsonValueKind.String)
                 SpeakingMode = speakingMode.GetString() == "flexible" ? "flexible" : "standard";
+            if (document.RootElement.TryGetProperty("credentials_reminder_shown", out JsonElement reminder) &&
+                reminder.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                CredentialsReminderShown = reminder.GetBoolean();
         }
         catch (Exception) { }
     }
@@ -88,7 +99,8 @@ public sealed class AppPreferencesService
             {
                 theme = Theme,
                 language = Language,
-                speaking_mode = SpeakingMode
+                speaking_mode = SpeakingMode,
+                credentials_reminder_shown = CredentialsReminderShown
             }));
         }
         catch (Exception) { }

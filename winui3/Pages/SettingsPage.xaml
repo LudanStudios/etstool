@@ -59,9 +59,9 @@
                         <ComboBox x:Name="SpeakingModeBox" HorizontalAlignment="Stretch"
                                   SelectionChanged="SpeakingModeBox_SelectionChanged">
                             <ComboBoxItem Content="标答模式（提取试卷推荐答案，供 TTS 使用）" Tag="standard" />
-                            <ComboBoxItem Content="灵活模式（调用 DeepSeek 生成回答）" Tag="flexible" />
+                            <ComboBoxItem Content="生成模式（调用 DeepSeek 生成回答）" Tag="flexible" />
                         </ComboBox>
-                        <TextBlock Text="标答模式不调用 DeepSeek；灵活模式使用上面的 API Key 和 llm_stt.md 生成回答。"
+                        <TextBlock Text="标答模式不调用 DeepSeek；生成模式使用上面的 API Key 和 llm_stt.md 生成回答。"
                                    FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                     </StackPanel>
                     <InfoBar x:Name="SaveInfoBar" IsOpen="False" />

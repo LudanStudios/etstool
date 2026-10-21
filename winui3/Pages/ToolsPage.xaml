@@ -99,6 +99,36 @@
                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                     <StackPanel Spacing="12">
                         <StackPanel Orientation="Horizontal" Spacing="9">
+                            <SymbolIcon Symbol="Play" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                            <TextBlock Text="自动口语" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <Border Background="#F59E0B" CornerRadius="4" Padding="6,1" VerticalAlignment="Center">
+                                <TextBlock Text="beta" FontSize="10" FontWeight="SemiBold" Foreground="White" />
+                            </Border>
+                        </StackPanel>
+                        <TextBlock Text="自动完成开始、跳过放音、开录、播放 TTS、停止和下一题；练习结束后自动清理 temp 音频。需要 ETS 已打开口语题，且这份试卷已预生成整卷 TTS。"
+                                   FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="答题模式" VerticalAlignment="Center" FontSize="12" Opacity="0.8" />
+                            <ComboBox x:Name="SpeakingModeBox" MinWidth="170"
+                                      SelectionChanged="SpeakingModeBox_SelectionChanged">
+                                <ComboBoxItem Content="标答模式" Tag="standard" />
+                                <ComboBoxItem Content="生成模式" Tag="flexible" />
+                            </ComboBox>
+                            <Button x:Name="AutoSpeakingButton" Click="AutoSpeaking_Click" Style="{StaticResource AccentButtonStyle}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="Play" />
+                                    <TextBlock x:Name="AutoSpeakingButtonText" Text="开始自动口语" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                        <TextBlock x:Name="AutoSpeakingStatusText" FontSize="12" Opacity="0.72" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                    <StackPanel Spacing="12">
+                        <StackPanel Orientation="Horizontal" Spacing="9">
                             <SymbolIcon Symbol="Audio" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
                             <TextBlock Text="语音注入（虚拟麦克风）" FontSize="17" FontWeight="SemiBold" />
                         </StackPanel>
@@ -144,19 +174,12 @@
                         <TextBlock Text="模型 deepseek-flash。每次请求都会附带题干和 llm_stt.md 附件，返回文本只包含模型输出正文。"
                                    FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                         <TextBlock x:Name="DeepSeekStatusText" FontSize="12" Opacity="0.72" TextWrapping="Wrap" />
-                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
-                            <ComboBox x:Name="SpeakingModeBox" MinWidth="180"
-                                      SelectionChanged="SpeakingModeBox_SelectionChanged">
-                                <ComboBoxItem Content="标答模式" Tag="standard" />
-                                <ComboBoxItem Content="灵活模式" Tag="flexible" />
-                            </ComboBox>
-                            <Button Grid.Column="1" Click="LoadSpeakingQuestions_Click" HorizontalAlignment="Left">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <SymbolIcon Symbol="OpenFile" />
-                                    <TextBlock Text="读取所有试卷口语题" />
-                                </StackPanel>
-                            </Button>
-                        </Grid>
+                        <Button Click="LoadSpeakingQuestions_Click" HorizontalAlignment="Left">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <SymbolIcon Symbol="OpenFile" />
+                                <TextBlock Text="读取所有试卷口语题" />
+                            </StackPanel>
+                        </Button>
                         <ComboBox x:Name="SpeakingPaperBox" HorizontalAlignment="Stretch"
                                   DisplayMemberPath="Display"
                                   PlaceholderText="选择试卷（读取后可选）"

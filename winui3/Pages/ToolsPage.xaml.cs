@@ -28,6 +28,7 @@ public sealed partial class ToolsPage : Page
     private string? _speakingPackId;
     private IReadOnlyList<SpeakingPaper> _speakingPapers = Array.Empty<SpeakingPaper>();
     private string? _lastTtsWavPath;
+    private Process? _autoSpeakingProcess;
     private bool _portAvailable;
     private bool _updatingCapture;
 
@@ -449,7 +450,7 @@ public sealed partial class ToolsPage : Page
     {
         string keyState = ApiKeyStore.HasKey ? "API Key：已配置" : "API Key：未配置（请到“答题设置”填写）";
         string attachment = _deepSeek.FindAttachment() ?? "未找到 llm_stt.md";
-        string mode = AppPreferencesService.Current.SpeakingMode == "flexible" ? "灵活模式" : "标答模式";
+        string mode = AppPreferencesService.Current.SpeakingMode == "flexible" ? "生成模式" : "标答模式";
         DeepSeekStatusText.Text = $"{mode} · {keyState} · 模型 {DeepSeekService.Model} · 附件：{attachment}";
     }
 
@@ -559,7 +560,7 @@ public sealed partial class ToolsPage : Page
         if (AppPreferencesService.Current.SpeakingMode != "standard") return;
         if (question.StandardAnswer.Length == 0)
         {
-            ShowMessage("这道题没有标答", "试卷里没有为这道口语题提供推荐答案，请改用灵活模式。",
+            ShowMessage("这道题没有标答", "试卷里没有为这道口语题提供推荐答案，请改用生成模式。",
                 InfoBarSeverity.Warning);
             return;
         }
@@ -873,6 +874,118 @@ public sealed partial class ToolsPage : Page
         {
             ShowMessage("完全重置失败", ex.Message, InfoBarSeverity.Error);
         }
+    }
+
+    private void AutoSpeaking_Click(object sender, RoutedEventArgs e)
+    {
+        if (_autoSpeakingProcess is { HasExited: false })
+        {
+            try { _autoSpeakingProcess.Kill(true); }
+            catch (Exception) { }
+            AutoSpeakingStatusText.Text = "正在停止自动口语…";
+            return;
+        }
+        StartAutoSpeaking();
+    }
+
+    private void StartAutoSpeaking()
+    {
+        _session ??= _sessionStore.Load();
+        if (_session is null || _session.Items.Count == 0)
+        {
+            ShowMessage("没有口语会话", "先预生成整卷 TTS，等播放列表里出现音频后再启动自动口语。",
+                InfoBarSeverity.Warning);
+            return;
+        }
+        string[] missing = _session.Items
+            .Where(item => !File.Exists(item.WavPath))
+            .Select(item => item.WavName)
+            .ToArray();
+        if (missing.Length > 0)
+        {
+            ShowMessage("音频文件缺失",
+                "这些 TTS 文件已经不在了，请重新预生成整卷 TTS：" + Environment.NewLine + string.Join(Environment.NewLine, missing),
+                InfoBarSeverity.Warning);
+            return;
+        }
+
+        string root = _service.AppRoot;
+        string script = Path.Combine(root, "ets_speaking_auto.py");
+        if (!File.Exists(script))
+        {
+            ShowMessage("找不到自动口语脚本", $"缺少 {script}", InfoBarSeverity.Error);
+            return;
+        }
+        string? python = ResolvePythonPath(root);
+        if (python is null)
+        {
+            ShowMessage("未找到 Python",
+                "自动口语目前需要本机的 python.exe。安装 Python 3 后重试，或把 python 放到 PATH 里。",
+                InfoBarSeverity.Error);
+            return;
+        }
+
+        var startInfo = new ProcessStartInfo(python)
+        {
+            WorkingDirectory = root,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        startInfo.ArgumentList.Add(script);
+        string player = Path.Combine(root, "tools", "CablePlayer", "CablePlayer.exe");
+        if (File.Exists(player))
+        {
+            startInfo.ArgumentList.Add("--player");
+            startInfo.ArgumentList.Add(player);
+        }
+
+        var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+        process.OutputDataReceived += (_, args) => ReportAutoSpeaking(args.Data);
+        process.ErrorDataReceived += (_, args) => ReportAutoSpeaking(args.Data);
+        process.Exited += (_, _) => DispatcherQueue.TryEnqueue(() =>
+        {
+            AutoSpeakingButtonText.Text = "开始自动口语";
+            AutoSpeakingStatusText.Text = "自动口语已结束。";
+        });
+        try
+        {
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            _autoSpeakingProcess = process;
+            AutoSpeakingButtonText.Text = "停止自动口语";
+            AutoSpeakingStatusText.Text = "自动口语运行中，请保持 ETS 停在口语题页面…";
+        }
+        catch (Exception ex)
+        {
+            process.Dispose();
+            ShowMessage("自动口语启动失败", ex.Message, InfoBarSeverity.Error);
+        }
+    }
+
+    private void ReportAutoSpeaking(string? line)
+    {
+        if (string.IsNullOrWhiteSpace(line)) return;
+        DispatcherQueue.TryEnqueue(() => AutoSpeakingStatusText.Text = line.Trim());
+    }
+
+    private static string? ResolvePythonPath(string root)
+    {
+        var candidates = new List<string>();
+        string? path = Environment.GetEnvironmentVariable("PATH");
+        if (!string.IsNullOrEmpty(path))
+        {
+            foreach (string directory in path.Split(';', StringSplitOptions.RemoveEmptyEntries))
+            {
+                try { candidates.Add(Path.Combine(directory.Trim('"'), "python.exe")); }
+                catch (ArgumentException) { }
+            }
+        }
+        candidates.Add(Path.Combine(root, ".build", "tools", "python", "python.exe"));
+        candidates.Add(@"C:\Python314\python.exe");
+        return candidates.FirstOrDefault(File.Exists);
     }
 
     private void ShowMessage(string title, string message, InfoBarSeverity severity)
