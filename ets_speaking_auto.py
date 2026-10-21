@@ -66,12 +66,25 @@ def cleanup_temp_audio(root: Path) -> None:
     print(f"cleanup: removed {removed} audio file(s), {total / 1024 / 1024:.1f} MB", flush=True)
 
 
+def log(message: str) -> None:
+    print(message, flush=True)
+    try:
+        path = ROOT / "temp" / "speaking_auto.log"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(f"{time.strftime('%H:%M:%S')} {message}\n")
+    except OSError:
+        pass
+
+
 def page_state(client: CDPClient) -> dict:
     raw = client.evaluate(
         "JSON.stringify({"
         "text:document.body.innerText,"
         "stop:!!document.querySelector('button.btn-stopRecord'),"
         "play:!!document.querySelector('button.btn-play'),"
+        "exam:!!document.querySelector('.exam-panel, .exam-progress, video.examVideo'),"
+        "fix:[...document.querySelectorAll('button,span')].some(e=>e.offsetParent!==null&&e.innerText&&e.innerText.trim()==='订正'),"
         "next:[...document.querySelectorAll('button')].some(b=>b.offsetParent!==null&&b.innerText.trim()==='下一步'&&!b.disabled)"
         "})"
     )
@@ -97,6 +110,13 @@ def click_stop(client: CDPClient) -> bool:
     ) is True
 
 
+def click_fix(client: CDPClient) -> bool:
+    return client.evaluate(
+        "(()=>{const el=[...document.querySelectorAll('button,span')].find(e=>e.offsetParent!==null&&e.innerText&&e.innerText.trim()==='订正'&&e.children.length===0);"
+        "if(!el)return false;const b=el.closest('button');(b||el).click();return true;})()"
+    ) is True
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--session", default=None)
@@ -111,7 +131,7 @@ def main(argv: list[str] | None = None) -> int:
     if not wavs:
         print("session has no WAV files", file=sys.stderr)
         return 1
-    print(f"session pack={session.get('PackId')} items={len(wavs)} mode={session.get('Mode')}", flush=True)
+    log(f"session pack={session.get('PackId')} items={len(wavs)} mode={session.get('Mode')}")
 
     targets = devtools_targets()
     if not targets:
@@ -129,19 +149,36 @@ def main(argv: list[str] | None = None) -> int:
     index = max(0, args.start_index)
     started_at = 0.0
     finished = False
+    played = 0
+    fix_attempts = 0
+
+    initial = page_state(client)
+    log(f"page={page_url[:160]}")
+    log(f"exam={initial['exam']} play={initial['play']} fix={initial['fix']} text={initial['text'][:120]!r}")
+    if not initial["exam"] and not initial["fix"]:
+        log("当前页面不是口语练习/答题页，未播放音频，保留 WAV。请先打开一道口语题再点开始自动口语。")
+        client.close()
+        return 4
 
     try:
         while True:
             state = page_state(client)
             text = state["text"]
             if "练习结束" in text or "提交成功" in text:
-                print("practice finished", flush=True)
+                if state["fix"] and fix_attempts < 2:
+                    fix_attempts += 1
+                    log("练习已结束，点击“订正”重新开始。")
+                    click_fix(client)
+                    time.sleep(2.0)
+                    continue
+                log("practice finished")
                 finished = True
                 break
             if state["stop"]:
                 if player is None and index < len(wavs):
                     started_at = time.time()
-                    print(f"[{index + 1}/{len(wavs)}] recording, playing {Path(wavs[index]).name}", flush=True)
+                    played += 1
+                    log(f"[{index + 1}/{len(wavs)}] recording, playing {Path(wavs[index]).name}")
                     player = subprocess.Popen(
                         [args.player, wavs[index]],
                         stdout=subprocess.PIPE,
@@ -153,7 +190,7 @@ def main(argv: list[str] | None = None) -> int:
                 if player is not None and player.poll() is not None:
                     time.sleep(0.8)
                     click_stop(client)
-                    print(f"[{index + 1}/{len(wavs)}] stopped", flush=True)
+                    log(f"[{index + 1}/{len(wavs)}] stopped")
                     player = None
                     index += 1
                     time.sleep(1.5)
@@ -174,7 +211,7 @@ def main(argv: list[str] | None = None) -> int:
                 continue
 
             if index >= len(wavs):
-                print("all WAV items consumed", flush=True)
+                log("all WAV items consumed")
                 finished = True
                 break
             if state["next"]:
@@ -189,8 +226,10 @@ def main(argv: list[str] | None = None) -> int:
         if player is not None:
             player.terminate()
         client.close()
-    if finished and not args.keep_temp:
+    if finished and played > 0 and not args.keep_temp:
         cleanup_temp_audio(ROOT)
+    elif played == 0:
+        log("本次没有实际播放音频，保留 temp WAV 以便重试。")
     return 0
 
 

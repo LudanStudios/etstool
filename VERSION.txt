@@ -1,10 +1,10 @@
-ETS Tool beta 1.4.2
-Build: 2026-10-22 00:12
+ETS Tool beta 1.4.3
+Build: 2026-10-22 00:23
 Root: C:\Users\CARLSON\Documents\Codex Sandbox\ETS
 Runtime: C:\Users\CARLSON\Documents\Codex Sandbox\ETS\_winui\ETS-Assistant-WinUI.exe
 Engine: C:\Users\CARLSON\Documents\Codex Sandbox\ETS\ETS-Assistant-Engine.exe
 
 最近更新：
-- 口语题准备完成后，右上角“已就绪”替换为“开始自动口语”按钮
-- 一键启动/停止自动口语，状态和脚本输出直接显示在准备窗口
-- 窗口关闭时停止自动口语进程
+- 自动口语遇到“练习结束”页面会自动点“订正”重新开始
+- 修复已结束页面直接启动时只清理不播放的问题
+- 未实际播放时保留 WAV；运行日志写到 temp\speaking_auto.log
