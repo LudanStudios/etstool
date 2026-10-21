@@ -1,4 +1,4 @@
-# ETS Tool by @azursmelt（beta 1.1.0）
+# ETS Tool by @azursmelt（beta 1.2.0）
 
 WinUI 3 版 ETS 助手，包含试卷监听、自动答题、试卷管理、答案提取、抓包调试和中英文界面。
 
@@ -61,7 +61,32 @@ WinUI 3 版 ETS 助手，包含试卷监听、自动答题、试卷管理、答�
 
 AccessKey ID/Secret 是用于认证的长期凭证；阿里云不提供长期有效的 NLS AccessToken。助手通过阿里云 SDK 调用 `CreateToken`，在进程内缓存 Token，并依据返回的 `ExpireTime` 在到期前重新获取。Token 和 AccessKey Secret 不写日志。
 
-“测试工具”页的阿里云 TTS 按钮会把当前口语回答使用标准 TTS（Betty 美式英文女声、WAV 16 kHz）合成并打开播放。超过 300 个字符的回答会按句子/空格边界分段合成，再拼接为一个 WAV；文件保存在 `%APPDATA%\ETS\tts-test`。长文本 TTS 和 CosyVoice 流式合成不在此测试流程中。
+“测试工具”页的阿里云 TTS 按钮会把当前口语回答使用标准 TTS（Betty 美式英文女声、WAV 16 kHz）合成并打开播放。超过 300 个字符的回答会按句子/空格边界分段合成，再拼接为一个 WAV；文件保存在 ETS 程序根目录下的 `temp\tts-test`。长文本 TTS 和 CosyVoice 流式合成不在此测试流程中。
+
+## 语音注入（虚拟麦克风）
+
+“测试工具”页的“语音注入（虚拟麦克风）”卡片用于把 TTS 生成的 WAV 送进 ETS：
+
+1. 合成 TTS 后点“使用最近 TTS WAV”，或点“选择 WAV 并准备”。助手会用 ETS 自带的 ffmpeg 把它转成 16-bit / 48 kHz，写到 `%APPDATA%\ETS\_assistant\speaking_input.wav`。
+2. 完全关闭 ETS（包括托盘进程），点“用虚拟麦克风启动 ETS”，在 UAC 提示中允许。助手会用 Chromium 的 `--use-fake-device-for-media-stream` / `--use-file-for-fake-audio-capture` 参数启动 ETS，ETS 录音时会把这个 WAV 当作麦克风输入。
+3. 默认只播放一次（`%noloop`）；勾选“循环播放 WAV”可循环。
+
+限制：ETS 必须带这些参数启动，所以每次换 WAV 都要重启 ETS；调试端口和试卷监听不受影响。如果 ETS 没有转发这些 Chromium 参数（表现为录音仍来自真实麦克风），可以改用虚拟声卡（VB-CABLE / VoiceMeeter）：把播放设备设为 CABLE Input，ETS 麦克风设为 CABLE Output，再把 WAV 播放到 CABLE Input。
+
+## 整卷口语音频
+
+“测试工具”的“整卷口语音频（预生成 → 播放）”卡片把整份口语卷先准备好：
+
+1. 先点“读取所有试卷口语题”，在试卷下拉框选择试卷。
+2. 点“预生成整卷 TTS”：按当前口语模式（标答/灵活）逐题生成答案，依次调用阿里云 TTS，全部完成后写入 `%APPDATA%\ETS\_assistant\speaking_session.json`，并显示在播放列表里。
+3. 安装 VB-CABLE 后，在 Windows 声音设置里把 ETS 使用的麦克风设为 `CABLE Output (VB-Audio Virtual Cable)`。
+4. 口语题开始录音时，点“播放下一题”，助手会把对应 WAV 播放到 `CABLE Input`（声音设置里显示为“扬声器 (VB-Audio Virtual Cable)”）。
+
+已实测 VB-CABLE 的播放→录音通路：向虚拟声卡播放 1 kHz 测试音，从 CABLE Output 录到的峰值一致。
+
+## 完全重置
+
+“测试工具”页底部的“完全重置”会停止监听器、转换器和答题进程，删除登录启动项、桌面与启动快捷方式，清除 DeepSeek/阿里云凭证和界面偏好，删除虚拟麦克风 WAV、TTS 临时文件与助手日志。试卷包、答题历史和答案记录不受影响；虚拟声卡驱动不会被自动卸载，需要时请在设备管理器或“应用和功能”里手动移除。
 
 ## 重新构建（开发用）
 
@@ -72,7 +97,7 @@ AccessKey ID/Secret 是用于认证的长期凭证；阿里云不提供长期有
 - .NET 8 SDK
 - 运行 `build_ets_assistant_winui3.ps1`
 
-仓库不再随附 `.build-tools` 构建缓存；构建脚本会使用系统 Python/.NET，缺失时按上面的依赖安装。
+本地构建工具和缓存统一放在 `.build\tools`，不纳入仓库。构建脚本会优先使用该目录中的 .NET SDK 和 Python 依赖；缺失时再使用系统 Python/.NET。旧版发布包和中间产物按项目版本归档在 `.build\versions\<版本号>`。
 
 ## 数据与排错
 

@@ -2,19 +2,37 @@ $ErrorActionPreference = 'Stop'
 
 $root = [IO.Path]::GetFullPath($PSScriptRoot)
 $buildDir = Join-Path $root '.build'
-$toolsDir = Join-Path $root '.build-tools'
+$toolsDir = Join-Path $buildDir 'tools'
+$nugetConfig = Join-Path $toolsDir 'nuget-restore\NuGet.Config'
+$csproj = Join-Path $root 'winui3\ETSAssistant.WinUI3.csproj'
+if (-not (Test-Path -LiteralPath $csproj -PathType Leaf)) { throw "WinUI project not found: $csproj" }
+[xml]$projectXml = Get-Content -LiteralPath $csproj -Raw
+$projectVersion = [string]$projectXml.Project.PropertyGroup.Version
+if ($projectVersion -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') {
+    throw "Could not read a valid project version from $csproj."
+}
+$versionDir = Join-Path (Join-Path $buildDir 'versions') $projectVersion
 $buildId = Get-Date -Format 'yyyyMMdd-HHmmss'
-$stageRoot = Join-Path $buildDir ("winui3-release-" + $buildId)
+$stageRoot = Join-Path (Join-Path $versionDir 'staging') $buildId
 $stageUi = Join-Path $stageRoot '_winui'
 $stageEngine = Join-Path $stageRoot 'engine'
 $stageDist = Join-Path $stageRoot 'pyinstaller'
+$intermediateDir = Join-Path $versionDir 'intermediate'
+$intermediateObj = Join-Path $intermediateDir 'obj'
+$intermediateBin = Join-Path $intermediateDir 'bin'
 $engineRuntime = '_internal_engine'
 $uiRuntime = '_winui'
 $targetEngine = Join-Path $root 'ETS-Assistant-Engine.exe'
 $targetEngineRuntime = Join-Path $root $engineRuntime
 $targetUi = Join-Path $root $uiRuntime
-$archive = Join-Path $root 'archive\previous-builds'
-New-Item -ItemType Directory -Force -Path $buildDir, $toolsDir, $stageRoot, $stageUi, $stageDist, $archive | Out-Null
+$archiveVersion = $projectVersion
+$oldUiExe = Join-Path $targetUi 'ETS-Assistant-WinUI.exe'
+if (Test-Path -LiteralPath $oldUiExe -PathType Leaf) {
+    $oldProductVersion = (Get-Item -LiteralPath $oldUiExe).VersionInfo.ProductVersion
+    if ($oldProductVersion -match '^(\d+\.\d+\.\d+)') { $archiveVersion = $Matches[1] }
+}
+$archive = Join-Path (Join-Path (Join-Path $buildDir 'versions') $archiveVersion) 'previous-builds'
+New-Item -ItemType Directory -Force -Path $buildDir, $toolsDir, $versionDir, $stageRoot, $stageUi, $stageDist, $intermediateObj, $intermediateBin, $archive | Out-Null
 
 $localDotnet = Join-Path $toolsDir 'dotnet'
 if (Test-Path -LiteralPath (Join-Path $localDotnet 'dotnet.exe')) {
@@ -28,14 +46,14 @@ if ($LASTEXITCODE -ne 0 -or -not $sdkList) {
 $env:PYTHONPATH = if ($env:PYTHONPATH) { "$toolsDir;$env:PYTHONPATH" } else { $toolsDir }
 python -c "import PyInstaller, PIL, reportlab" 2>$null
 if ($LASTEXITCODE -ne 0) {
-    throw 'Python build dependencies are missing. Install the packages listed in requirements-build.txt into .build-tools.'
+    throw 'Python build dependencies are missing. Install the packages listed in requirements-build.txt into .build\tools.'
 }
 
 $pyinstallerArgs = @(
     '-m', 'PyInstaller', '--clean', '--noconfirm', '--onedir',
     '--contents-directory', $engineRuntime, '--windowed',
     '--name', 'ETS-Assistant-Engine', '--distpath', $stageDist,
-    '--workpath', (Join-Path $buildDir 'pyinstaller-engine'), '--specpath', $buildDir,
+    '--workpath', (Join-Path $intermediateDir 'pyinstaller'), '--specpath', (Join-Path $intermediateDir 'specs'),
     '--icon', (Join-Path $root 'winui3\Assets\ProgramIcon.ico'),
     '--collect-all', 'reportlab', '--collect-all', 'PIL',
     '--add-data', "$($root)\README.md;.",
@@ -76,9 +94,17 @@ if (Test-Path -LiteralPath (Join-Path $root '.git')) {
     }
 }
 
-$csproj = Join-Path $root 'winui3\ETSAssistant.WinUI3.csproj'
-if (-not (Test-Path -LiteralPath $csproj -PathType Leaf)) { throw "WinUI project not found: $csproj" }
-& dotnet publish $csproj --configuration Release --runtime win-x64 --self-contained true --output $stageUi
+$dotnetPublishArgs = @(
+    'publish', $csproj, '--configuration', 'Release', '--runtime', 'win-x64',
+    '--self-contained', 'true', '--output', $stageUi,
+    "-p:BaseIntermediateOutputPath=$intermediateObj\",
+    "-p:MSBuildProjectExtensionsPath=$intermediateObj\",
+    "-p:BaseOutputPath=$intermediateBin\"
+)
+if (Test-Path -LiteralPath $nugetConfig -PathType Leaf) {
+    $dotnetPublishArgs += "-p:RestoreConfigFile=$nugetConfig"
+}
+& dotnet @dotnetPublishArgs
 if ($LASTEXITCODE -ne 0) { throw "WinUI 3 publish failed with exit code $LASTEXITCODE." }
 $stageUiExe = Join-Path $stageUi 'ETS-Assistant-WinUI.exe'
 if (-not (Test-Path -LiteralPath $stageUiExe -PathType Leaf)) { throw 'WinUI publish did not produce ETS-Assistant-WinUI.exe.' }
@@ -125,6 +151,13 @@ if (Test-Path -LiteralPath $targetUi) {
 Move-Item -LiteralPath $stageEngineRuntime -Destination $targetEngineRuntime
 Move-Item -LiteralPath $stageEngineExe -Destination $targetEngine
 Move-Item -LiteralPath $stageUi -Destination $targetUi
+$archivedUi = Join-Path $archive ($uiRuntime + '-' + $buildId)
+$archivedCredential = Join-Path $archivedUi 'aliyun_tts_credentials.bin'
+$currentCredential = Join-Path $targetUi 'aliyun_tts_credentials.bin'
+if (Test-Path -LiteralPath $archivedCredential -PathType Leaf) {
+    if (Test-Path -LiteralPath $currentCredential) { throw "Credential file already exists in the new program directory: $currentCredential" }
+    Move-Item -LiteralPath $archivedCredential -Destination $currentCredential
+}
 
 & (Join-Path $root 'install_ets_answer_listener.ps1')
 if (-not ('ETSAssistantBuild.IconCache' -as [type])) {

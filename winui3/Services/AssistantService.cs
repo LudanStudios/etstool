@@ -175,18 +175,20 @@ public sealed partial class AssistantService
         catch (Exception) { return false; }
     }
 
-    public void OpenEts()
+    public void OpenEts(string extraArguments = "")
     {
         if (EtsExe is null) RefreshEts();
         if (EtsExe is null) throw new FileNotFoundException("找不到 ETS 安装目录。请确认 ETS 已安装，再重新扫描。", "Ets.exe");
         if (IsEtsRunning) return;
-        Process.Start(new ProcessStartInfo(EtsExe, $"--remote-debugging-port={DebugPort}")
+        string arguments = $"--remote-debugging-port={DebugPort}";
+        if (!string.IsNullOrWhiteSpace(extraArguments)) arguments += " " + extraArguments;
+        Process.Start(new ProcessStartInfo(EtsExe, arguments)
         {
             WorkingDirectory = Path.GetDirectoryName(EtsExe)!, UseShellExecute = true
         });
     }
 
-    public string InitializeAndOpen(AssistantSettings settings)
+    public string InitializeAndOpen(AssistantSettings settings, string extraArguments = "")
     {
         RefreshEts();
         if (EtsExe is null) throw new FileNotFoundException("找不到 ETS 安装目录。请确认 ETS 已安装，再重新扫描。", "Ets.exe");
@@ -197,7 +199,7 @@ public sealed partial class AssistantService
         if (autostart.Length > 0) warnings.Add(autostart);
 
         EnsureListener();
-        OpenEts();
+        OpenEts(extraArguments);
         LastError = string.Join(" ", warnings);
         return LastError;
     }

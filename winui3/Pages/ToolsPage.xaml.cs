@@ -19,10 +19,15 @@ public sealed partial class ToolsPage : Page
     private readonly PacketCaptureService _capture = PacketCaptureService.Current;
     private readonly DeepSeekService _deepSeek = new(AssistantService.Current.AppRoot);
     private readonly SpeakingAnswerService _speaking = new(AssistantService.Current.DataRoot);
-    private readonly AliyunTtsService _aliyunTts = new(AssistantService.Current.DataRoot);
+    private readonly AliyunTtsService _aliyunTts = new(AssistantService.Current.AppRoot);
+    private readonly SpeakingSessionStore _sessionStore = new(AssistantService.Current.DataRoot);
+    private readonly VirtualCableService _cable = new();
+    private SpeakingSession? _session;
+    private int _sessionIndex;
     private bool _updatingSpeakingMode;
     private string? _speakingPackId;
     private IReadOnlyList<SpeakingPaper> _speakingPapers = Array.Empty<SpeakingPaper>();
+    private string? _lastTtsWavPath;
     private bool _portAvailable;
     private bool _updatingCapture;
 
@@ -30,15 +35,23 @@ public sealed partial class ToolsPage : Page
     {
         InitializeComponent();
         _capture.StatusChanged += OnCaptureStatusChanged;
-        Unloaded += (_, _) => _capture.StatusChanged -= OnCaptureStatusChanged;
+        _cable.PlaybackEnded += OnCablePlaybackEnded;
+        Unloaded += (_, _) =>
+        {
+            _capture.StatusChanged -= OnCaptureStatusChanged;
+            _cable.PlaybackEnded -= OnCablePlaybackEnded;
+        };
         Loaded += async (_, _) =>
         {
             RefreshLogSummary();
             RefreshDeepSeekStatus();
             RefreshAliyunTtsStatus();
+            RefreshAudioStatus();
+            RefreshSessionUi();
             UpdateSpeakingModeUi();
             UpdateCaptureUi();
             EnvironmentText.Text = BuildEnvironmentText();
+            await RefreshCableAsync();
             await ProbePortAsync();
         };
     }
@@ -138,6 +151,268 @@ public sealed partial class ToolsPage : Page
             ShowMessage("端口未开放", "请先打开带 --remote-debugging-port=10086 的 ETS，再查看调试端口。",
                 InfoBarSeverity.Warning);
         }
+    }
+
+    private void RefreshAudioStatus()
+    {
+        var audio = new SpeakingAudioService(_service.DataRoot, _service.EtsExe);
+        string state = audio.HasInput ? $"已准备：{audio.InputPath}" : $"尚未准备 WAV（目标：{audio.InputPath}）";
+        AudioStatusText.Text = state + (_service.IsEtsRunning ? " · ETS 正在运行" : " · ETS 未运行");
+    }
+
+    private async void PickSpeakingWav_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.MusicLibrary };
+            picker.FileTypeFilter.Add(".wav");
+            MainWindow window = MainWindow.Current ?? throw new InvalidOperationException("窗口尚未准备好。");
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(window));
+
+            var file = await picker.PickSingleFileAsync();
+            if (file is null) return;
+
+            var audio = new SpeakingAudioService(_service.DataRoot, _service.EtsExe);
+            string output = await audio.PrepareAsync(file.Path);
+            RefreshAudioStatus();
+            ShowMessage("WAV 已准备", $"已转换为 16-bit / 48 kHz：{output}", InfoBarSeverity.Success);
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("准备 WAV 失败", ex.Message, InfoBarSeverity.Error);
+        }
+    }
+
+    private async void UseLastTtsWav_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_lastTtsWavPath) || !File.Exists(_lastTtsWavPath))
+        {
+            ShowMessage("没有可用的 TTS WAV", "先在下面的阿里云 TTS 区域合成一次语音。",
+                InfoBarSeverity.Warning);
+            return;
+        }
+        try
+        {
+            var audio = new SpeakingAudioService(_service.DataRoot, _service.EtsExe);
+            string output = await audio.PrepareAsync(_lastTtsWavPath);
+            RefreshAudioStatus();
+            ShowMessage("TTS WAV 已准备", $"已转换为 16-bit / 48 kHz：{output}", InfoBarSeverity.Success);
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("准备 TTS WAV 失败", ex.Message, InfoBarSeverity.Error);
+        }
+    }
+
+    private void LaunchEtsWithFakeMic_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var audio = new SpeakingAudioService(_service.DataRoot, _service.EtsExe);
+            if (!audio.HasInput)
+            {
+                ShowMessage("还没有 WAV", "先点“选择 WAV 并准备”，再启动 ETS。", InfoBarSeverity.Warning);
+                return;
+            }
+            if (_service.IsEtsRunning)
+            {
+                ShowMessage("ETS 正在运行", "请先完全关闭 ETS（包括托盘里的进程），再用虚拟麦克风启动。",
+                    InfoBarSeverity.Warning);
+                return;
+            }
+
+            bool loop = LoopAudioCheck.IsChecked == true;
+            _service.OpenEts(audio.BuildFakeMicrophoneArguments(loop));
+            RefreshAudioStatus();
+            ShowMessage("已请求启动 ETS",
+                "如果出现 UAC 提示请允许。启动后进入口语题，ETS 录音时会读取这个 WAV。",
+                InfoBarSeverity.Success);
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("启动失败", ex.Message, InfoBarSeverity.Error);
+        }
+    }
+
+    private void OnCablePlaybackEnded() =>
+        DispatcherQueue.TryEnqueue(() => SessionStatusText.Text = "播放完成。");
+
+    private async Task RefreshCableAsync()
+    {
+        try
+        {
+            VirtualCableDevice? device = await _cable.RefreshAsync();
+            CableStatusText.Text = device is null
+                ? "虚拟声卡：未检测到 CABLE Input（安装 VB-CABLE 后点“刷新虚拟声卡”）"
+                : $"虚拟声卡：{device.Name}";
+        }
+        catch (Exception ex)
+        {
+            CableStatusText.Text = "虚拟声卡：检测失败 — " + ex.Message;
+        }
+    }
+
+    private async void RefreshCable_Click(object sender, RoutedEventArgs e)
+    {
+        await RefreshCableAsync();
+        ShowMessage(_cable.IsAvailable ? "虚拟声卡已连接" : "未检测到虚拟声卡",
+            _cable.Current?.Name ?? "请安装 VB-CABLE，安装后点“刷新虚拟声卡”。",
+            _cable.IsAvailable ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
+    }
+
+    private void OpenSoundSettings_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("ms-settings:sound") { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("无法打开声音设置", ex.Message, InfoBarSeverity.Error);
+        }
+    }
+
+    private void RefreshSessionUi()
+    {
+        _session ??= _sessionStore.Load();
+        SessionItemBox.ItemsSource = _session?.Items;
+        if (_session is null)
+        {
+            SessionStatusText.Text = "尚未预生成整卷音频。";
+            return;
+        }
+        SessionStatusText.Text = $"试卷 {_session.PackId} · {_session.Items.Count} 条音频 · {_session.Mode}";
+        if (_session.Items.Count > 0 && SessionItemBox.SelectedIndex < 0)
+            SessionItemBox.SelectedIndex = 0;
+    }
+
+    private async void GenerateSession_Click(object sender, RoutedEventArgs e)
+    {
+        if (SpeakingPaperBox.SelectedItem is not SpeakingPaper paper)
+        {
+            ShowMessage("未选择试卷", "先点“读取所有试卷口语题”，在试卷下拉框里选一份试卷。",
+                InfoBarSeverity.Warning);
+            return;
+        }
+        if (paper.Questions.Count == 0)
+        {
+            ShowMessage("没有口语题", "这份试卷里没有可生成的口语题。", InfoBarSeverity.Warning);
+            return;
+        }
+        if (!AliyunTtsCredentialStore.HasCredentials)
+        {
+            ShowMessage("未配置阿里云 TTS 凭证",
+                "先在下方“阿里云 TTS 凭证”里填写 AccessKey ID、AccessKey Secret 和 AppKey 并保存，再预生成整卷音频。",
+                InfoBarSeverity.Warning);
+            return;
+        }
+
+        GenerateSessionButton.IsEnabled = false;
+        BatchProgress.Visibility = Visibility.Visible;
+        BatchProgress.Minimum = 0;
+        BatchProgress.Maximum = paper.Questions.Count;
+        BatchProgress.Value = 0;
+        string mode = AppPreferencesService.Current.SpeakingMode;
+        var items = new List<SpeakingSessionItem>();
+        var errors = new List<string>();
+        int failed = 0;
+        try
+        {
+            for (int index = 0; index < paper.Questions.Count; index++)
+            {
+                SpeakingQuestion question = paper.Questions[index];
+                BatchStatusText.Text = $"正在处理 {index + 1}/{paper.Questions.Count}：{question.Type}";
+                string answer = question.StandardAnswer;
+                if (mode == "flexible")
+                {
+                    DeepSeekResult generated = await _deepSeek.AskSpeakingAsync(question.RequestText);
+                    if (generated.Success && generated.Text.Length > 0) answer = generated.Text;
+                }
+                if (string.IsNullOrWhiteSpace(answer))
+                {
+                    failed++;
+                    errors.Add($"第 {question.Number} 题：没有可用答案");
+                    BatchProgress.Value = index + 1;
+                    continue;
+                }
+
+                AliyunTtsResult tts = await _aliyunTts.SynthesizeToWavAsync(answer);
+                if (!tts.Success)
+                {
+                    failed++;
+                    errors.Add($"第 {question.Number} 题：{tts.Error}");
+                    BatchProgress.Value = index + 1;
+                    continue;
+                }
+                items.Add(new SpeakingSessionItem(question.Number, question.Type, question.Prompt,
+                    answer, tts.FilePath));
+                BatchProgress.Value = index + 1;
+            }
+
+            _session = new SpeakingSession(paper.PackId, mode, DateTimeOffset.Now, items);
+            _sessionStore.Save(_session);
+            _sessionIndex = 0;
+            RefreshSessionUi();
+            BatchStatusText.Text = $"完成：{items.Count} 条音频" + (failed > 0 ? $"，{failed} 条失败" : "");
+            string detail = errors.Count > 0
+                ? Environment.NewLine + string.Join(Environment.NewLine, errors.Take(3))
+                : "";
+            BatchStatusText.Text += detail;
+            ShowMessage("整卷 TTS 已生成",
+                $"试卷 {paper.PackId}：{items.Count} 条音频" + (failed > 0 ? $"，{failed} 条失败" : "") + detail,
+                failed == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("整卷 TTS 失败", ex.Message, InfoBarSeverity.Error);
+        }
+        finally
+        {
+            GenerateSessionButton.IsEnabled = true;
+            BatchProgress.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void PlaySessionItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (SessionItemBox.SelectedItem is not SpeakingSessionItem item)
+        {
+            ShowMessage("没有选中音频", "先从播放列表里选一条。", InfoBarSeverity.Warning);
+            return;
+        }
+        PlaySessionItem(item);
+    }
+
+    private void PlayNextSessionItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (_session is null || _session.Items.Count == 0)
+        {
+            ShowMessage("没有播放列表", "先预生成整卷 TTS。", InfoBarSeverity.Warning);
+            return;
+        }
+        int index = Math.Clamp(_sessionIndex, 0, _session.Items.Count - 1);
+        PlaySessionItem(_session.Items[index]);
+        _sessionIndex = (index + 1) % _session.Items.Count;
+    }
+
+    private void PlaySessionItem(SpeakingSessionItem item)
+    {
+        try
+        {
+            _cable.Play(item.WavPath);
+            SessionItemBox.SelectedItem = item;
+            SessionStatusText.Text = $"正在播放第 {item.Number} 题：{item.WavName}";
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("播放失败", ex.Message, InfoBarSeverity.Error);
+        }
+    }
+
+    private void StopSessionPlayback_Click(object sender, RoutedEventArgs e)
+    {
+        _cable.Stop();
+        SessionStatusText.Text = "已停止播放。";
     }
 
     private void RefreshDeepSeekStatus()
@@ -366,31 +641,19 @@ public sealed partial class ToolsPage : Page
             AliyunTtsResult result = await _aliyunTts.SynthesizeToWavAsync(text);
             if (!result.Success)
             {
-                AliyunTtsStatusText.Text = $"合成失败：{result.Error}";
-                ShowMessage("阿里云 TTS 合成失败", result.Error, InfoBarSeverity.Error);
+                ShowMessage("阿里云 TTS 失败", result.Error, InfoBarSeverity.Error);
                 return;
             }
 
             AliyunTtsStatusText.Text = $"WAV 已保存：{result.FilePath}";
-            try
-            {
-                Process.Start(new ProcessStartInfo(result.FilePath) { UseShellExecute = true });
-            }
-            catch (Exception ex)
-            {
-                ShowMessage("WAV 已生成，但播放器无法打开",
-                    $"文件已保存：{result.FilePath}{Environment.NewLine}{ex.Message}",
-                    InfoBarSeverity.Warning);
-                return;
-            }
-
+            _lastTtsWavPath = result.FilePath;
+            Process.Start(new ProcessStartInfo(result.FilePath) { UseShellExecute = true });
             ShowMessage("阿里云 TTS 已完成",
                 $"Betty 已合成并打开 WAV 文件（{result.ChunkCount} 段）。", InfoBarSeverity.Success);
         }
         catch (Exception ex)
         {
-            AliyunTtsStatusText.Text = $"合成失败：{ex.Message}";
-            ShowMessage("阿里云 TTS 合成失败", ex.Message, InfoBarSeverity.Error);
+            ShowMessage("阿里云 TTS 失败", ex.Message, InfoBarSeverity.Error);
         }
         finally
         {
@@ -537,6 +800,49 @@ public sealed partial class ToolsPage : Page
             Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
         }
         catch (Exception ex) { ShowMessage("无法打开目录", ex.Message, InfoBarSeverity.Error); }
+    }
+
+    private async void FullReset_Click(object sender, RoutedEventArgs e)
+    {
+        var content = new TextBlock
+        {
+            Text = "即将执行：\n" +
+                   "• 停止监听器、转换器和答题进程\n" +
+                   "• 移除登录启动项和桌面/启动快捷方式\n" +
+                   "• 清除 DeepSeek API Key 和阿里云 TTS 凭证\n" +
+                   "• 恢复默认答题设置并清除界面偏好\n" +
+                   "• 删除虚拟麦克风 WAV、TTS 临时文件和助手日志\n\n" +
+                   "不会删除：试卷包、答题历史、答案记录。",
+            TextWrapping = TextWrapping.Wrap
+        };
+        var dialog = new ContentDialog
+        {
+            Title = "完全重置？",
+            Content = content,
+            PrimaryButtonText = "确认重置",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = XamlRoot
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+
+        try
+        {
+            var service = new FullResetService(_service);
+            FullResetResult result = await service.RunAsync();
+            RefreshLogSummary();
+            RefreshDeepSeekStatus();
+            RefreshAliyunTtsStatus();
+            RefreshAudioStatus();
+            EnvironmentText.Text = BuildEnvironmentText();
+            ShowMessage("完全重置完成",
+                string.Join(Environment.NewLine, result.Steps.Concat(result.Notes)),
+                InfoBarSeverity.Success);
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("完全重置失败", ex.Message, InfoBarSeverity.Error);
+        }
     }
 
     private void ShowMessage(string title, string message, InfoBarSeverity severity)

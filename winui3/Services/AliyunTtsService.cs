@@ -23,11 +23,11 @@ public sealed class AliyunTtsService
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(60) };
     private static readonly SemaphoreSlim TokenLock = new(1, 1);
     private static TokenCache? _tokenCache;
-    private readonly string _dataRoot;
+    private readonly string _programDirectory;
 
     private sealed record TokenCache(string CredentialFingerprint, string Token, DateTimeOffset ExpiresAt);
 
-    public AliyunTtsService(string dataRoot) => _dataRoot = dataRoot;
+    public AliyunTtsService(string programDirectory) => _programDirectory = programDirectory;
 
     public async Task<AliyunTtsResult> SynthesizeToWavAsync(string text, CancellationToken cancellationToken = default)
     {
@@ -54,7 +54,7 @@ public sealed class AliyunTtsService
             }
 
             byte[] wav = MergeWavFiles(waveFiles);
-            string outputDirectory = Path.Combine(_dataRoot, "tts-test");
+            string outputDirectory = Path.Combine(_programDirectory, "temp", "tts-test");
             Directory.CreateDirectory(outputDirectory);
             string outputPath = Path.Combine(outputDirectory,
                 $"aliyun-tts-{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.wav");
@@ -177,7 +177,7 @@ public sealed class AliyunTtsService
 
     private static byte[] MergeWavFiles(IReadOnlyList<byte[]> files)
     {
-        if (files.Count == 1) return files[0];
+        if (files.Count == 0) throw new InvalidOperationException("阿里云没有返回可用音频。");
 
         byte[]? format = null;
         using var audio = new MemoryStream();
@@ -220,15 +220,22 @@ public sealed class AliyunTtsService
             string chunkId = Encoding.ASCII.GetString(file, offset, 4);
             uint chunkSize = BitConverter.ToUInt32(file, offset + 4);
             offset += 8;
+            if (chunkId == "data")
+            {
+                // Aliyun's WAV header can advertise more samples than the body
+                // actually contains; clamp to the bytes we really received and
+                // rebuild a correct header below.
+                int available = Math.Max(0, file.Length - offset);
+                int take = (int)Math.Min(chunkSize, (uint)available);
+                byte[] audioPart = file.AsSpan(offset, take).ToArray();
+                data = data is null ? audioPart : [.. data, .. audioPart];
+                offset += take + (take & 1);
+                if ((uint)take < chunkSize) break;
+                continue;
+            }
             if (chunkSize > int.MaxValue || offset + (long)chunkSize > file.Length)
                 throw new InvalidOperationException("阿里云返回的 WAV 数据块长度无效。");
             if (chunkId == "fmt ") format ??= file.AsSpan(offset, (int)chunkSize).ToArray();
-            else if (chunkId == "data")
-            {
-                byte[] audioPart = file.AsSpan(offset, (int)chunkSize).ToArray();
-                if (data is null) data = audioPart;
-                else data = [.. data, .. audioPart];
-            }
             offset += (int)chunkSize + ((int)chunkSize & 1);
         }
         if (format is null || data is null)

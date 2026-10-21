@@ -16,9 +16,15 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>ETS-Assistant-WinUI</AssemblyName>
     <RootNamespace>ETSAssistant.WinUI3</RootNamespace>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <WindowsSdkPackageVersion>10.0.26100.56</WindowsSdkPackageVersion>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="obj\**;bin\**" />
+    <Content Remove="obj\**;bin\**" />
+    <None Remove="obj\**;bin\**" />
+    <Page Remove="obj\**;bin\**" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
     <PackageReference Include="aliyun-net-sdk-core" Version="1.6.2" />
