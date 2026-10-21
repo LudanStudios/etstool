@@ -13,7 +13,7 @@ public sealed partial class AboutPage : Page
         Assembly assembly = typeof(AboutPage).Assembly;
         Version? version = assembly.GetName().Version;
         VersionText.Text = version is null
-            ? "beta 1.3.0"
+            ? "beta 1.4.0"
             : $"beta {version.Major}.{version.Minor}.{version.Build}";
 
         string location = assembly.Location;
@@ -37,4 +37,5 @@ public sealed partial class AboutPage : Page
         catch (Exception) { }
     }
 }
+
 

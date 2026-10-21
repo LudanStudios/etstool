@@ -14,6 +14,12 @@ namespace ETSAssistant.WinUI3;
 public sealed partial class MainWindow : Window
 {
     internal static MainWindow? Current { get; private set; }
+    private readonly CurrentPaperService _paperService = new(AssistantService.Current.DataRoot);
+    private readonly SpeakingAnswerService _speakingAnswers = new(AssistantService.Current.DataRoot);
+    private DispatcherQueueTimer? _paperTimer;
+    private string? _lastPrepPackId;
+    private bool _checkingSpeakingPaper;
+    private SpeakingPrepWindow? _prepWindow;
 
     public MainWindow()
     {
@@ -49,6 +55,64 @@ public sealed partial class MainWindow : Window
         RootNavigation.SelectedItem = RootNavigation.MenuItems[0];
         PageFrame.Navigate(typeof(Pages.OverviewPage));
         RootGrid.Loaded += async (_, _) => await ShowCredentialsReminderAsync();
+
+        _paperTimer = DispatcherQueue.CreateTimer();
+        _paperTimer.Interval = TimeSpan.FromSeconds(3);
+        _paperTimer.Tick += async (_, _) => await CheckSpeakingPaperAsync();
+        _paperTimer.Start();
+        Closed += (_, _) => _paperTimer.Stop();
+    }
+
+    private async Task CheckSpeakingPaperAsync()
+    {
+        if (_checkingSpeakingPaper) return;
+        _checkingSpeakingPaper = true;
+        try
+        {
+            string? packId = await CurrentPaperService.FindActivePackIdAsync();
+            if (packId is null)
+            {
+                _lastPrepPackId = null;
+                return;
+            }
+            if (string.Equals(packId, _lastPrepPackId, StringComparison.Ordinal)) return;
+            _lastPrepPackId = packId;
+
+            IReadOnlyList<SpeakingQuestion> questions = _speakingAnswers.Load(packId);
+            if (questions.Count == 0) return;
+
+            var sessionStore = new SpeakingSessionStore(AssistantService.Current.AppRoot);
+            SpeakingSession? existing = sessionStore.Load();
+            if (existing is not null && existing.PackId == packId && existing.Items.Count > 0 &&
+                existing.Items.All(item => File.Exists(item.WavPath)))
+                return;
+
+            string title = _speakingAnswers.LoadAllPapers()
+                .FirstOrDefault(paper => paper.PackId == packId)?.Title ?? $"试卷 {packId}";
+            ShowSpeakingPrep(packId, title, questions);
+        }
+        catch (Exception)
+        {
+            // A transient DevTools/IO failure should not break the main window.
+        }
+        finally
+        {
+            _checkingSpeakingPaper = false;
+        }
+    }
+
+    private void ShowSpeakingPrep(string packId, string title, IReadOnlyList<SpeakingQuestion> questions)
+    {
+        try { _prepWindow?.Close(); }
+        catch (Exception) { }
+        var window = new SpeakingPrepWindow();
+        window.Closed += (_, _) =>
+        {
+            if (_prepWindow == window) _prepWindow = null;
+        };
+        _prepWindow = window;
+        window.Start(packId, title, questions);
+        window.Activate();
     }
 
     private bool _credentialReminderShown;
