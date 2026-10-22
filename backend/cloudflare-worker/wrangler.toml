@@ -1,0 +1,8 @@
+name = "ets-free-listening"
+main = "src/index.js"
+compatibility_date = "2026-10-22"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ets_free_listening"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"

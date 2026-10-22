@@ -1,0 +1,4 @@
+# Cloudflare local secrets (do not commit)
+DEEPSEEK_API_KEY=sk-your-deepseek-key
+DEVICE_HASH_SALT=change-me-device-salt
+IP_HASH_SALT=change-me-ip-salt
