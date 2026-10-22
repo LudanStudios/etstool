@@ -1,10 +1,10 @@
-ETS Tool beta 1.5.1
-Build: 2026-10-22 00:38
+ETS Tool beta 1.6.0
+Build: 2026-10-22 20:21
 Root: C:\Users\CARLSON\Documents\Codex Sandbox\ETS
 Runtime: C:\Users\CARLSON\Documents\Codex Sandbox\ETS\_winui\ETS-Assistant-WinUI.exe
 Engine: C:\Users\CARLSON\Documents\Codex Sandbox\ETS\ETS-Assistant-Engine.exe
 
 最近更新：
-- CablePlayer 改为 .NET 8 self-contained，新电脑不再需要安装 .NET 8
-- 虚拟声卡安装包继续随程序附带
-- 一键自动口语仅剩 Python 3.10+ 一个外部依赖
+- 答题设置新增 CSV 批量凭据导入（DeepSeek + 阿里云 TTS）
+- 支持带表头和无表头两种格式
+- 导入后使用 Windows DPAPI 加密保存，不提供导出

@@ -102,6 +102,31 @@
                     <InfoBar x:Name="ApiKeyInfoBar" IsOpen="False" />
                 </StackPanel>
             </Border>
+            <Border Padding="24" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <StackPanel Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="9">
+                        <SymbolIcon Symbol="OpenFile" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                        <TextBlock Text="CSV 批量凭据导入" FontSize="17" FontWeight="SemiBold" />
+                    </StackPanel>
+                    <TextBlock Text="一次导入 DeepSeek 和阿里云 TTS 凭据。保存时使用 Windows DPAPI 加密，只写入本机；程序不提供导出功能。"
+                               FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
+                    <Border Background="{ThemeResource ControlFillColorDefaultBrush}" CornerRadius="8" Padding="12">
+                        <TextBlock FontFamily="Consolas" FontSize="12" TextWrapping="Wrap"
+                                   Text="type,api_key,access_key_id,access_key_secret,app_key&#x0a;deepseek,sk-xxxx,,,&#x0a;aliyun,,LTAIxxxx,secret,appkey" />
+                    </Border>
+                    <TextBlock Text="也支持无表头格式：deepseek,sk-xxxx 或 aliyun,LTAIxxxx,secret,appkey"
+                               FontSize="12" Opacity="0.6" TextWrapping="Wrap" />
+                    <Button Click="ImportCsv_Click" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Left">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <SymbolIcon Symbol="OpenFile" />
+                            <TextBlock Text="选择 CSV 并导入" />
+                        </StackPanel>
+                    </Button>
+                    <TextBlock x:Name="CsvImportStatusText" FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
+                    <InfoBar x:Name="CsvImportInfoBar" IsOpen="False" />
+                </StackPanel>
+            </Border>
             <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                 <StackPanel Spacing="8">

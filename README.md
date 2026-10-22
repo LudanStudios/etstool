@@ -1,4 +1,4 @@
-# ETS Tool by @azursmelt（beta 1.5.1）
+# ETS Tool by @azursmelt（beta 1.6.0）
 
 WinUI 3 版 ETS 助手，包含试卷监听、自动答题、试卷管理、答案提取、抓包调试和中英文界面。
 
@@ -8,11 +8,12 @@ WinUI 3 版 ETS 助手，包含试卷监听、自动答题、试卷管理、答�
 
 ## 在新电脑上运行
 
-把整个 `ETS` 文件夹复制到新电脑即可，不需要安装 Python、.NET 或 Windows App Runtime。必须保留 `ETS-Assistant-Engine.exe` 旁边的整个 `_internal_engine` 文件夹；不要只分发 EXE，也不要从文件夹中单独挑选文件。引擎依赖该目录中的 Python DLL、标准库扩展和第三方库。
+把整个 `ETS` 文件夹复制到新电脑即可，主程序和自动答题不需要安装 Python、.NET 或 Windows App Runtime。必须保留 `ETS-Assistant-Engine.exe` 旁边的整个 `_internal_engine` 文件夹；不要只分发 EXE，也不要从文件夹中单独挑选文件。引擎依赖该目录中的 Python DLL、标准库扩展和第三方库。
 
 - `_winui` 已包含 .NET 8 和 Windows App SDK 自包含运行时。
 - `ETS-Assistant-Engine.exe` 和 `_internal_engine` 已包含 Python 运行时及依赖。
-- Python 源码只用于重新构建，运行程序时不需要 Python。
+- Python 源码只用于重新构建和“一键自动口语”；主程序、自动答题和手动 TTS 播放不需要 Python。
+- “一键自动口语”需要本机安装 Python 3.10+ 64 位，并能在 PATH 中找到 `python.exe`；`tools\CablePlayer` 已自包含，不需要 .NET。
 
 仍然需要：
 
@@ -45,6 +46,23 @@ WinUI 3 版 ETS 助手，包含试卷监听、自动答题、试卷管理、答�
 ## DeepSeek 口语测试
 
 在“答题设置”页填入 DeepSeek API Key 并保存，密钥会用 Windows DPAPI 加密后存放在 `%APPDATA%\ETS\deepseek_api_key.bin`，不会写入配置文件或仓库。
+
+同一页支持 CSV 批量凭据导入，可一次写入 DeepSeek 和阿里云 TTS 凭据：
+
+```csv
+type,api_key,access_key_id,access_key_secret,app_key
+deepseek,sk-xxxx,,,
+aliyun,,LTAIxxxx,secret,appkey
+```
+
+也支持无表头格式：
+
+```csv
+deepseek,sk-xxxx
+aliyun,LTAIxxxx,secret,appkey
+```
+
+导入后会分别使用 Windows DPAPI 加密保存，界面不显示明文，程序也不提供导出功能；原始 CSV 文件不会被复制进程序目录，如包含明文密钥请自行妥善保管或删除。
 
 同一页还可以切换口语模式：
 
@@ -114,6 +132,7 @@ ETS 已打开但助手显示未连接时，先确认 `127.0.0.1:10086` 可访问
 ## 运行位置与权限
 
 监听器需要写入 `%APPDATA%\ETS`（日志和答题历史）。如果程序目录位于 Windows 沙箱或受完整性级别限制的位置（例如 `Codex Sandbox` 工作区），Windows 会以低完整性级别启动程序，监听器写不了日志，答题进程也就不会启动。此时请把运行目录放到普通用户目录（例如 `%LOCALAPPDATA%\Programs\ETS-Assistant`），并让桌面快捷方式和登录启动项指向该目录。
+
 
 
 
