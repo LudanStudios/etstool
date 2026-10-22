@@ -4,7 +4,8 @@ using System.Text.RegularExpressions;
 
 namespace ETSAssistant.WinUI3.Services;
 
-public sealed record CurrentPaperAnswer(int Number, string QuestionId, string CorrectAnswer, string SelectedAnswer)
+public sealed record CurrentPaperAnswer(int Number, string QuestionId, string CorrectAnswer, string SelectedAnswer,
+    bool IsListening = false)
 {
     public bool Answered => SelectedAnswer.Length > 0;
     public bool Matches => Answered && SelectedAnswer == CorrectAnswer;
@@ -126,6 +127,7 @@ public sealed class CurrentPaperService
                 string contentId = Scalar(info, "stid");
                 if (contentId.Length == 0) contentId = Path.GetFileName(contentDirectory)["content_".Length..];
                 Dictionary<string, int> numbers = ReadDisplayNumbers(contentDirectory);
+                bool contentHasAudio = Scalar(info, "audio").Length > 0 || Scalar(info, "st_audio").Length > 0;
                 if (!info.TryGetProperty("xtlist", out JsonElement questions) ||
                     questions.ValueKind != JsonValueKind.Array) continue;
 
@@ -138,10 +140,11 @@ public sealed class CurrentPaperService
                     if (questionNumber.Length == 0) questionNumber = index.ToString();
                     string answer = Scalar(question, "answer").Trim().ToUpperInvariant();
                     if (answer is not ("A" or "B" or "C" or "D")) continue;
+                    bool isListening = contentHasAudio || Scalar(question, "xt_wj").Length > 0;
                     entries.Add(new Entry(
                         $"{contentId}_{questionNumber}",
                         numbers.TryGetValue(questionNumber, out int display) ? display : null,
-                        sequence, answer));
+                        sequence, answer, isListening));
                 }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
@@ -167,7 +170,7 @@ public sealed class CurrentPaperService
             position++;
             selected.TryGetValue(entry.QuestionId, out string? chosen);
             answers.Add(new CurrentPaperAnswer(entry.DisplayNumber ?? position, entry.QuestionId,
-                entry.CorrectAnswer, chosen ?? string.Empty));
+                entry.CorrectAnswer, chosen ?? string.Empty, entry.IsListening));
         }
 
         string title;
@@ -233,5 +236,6 @@ public sealed class CurrentPaperService
         };
     }
 
-    private sealed record Entry(string QuestionId, int? DisplayNumber, int Sequence, string CorrectAnswer);
+    private sealed record Entry(string QuestionId, int? DisplayNumber, int Sequence, string CorrectAnswer,
+        bool IsListening);
 }

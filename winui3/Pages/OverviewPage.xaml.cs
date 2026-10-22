@@ -166,7 +166,8 @@ public sealed partial class OverviewPage : Page
         string signature = paper is null
             ? string.Empty
             : $"{paper.PackId}|{paper.Title}|{paper.Total}|{paper.Answered}|{paper.Correct}|{paper.LastActivity:O}|" +
-              string.Join(",", paper.Answers.Select(answer => answer.SelectedAnswer));
+              string.Join(",", paper.Answers.Select(answer => answer.SelectedAnswer)) + "|" +
+              string.Join(",", paper.Answers.Select(answer => answer.IsListening ? "L" : "R"));
         if (signature == _paperSignature) return;
         _paperSignature = signature;
         _currentPaper = paper;
@@ -207,7 +208,8 @@ public sealed partial class OverviewPage : Page
 
     private static string BuildAnswerTooltip(CurrentPaperAnswer answer)
     {
-        string detail = $"第 {answer.Number} 题\n正确答案：{answer.CorrectAnswer}";
+        string kind = answer.IsListening ? "听力题" : "选择题";
+        string detail = $"{kind} 第 {answer.Number} 题\n正确答案：{answer.CorrectAnswer}";
         return answer.Answered
             ? detail + $"\n已选答案：{answer.SelectedAnswer}（{(answer.Matches ? "一致" : "不一致")}）"
             : detail + "\n尚未作答";
