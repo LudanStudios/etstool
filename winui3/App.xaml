@@ -7,6 +7,15 @@
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
+            <Style x:Key="BetaBadgeStyle" TargetType="Border">
+                <Setter Property="Background" Value="#F59E0B" />
+                <Setter Property="CornerRadius" Value="4" />
+                <Setter Property="Height" Value="20" />
+                <Setter Property="MinWidth" Value="44" />
+                <Setter Property="Padding" Value="7,0" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="HorizontalAlignment" Value="Left" />
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

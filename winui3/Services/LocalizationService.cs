@@ -26,7 +26,8 @@ public sealed class LocalizationService
         ("ETS 程序：", "ETS executable: "),
         ("后台引擎：", "Engine: "),
         ("系统：", "System: "),
-        ("抓包文件：", "Capture file: ")
+        ("抓包文件：", "Capture file: "),
+        ("读取体验模式用量失败：", "Could not read Experience Mode usage: ")
     };
 
     public void Load(string language)
@@ -78,6 +79,11 @@ public sealed class LocalizationService
             if (match.Success) return $"Paper {match.Groups[1].Value} ({match.Groups[2].Value} questions)";
             match = Regex.Match(text, @"^试卷 (\d+) 的答案（(\d+) 题）$");
             if (match.Success) return $"Answers for paper {match.Groups[1].Value} ({match.Groups[2].Value} questions)";
+            match = Regex.Match(text, @"^本设备剩余 (\d+)/(\d+) 次 · 当前 IP 剩余 (\d+)/(\d+) 次$");
+            if (match.Success)
+                return $"This device remaining {match.Groups[1].Value}/{match.Groups[2].Value} · Current IP remaining {match.Groups[3].Value}/{match.Groups[4].Value}";
+            match = Regex.Match(text, @"^刷新于：(\d{2}:\d{2}) · 北京时间 (\d{2}:\d{2}) 重置$");
+            if (match.Success) return $"Updated {match.Groups[1].Value} · resets at {match.Groups[2].Value} China time";
             match = Regex.Match(text, @"^上次作答：已答 (\d+) 题 · 正确 (\d+) 题 · 错误 (\d+) 题$");
             if (match.Success)
                 return $"Last attempt: answered {match.Groups[1].Value} · correct {match.Groups[2].Value} · wrong {match.Groups[3].Value}";
@@ -111,8 +117,24 @@ public sealed class LocalizationService
             case HyperlinkButton link when link.Content is string linkText:
                 link.Content = Translate(linkText);
                 break;
-            case TextBox textBox when !string.IsNullOrWhiteSpace(textBox.PlaceholderText):
-                textBox.PlaceholderText = Translate(textBox.PlaceholderText);
+            case TextBox textBox:
+                if (!string.IsNullOrWhiteSpace(textBox.PlaceholderText))
+                    textBox.PlaceholderText = Translate(textBox.PlaceholderText);
+                if (textBox.Header is string textHeader)
+                    textBox.Header = Translate(textHeader);
+                break;
+            case PasswordBox passwordBox:
+                if (!string.IsNullOrWhiteSpace(passwordBox.PlaceholderText))
+                    passwordBox.PlaceholderText = Translate(passwordBox.PlaceholderText);
+                if (passwordBox.Header is string passwordHeader)
+                    passwordBox.Header = Translate(passwordHeader);
+                break;
+            case CheckBox checkBox when checkBox.Content is string checkText:
+                checkBox.Content = Translate(checkText);
+                break;
+            case ToggleSwitch toggleSwitch:
+                if (toggleSwitch.OnContent is string onText) toggleSwitch.OnContent = Translate(onText);
+                if (toggleSwitch.OffContent is string offText) toggleSwitch.OffContent = Translate(offText);
                 break;
             case InfoBar infoBar:
                 if (!string.IsNullOrWhiteSpace(infoBar.Title)) infoBar.Title = Translate(infoBar.Title);

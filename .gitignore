@@ -20,6 +20,10 @@ venv/
 temp/
 _winui/aliyun_tts_credentials.bin
 _winui/temp/
+_winui/*.WebView2/
+backend/cloudflare-worker/.dev.vars
+backend/cloudflare-worker/.dev.vars.*
+!backend/cloudflare-worker/.dev.vars.example
 Thumbs.db
 Desktop.ini
 .DS_Store

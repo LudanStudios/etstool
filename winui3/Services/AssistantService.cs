@@ -8,7 +8,14 @@ using Microsoft.Win32;
 
 namespace ETSAssistant.WinUI3.Services;
 
-public sealed record AssistantSettings(double Accuracy, string Seed, double SkipInterval, bool StartAtLogin);
+public sealed record AssistantSettings(
+    double Accuracy,
+    string Seed,
+    double SkipInterval,
+    bool StartAtLogin,
+    bool AutoListeningEnabled = false,
+    bool ExperienceModeEnabled = false,
+    bool VerboseLoggingEnabled = false);
 
 public sealed partial class AssistantService
 {
@@ -60,6 +67,7 @@ public sealed partial class AssistantService
     {
         double accuracy = 1.0, skip = 0.0;
         string seed = "default";
+        bool autoListening = false, experienceMode = false;
         if (File.Exists(ConfigPath))
         {
             foreach (string rawLine in File.ReadLines(ConfigPath, Encoding.UTF8))
@@ -73,10 +81,16 @@ public sealed partial class AssistantService
                 if (key == "accuracy_rate" && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double a)) accuracy = a;
                 if (key == "random_seed") seed = value;
                 if (key == "skip_interval_seconds" && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double s)) skip = s;
+                if (key == "auto_listening_enabled") autoListening = value.Equals("true", StringComparison.OrdinalIgnoreCase);
+                if (key == "experience_mode_enabled") experienceMode = value.Equals("true", StringComparison.OrdinalIgnoreCase);
             }
         }
+        AppPreferencesService preferences = AppPreferencesService.Current;
         return new AssistantSettings(Math.Clamp(accuracy, 0, 1), string.IsNullOrWhiteSpace(seed) ? "default" : seed,
-            Math.Clamp(skip, 0, 60), IsAutostartEnabled);
+            Math.Clamp(skip, 0, 60), IsAutostartEnabled,
+            preferences.AutoListeningEnabled,
+            preferences.ExperienceModeEnabled,
+            preferences.VerboseLoggingEnabled);
     }
 
     public void SaveSettings(AssistantSettings settings)
@@ -85,15 +99,35 @@ public sealed partial class AssistantService
             throw new ArgumentOutOfRangeException(nameof(settings), "目标正确率必须在 0% 到 100% 之间。");
         if (!double.IsFinite(settings.SkipInterval) || settings.SkipInterval is < 0 or > 60)
             throw new ArgumentOutOfRangeException(nameof(settings), "跳题间隔必须在 0 到 60 秒之间。");
-        string seed = string.IsNullOrWhiteSpace(settings.Seed) ? "default" : settings.Seed.Trim();
+        string seed = settings.Seed;
+        if (string.IsNullOrWhiteSpace(seed) || seed == "default")
+            seed = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
         if (seed.Any(c => c is '\r' or '\n' or '#'))
             throw new ArgumentException("随机种子不能包含换行符或 # 字符。");
         Directory.CreateDirectory(AppRoot);
         string contents = "# 由 ETS 自动监听助手管理；也可在程序界面中修改。\n" +
             $"accuracy_rate: {settings.Accuracy.ToString("0.00", CultureInfo.InvariantCulture)}\n" +
             $"random_seed: '{seed}'\n" +
-            $"skip_interval_seconds: {settings.SkipInterval.ToString("0.###", CultureInfo.InvariantCulture)}\n";
+            $"skip_interval_seconds: {settings.SkipInterval.ToString("0.###", CultureInfo.InvariantCulture)}\n" +
+            $"auto_listening_enabled: {settings.AutoListeningEnabled.ToString().ToLowerInvariant()}\n" +
+            $"experience_mode_enabled: {settings.ExperienceModeEnabled.ToString().ToLowerInvariant()}\n" +
+            $"verbose_logging_enabled: {settings.VerboseLoggingEnabled.ToString().ToLowerInvariant()}\n";
         File.WriteAllText(ConfigPath, contents, new UTF8Encoding(false));
+    }
+
+    public void SyncExperienceSettings()
+    {
+        try
+        {
+            AssistantSettings settings = LoadSettings();
+            SaveSettings(settings with
+            {
+                AutoListeningEnabled = AppPreferencesService.Current.AutoListeningEnabled,
+                ExperienceModeEnabled = AppPreferencesService.Current.ExperienceModeEnabled,
+                VerboseLoggingEnabled = AppPreferencesService.Current.VerboseLoggingEnabled
+            });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { }
     }
 
     /// <summary>Updates the login entry; returns a friendly warning instead of throwing when Windows blocks the registry write.</summary>
@@ -186,6 +220,30 @@ public sealed partial class AssistantService
         {
             WorkingDirectory = Path.GetDirectoryName(EtsExe)!, UseShellExecute = true
         });
+    }
+
+    public int EndEtsProcesses()
+    {
+        int ended = 0;
+        foreach (string name in new[] { "Ets", "ETSShell", "EtsCore" })
+        {
+            foreach (Process process in Process.GetProcessesByName(name))
+            {
+                using (process)
+                {
+                    try
+                    {
+                        if (process.HasExited) continue;
+                        process.Kill();
+                        process.WaitForExit(2000);
+                        ended++;
+                    }
+                    catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or
+                                              UnauthorizedAccessException) { }
+                }
+            }
+        }
+        return ended;
     }
 
     public string InitializeAndOpen(AssistantSettings settings, string extraArguments = "")

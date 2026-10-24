@@ -1,10 +1,30 @@
-ETS Tool beta 1.7.0
-Build: 2026-10-22 20:59
-Root: C:\Users\CARLSON\Documents\Codex Sandbox\ETS
-Runtime: C:\Users\CARLSON\Documents\Codex Sandbox\ETS\_winui\ETS-Assistant-WinUI.exe
-Engine: C:\Users\CARLSON\Documents\Codex Sandbox\ETS\ETS-Assistant-Engine.exe
+ETS Tool 1.0.0
+Build: 2026-10-24
+Root: .
+Runtime: .\_winui\ETS-Assistant-WinUI.exe
+Engine: .\ETS-Assistant-Engine.exe
 
 最近更新：
+- 窗口模式下折叠导航按钮使用半透明背景；主窗口最小宽度设为 450 DIP
+- 修复窄窗口下首页“一键初始化并启动”按钮被压成小块的问题，改为占满操作区整行
+- 窄窗口下页面标题避开导航菜单按钮；试卷列表合并日期列并为操作按钮保留空间
+- 非最大化窗口下导航栏自动切换为紧凑模式，页面边距随可用宽度收缩
+- 当前活动无任务时显示与侧栏相同的同步图标；首页操作区较窄时将启动按钮移到下一行
+- 体验模式试卷解析通过校验后立即扣 1 次；DeepSeek 上游失败也不退还，错误响应说明扣额状态
+- 体验模式可用 DeepSeek 公用 Worker 生成整卷逐题解析；每次完整解析扣 1 次独立额度，内部多组请求不重复计数
+- 体验模式用量新增“试卷解析”，并在确认框说明公用服务传输内容和单次扣额规则
+- 修复体验模式下未配置阿里云凭据时，整卷 TTS 仍被本地凭据检查拦截的问题；现在改用 Worker 并计入每日额度
+- 偏好设置在体验模式开启时显示听力、口语和 TTS 的设备/IP 剩余额度，并可手动刷新
+- Cloudflare Worker 新增不扣额度的每日用量查询接口，不返回原始设备 ID、IP 或哈希
+- DeepSeek 详细解析 Markdown 排版、下载目录固定保存与路径提示，支持从预览用默认程序打开 PDF；新增可并行运行的当前活动页面
+- 修正首页主操作按钮尺寸、补齐按钮图标、移除首页 README 入口；BETA 改为小圆角条；凭据折叠栏增高并修正内容宽度和对齐
+- 首页按钮和 Beta 徽标布局优化；凭据区域增大留白并统一左对齐；移除开发者工具重复的口语模式设置
+- 首次启动凭据引导与体验模式 opt-in，明确显示公用服务数据范围和日限额
+- 虚拟麦克风只在 ETS Tool 运行期间临时成为默认输入，退出时恢复之前的设备
+- 快速开始首页、折叠凭据设置、自动听力 Beta、DeepSeek 试卷解析 PDF 预览
+- 开发者工具七击解锁，偏好设置增加 GitHub Release/提交自动检查
+- 无本机凭据时，DeepSeek 口语生成与阿里云 TTS 改走 Cloudflare Worker，并分别执行每日设备/IP 限额
+- 个人 DeepSeek Key 与阿里云 TTS 凭据仍可选填；凭据保存在本机，不随发布包归档
 - 运行概览自动识别听力题
 - 听力答案与选择题一起显示在“试卷答案”区域，不单独分区
 - 听力题在答案 tooltip 中标注

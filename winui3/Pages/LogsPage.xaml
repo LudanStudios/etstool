@@ -2,7 +2,7 @@
     x:Class="ETSAssistant.WinUI3.Pages.LogsPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Grid Margin="30,26,30,30" RowDefinitions="Auto,*" RowSpacing="18">
+    <Grid x:Name="ResponsiveContent" Margin="30,26,30,30" RowDefinitions="Auto,*" RowSpacing="18">
         <Grid ColumnDefinitions="*,Auto">
             <Grid ColumnDefinitions="28,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="5">
                 <SymbolIcon Symbol="Document" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"

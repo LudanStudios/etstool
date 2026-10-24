@@ -4,6 +4,9 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="ETS Tool by @azursmelt">
     <Grid x:Name="RootGrid" RequestedTheme="Dark" Background="Transparent" RowDefinitions="48,*">
+        <Border x:Name="BackdropFallback" Grid.RowSpan="2"
+                Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+                IsHitTestVisible="False" Visibility="Collapsed" />
         <Grid x:Name="AppTitleBar" Height="48" Background="Transparent">
             <StackPanel Orientation="Horizontal" Spacing="11" Margin="20,0,0,0" VerticalAlignment="Center">
                 <Image Source="ms-appx:///Assets/ProgramIcon.png" Width="24" Height="24"
@@ -15,15 +18,24 @@
 
         <NavigationView x:Name="RootNavigation"
                         Grid.Row="1"
-                        PaneDisplayMode="Left"
+                        PaneDisplayMode="Auto"
+                        CompactModeThresholdWidth="760"
+                        ExpandedModeThresholdWidth="1080"
+                        OpenPaneLength="260"
                         IsBackButtonVisible="Collapsed"
                         IsSettingsVisible="False"
                         IsPaneToggleButtonVisible="True"
                         Background="Transparent"
-                        SelectionChanged="RootNavigation_SelectionChanged">
+                        SelectionChanged="RootNavigation_SelectionChanged"
+                        DisplayModeChanged="RootNavigation_DisplayModeChanged">
             <NavigationView.Resources>
                 <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="#D918212E" />
                 <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="#D918212E" />
+                <Style x:Key="WindowedPaneToggleButtonStyle" TargetType="Button"
+                       BasedOn="{StaticResource PaneToggleButtonStyle}">
+                    <Setter Property="Background" Value="#80333B48" />
+                    <Setter Property="CornerRadius" Value="8" />
+                </Style>
             </NavigationView.Resources>
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="运行概览" Tag="overview">
@@ -35,10 +47,10 @@
                 <NavigationViewItem Content="答题设置" Tag="settings">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Setting" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="运行记录" Tag="logs">
+                <NavigationViewItem Content="运行记录" Tag="logs" Visibility="Collapsed">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Document" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="测试工具" Tag="tools">
+                <NavigationViewItem Content="开发者工具" Tag="tools" Visibility="Collapsed">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Repair" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem Content="使用说明" Tag="guide">
@@ -46,6 +58,18 @@
                 </NavigationViewItem>
             </NavigationView.MenuItems>
             <NavigationView.FooterMenuItems>
+                <NavigationViewItem x:Name="ActivitiesNavigationItem" Tag="activities">
+                    <NavigationViewItem.Icon>
+                        <SymbolIcon Symbol="Sync" />
+                    </NavigationViewItem.Icon>
+                    <NavigationViewItem.Content>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <TextBlock x:Name="ActivityNavigationLabel" Text="当前活动" VerticalAlignment="Center" />
+                            <ProgressRing x:Name="ActivityNavigationRing" Grid.Column="1" Width="16" Height="16"
+                                          IsActive="False" IsIndeterminate="True" />
+                        </Grid>
+                    </NavigationViewItem.Content>
+                </NavigationViewItem>
                 <NavigationViewItem Content="偏好设置" Tag="preferences">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Setting" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
@@ -55,5 +79,7 @@
             </NavigationView.FooterMenuItems>
             <Frame x:Name="PageFrame" />
         </NavigationView>
+        <WebView2 x:Name="SharedPdfRendererControl" Grid.Row="1" Width="2" Height="2" Opacity="0"
+                  IsHitTestVisible="False" HorizontalAlignment="Left" VerticalAlignment="Top" />
     </Grid>
 </Window>

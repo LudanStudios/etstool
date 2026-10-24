@@ -25,6 +25,7 @@ public sealed partial class OverviewPage : Page
     private CurrentPaperSnapshot? _currentPaper;
     private string _paperSignature = "\0";
     private bool _refreshingPaper;
+    private bool? _initializeButtonWrapped;
 
     public OverviewPage()
     {
@@ -46,6 +47,28 @@ public sealed partial class OverviewPage : Page
         Unloaded += (_, _) => _timer?.Stop();
     }
 
+    private void ActionButtonsGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        bool wrapInitializeButton = e.NewSize.Width < 720;
+        if (_initializeButtonWrapped == wrapInitializeButton) return;
+
+        _initializeButtonWrapped = wrapInitializeButton;
+        if (wrapInitializeButton)
+        {
+            Grid.SetRow(InitializeButton, 1);
+            Grid.SetColumn(InitializeButton, 0);
+            Grid.SetColumnSpan(InitializeButton, 4);
+            InitializeButton.HorizontalAlignment = HorizontalAlignment.Stretch;
+        }
+        else
+        {
+            Grid.SetRow(InitializeButton, 0);
+            Grid.SetColumn(InitializeButton, 3);
+            Grid.SetColumnSpan(InitializeButton, 1);
+            InitializeButton.HorizontalAlignment = HorizontalAlignment.Right;
+        }
+    }
+
     private void RefreshStatus()
     {
         _service.RefreshEts();
@@ -56,6 +79,17 @@ public sealed partial class OverviewPage : Page
             ? Color.FromArgb(255, 34, 197, 94) : Color.FromArgb(255, 22, 163, 74);
         StatusDot.Fill = new SolidColorBrush(color);
         EtsPathText.Text = _service.EtsExe ?? "请先安装 ETS，再重新扫描。";
+        ListenerText.Text = _service.IsAutostartEnabled
+            ? "监听器：已设置为登录 Windows 后自启动。"
+            : "监听器：尚未设置登录自启动，可在答题设置中开启。";
+        AppPreferencesService preferences = AppPreferencesService.Current;
+        CredentialStatusText.Text = $"凭据：DeepSeek {(ApiKeyStore.HasKey ? "已配置" : "未配置")} · 阿里云 TTS " +
+            $"{(AliyunTtsCredentialStore.HasCredentials ? "已配置" : "未配置")} · " +
+            (preferences.ExperienceModeEnabled ? "体验模式已启用" : "体验模式关闭");
+        AssistantSettings config = _service.LoadSettings();
+        AnswerConfigText.Text = $"正确率 {config.Accuracy:P0} · 跳题间隔 {config.SkipInterval:0.##} 秒 · " +
+            $"口语模式 {(preferences.SpeakingMode == "flexible" ? "生成" : "标答")} · " +
+            $"自动听力 Beta {(preferences.AutoListeningEnabled ? "开启" : "关闭")}";
         EtsErrorBar.IsOpen = !found;
         if (!string.IsNullOrWhiteSpace(_service.LastError))
         {
@@ -180,10 +214,12 @@ public sealed partial class OverviewPage : Page
             PaperProgressPanel.Visibility = Visibility.Collapsed;
             AnswerChips.ItemsSource = null;
             ManualResetButton.IsEnabled = false;
+            EmptyPaperActions.Visibility = Visibility.Visible;
             return;
         }
 
         ManualResetButton.IsEnabled = true;
+        EmptyPaperActions.Visibility = Visibility.Collapsed;
         PaperStateText.Text = paper.Complete ? "已完成" : "已检测";
         PaperStateBadge.Background = paper.Complete ? CompleteBadgeBrush : ActiveBadgeBrush;
         PaperTitleText.Text = paper.Title;
@@ -261,6 +297,47 @@ public sealed partial class OverviewPage : Page
             ManualResetButton.IsEnabled = _currentPaper is not null;
         }
     }
+
+    private async void OpenPaperFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentPaper is null) return;
+        string path = Path.Combine(_service.DataRoot, _currentPaper.PackId);
+        try
+        {
+            if (!Directory.Exists(path)) throw new DirectoryNotFoundException("当前试卷目录不存在。");
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        catch (Exception ex) { await ShowErrorAsync(ex.Message); }
+    }
+
+    private async void EndEts_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = "结束 ETS 进程？",
+            Content = "这会立即关闭 ETS 及其外壳进程；未保存的 ETS 操作可能丢失。",
+            PrimaryButtonText = "结束 ETS",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.None,
+            XamlRoot = XamlRoot
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        try
+        {
+            int ended = _service.EndEtsProcesses();
+            InfoBarPresenter.Show(GeneralInfoBar, ended > 0 ? "ETS 已结束" : "没有运行中的 ETS",
+                ended > 0 ? $"已结束 {ended} 个 ETS 进程。" : "当前没有找到 ETS 进程。",
+                InfoBarSeverity.Informational);
+            RefreshStatus();
+        }
+        catch (Exception ex) { await ShowErrorAsync(ex.Message); }
+    }
+
+    private void OpenSettings_Click(object sender, RoutedEventArgs e)
+    {
+        MainWindow.Current?.NavigateToTag("settings");
+    }
+
 
     private sealed record AnswerChip(string NumberText, string Answer, string Tooltip, Brush Background);
 

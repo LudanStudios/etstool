@@ -22,8 +22,8 @@ public static class AliyunTtsCredentialStore
         $"凭据读取来源：{_lastCredentialSource}（{ProgramCredentialPath}）";
 
     public static string ConfigurationStatus => Load() is null
-        ? "状态：程序目录中尚未配置有效的阿里云 TTS 凭据。"
-        : "状态：凭据已使用当前 Windows 用户 DPAPI 加密保存在程序目录。";
+        ? "状态：本机未配置阿里云凭据，将使用内置 Worker（设备每天最多 10 次，IP 每天最多 30 次）。"
+        : "状态：本机凭据已使用当前 Windows 用户 DPAPI 加密保存在程序目录；本机凭据调用不占 Worker 额度。";
 
     public static void Initialize()
     {

@@ -1,4 +1,5 @@
 using Microsoft.UI;
+using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -13,7 +14,9 @@ namespace ETSAssistant.WinUI3;
 
 public sealed partial class MainWindow : Window
 {
-    internal static MainWindow? Current { get; private set; }
+    internal new static MainWindow? Current { get; private set; }
+    internal Microsoft.UI.Xaml.Controls.WebView2 AnalysisPdfRenderer => SharedPdfRendererControl;
+    internal bool IsShowingPage(Page page) => ReferenceEquals(PageFrame.Content, page);
     private readonly CurrentPaperService _paperService = new(AssistantService.Current.DataRoot);
     private readonly SpeakingAnswerService _speakingAnswers = new(AssistantService.Current.DataRoot);
     private DispatcherQueueTimer? _paperTimer;
@@ -25,7 +28,15 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         Current = this;
-        Closed += (_, _) => Current = null;
+        AnalysisActivityService.Current.Changed += UpdateActivityNavigation;
+        UpdateActivityNavigation();
+        Closed += async (_, _) =>
+        {
+            AnalysisActivityService.Current.Changed -= UpdateActivityNavigation;
+            try { await DefaultAudioInputService.Current.EndSessionAsync(); }
+            catch (Exception) { }
+            Current = null;
+        };
         Title = "ETS Tool by @azursmelt";
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
@@ -35,13 +46,23 @@ public sealed partial class MainWindow : Window
         SetTitleBarColors();
 
         AppPreferencesService preferences = AppPreferencesService.Current;
+        foreach (object item in RootNavigation.MenuItems)
+        {
+            if (item is NavigationViewItem nav && (nav.Tag as string) == "tools")
+                nav.Visibility = preferences.DeveloperToolsUnlocked ? Visibility.Visible : Visibility.Collapsed;
+        }
         LocalizationService.Current.Load(preferences.Language);
         ApplyTheme();
         ApplyLocalization();
         PageFrame.Navigated += (_, args) =>
         {
             if (args.Content is DependencyObject page)
-                DispatcherQueue.TryEnqueue(() => LocalizationService.Current.Apply(page));
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    LocalizationService.Current.Apply(page);
+                    if (page is Page responsivePage)
+                        ResponsiveLayoutService.Attach(responsivePage);
+                });
         };
         preferences.ThemeChanged += ApplyTheme;
         preferences.LanguageChanged += OnLanguageChanged;
@@ -56,8 +77,11 @@ public sealed partial class MainWindow : Window
         PageFrame.Navigate(typeof(Pages.OverviewPage));
         RootGrid.Loaded += async (_, _) =>
         {
-            await ShowCredentialsReminderAsync();
+            UpdatePaneToggleButtonStyle(RootNavigation.DisplayMode);
+            _ = await DefaultAudioInputService.Current.BeginSessionAsync();
+            await ShowWelcomeAsync();
             await CheckVirtualCableAsync();
+            await CheckStartupForUpdatesAsync();
         };
 
         _paperTimer = DispatcherQueue.CreateTimer();
@@ -119,8 +143,6 @@ public sealed partial class MainWindow : Window
         window.Activate();
     }
 
-    private bool _credentialReminderShown;
-
     private async Task CheckVirtualCableAsync()
     {
         AppPreferencesService preferences = AppPreferencesService.Current;
@@ -132,13 +154,13 @@ public sealed partial class MainWindow : Window
         if (cable.IsReady) return;
 
         string message = !cable.IsAvailable
-            ? "未检测到 VB-CABLE 虚拟声卡。自动口语需要把 TTS 播放到 CABLE Input，再由 ETS 从 CABLE Output 录音。程序目录里已附带安装包，可在“测试工具 → 自动口语测试”里一键安装。"
-            : "检测到 CABLE Input，但没有找到录音端 CABLE Output。请打开录音设备，启用 CABLE Output，并把 ETS 麦克风设为它。";
+            ? "未检测到 VB-CABLE 虚拟声卡。需要时可在“关于”中连续点击版本号 7 次，确认后进入开发者工具安装或检查虚拟麦克风。"
+            : "检测到 CABLE Input，但没有找到录音端 CABLE Output。请检查录音设备是否启用。";
         var dialog = new ContentDialog
         {
             Title = "虚拟声卡未配置",
             Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap },
-            PrimaryButtonText = cable.IsAvailable ? "打开录音设备" : "去测试工具",
+            PrimaryButtonText = "打开录音设备",
             CloseButtonText = "稍后",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = RootGrid.XamlRoot
@@ -146,38 +168,28 @@ public sealed partial class MainWindow : Window
         ContentDialogResult result = await dialog.ShowAsync();
         preferences.MarkVirtualCableReminderShown();
         if (result != ContentDialogResult.Primary) return;
-        if (cable.IsAvailable)
-        {
-            VirtualCableSetupService.OpenRecordingDevices();
-            return;
-        }
-        foreach (object item in RootNavigation.MenuItems)
-        {
-            if (item is NavigationViewItem nav && (nav.Tag as string) == "tools")
-            {
-                RootNavigation.SelectedItem = nav;
-                break;
-            }
-        }
+        VirtualCableSetupService.OpenRecordingDevices();
     }
 
-    private async Task ShowCredentialsReminderAsync()
+    private async Task ShowWelcomeAsync()
     {
-        if (_credentialReminderShown) return;
-        _credentialReminderShown = true;
         AppPreferencesService preferences = AppPreferencesService.Current;
-        if (preferences.CredentialsReminderShown) return;
+        if (preferences.WelcomeCompleted) return;
 
         bool hasDeepSeek = ApiKeyStore.HasKey;
         bool hasAliyun = AliyunTtsCredentialStore.HasCredentials;
-        if (hasDeepSeek && hasAliyun) return;
+        if (hasDeepSeek && hasAliyun)
+        {
+            preferences.MarkWelcomeCompleted();
+            return;
+        }
 
         var lines = new List<string>();
-        if (!hasDeepSeek) lines.Add("• DeepSeek API Key（生成模式需要）");
-        if (!hasAliyun) lines.Add("• 阿里云 TTS 凭证（语音合成需要）");
+        if (!hasDeepSeek) lines.Add("• DeepSeek API Key（口语生成）");
+        if (!hasAliyun) lines.Add("• 阿里云 TTS RAM 凭据与 AppID（语音合成）");
 
         var content = new StackPanel { Spacing = 8 };
-        content.Children.Add(new TextBlock { Text = "检测到以下凭据还没有填写：", TextWrapping = TextWrapping.Wrap });
+        content.Children.Add(new TextBlock { Text = "欢迎使用 ETS Tool。以下凭据尚未配置：", TextWrapping = TextWrapping.Wrap });
         content.Children.Add(new TextBlock
         {
             Text = string.Join(Environment.NewLine, lines),
@@ -185,7 +197,7 @@ public sealed partial class MainWindow : Window
         });
         content.Children.Add(new TextBlock
         {
-            Text = "标答模式可以跳过 DeepSeek，但 TTS 仍需要阿里云凭证。",
+            Text = "如果选择体验模式，缺少个人凭据的功能会把题目、听力内容或 TTS 文本发送到公用 Cloudflare Worker。听力每设备每天最多 10 次完整请求、同一 IP 每天最多 30 次；口语与 TTS 也有每日限额。你可以先填写自己的凭据，也可以之后在偏好设置中启用体验模式。",
             FontSize = 12,
             Opacity = 0.7,
             TextWrapping = TextWrapping.Wrap
@@ -193,20 +205,82 @@ public sealed partial class MainWindow : Window
 
         var dialog = new ContentDialog
         {
-            Title = "完善 API 凭据",
+            Title = "欢迎使用 ETS Tool",
             Content = content,
-            PrimaryButtonText = "去填写",
-            CloseButtonText = "稍后",
+            PrimaryButtonText = "填写凭据",
+            SecondaryButtonText = "启用体验模式",
+            CloseButtonText = "暂不启用",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = RootGrid.XamlRoot
         };
         ContentDialogResult result = await dialog.ShowAsync();
         preferences.MarkCredentialsReminderShown();
-        if (result != ContentDialogResult.Primary) return;
-        foreach (object item in RootNavigation.MenuItems)
+        preferences.MarkWelcomeCompleted();
+        if (result == ContentDialogResult.Secondary)
         {
-            if (item is NavigationViewItem nav && (nav.Tag as string) == "settings")
+            preferences.SetExperienceMode(true);
+            return;
+        }
+        if (result != ContentDialogResult.Primary) return;
+        NavigateToTag("settings");
+        if (PageFrame.Content is Pages.SettingsPage settingsPage) settingsPage.ExpandCredentials();
+    }
+
+    private async Task CheckStartupForUpdatesAsync()
+    {
+        AppPreferencesService preferences = AppPreferencesService.Current;
+        if (!preferences.AutoUpdateEnabled ||
+            preferences.LastUpdateCheckUtc is DateTimeOffset last && DateTimeOffset.UtcNow - last < TimeSpan.FromHours(24))
+            return;
+        try
+        {
+            UpdateCheckResult result = await new GitHubUpdateService().CheckAsync();
+            preferences.MarkUpdateCheck(result.CheckedAt);
+            if (!result.UpdateAvailable || RootGrid.XamlRoot is null) return;
+            var dialog = new ContentDialog
             {
+                Title = "发现 ETS Tool 更新",
+                Content = result.Message + "\n\n是否打开 GitHub 查看？",
+                PrimaryButtonText = "查看更新",
+                CloseButtonText = "稍后",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = RootGrid.XamlRoot
+            };
+            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(result.Url) { UseShellExecute = true });
+        }
+        catch (Exception) { /* A transient network failure must not interrupt startup. */ }
+    }
+
+    public async Task UnlockDeveloperToolsAsync()
+    {
+        AppPreferencesService preferences = AppPreferencesService.Current;
+        if (preferences.DeveloperToolsUnlocked)
+        {
+            NavigateToTag("tools");
+            return;
+        }
+        var dialog = new ContentDialog
+        {
+            Title = "显示开发者工具？",
+            Content = "开发者工具包含抓包、详细日志、虚拟麦克风操作和完全重置。完全重置会删除本地配置与凭据。确定显示该页面？",
+            PrimaryButtonText = "显示开发者工具",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.None,
+            XamlRoot = RootGrid.XamlRoot
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        preferences.UnlockDeveloperTools();
+        NavigateToTag("tools");
+    }
+
+    public void NavigateToTag(string tag)
+    {
+        foreach (object item in RootNavigation.MenuItems.Concat(RootNavigation.FooterMenuItems))
+        {
+            if (item is NavigationViewItem nav && string.Equals(nav.Tag as string, tag, StringComparison.Ordinal))
+            {
+                if (tag == "tools") nav.Visibility = Visibility.Visible;
                 RootNavigation.SelectedItem = nav;
                 break;
             }
@@ -215,7 +289,13 @@ public sealed partial class MainWindow : Window
 
     private void ApplyTheme()
     {
-        if (Content is FrameworkElement root) AppPreferencesService.Current.ApplyTheme(root);
+        if (Content is FrameworkElement root)
+        {
+            AppPreferencesService.Current.ApplyTheme(root);
+            BackdropFallback.Visibility = MicaController.IsSupported()
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+        }
     }
 
     private void ApplyLocalization()
@@ -243,11 +323,42 @@ public sealed partial class MainWindow : Window
             "logs" => typeof(Pages.LogsPage),
             "tools" => typeof(Pages.ToolsPage),
             "guide" => typeof(Pages.GuidePage),
+            "activities" => typeof(Pages.ActivityPage),
             "preferences" => typeof(Pages.PreferencesPage),
             "about" => typeof(Pages.AboutPage),
             _ => null
         };
         if (page is not null && PageFrame.CurrentSourcePageType != page) PageFrame.Navigate(page);
+    }
+
+    private void UpdateActivityNavigation()
+    {
+        if (!DispatcherQueue.HasThreadAccess)
+        {
+            DispatcherQueue.TryEnqueue(UpdateActivityNavigation);
+            return;
+        }
+        int running = AnalysisActivityService.Current.RunningCount;
+        ActivityNavigationRing.IsActive = running > 0;
+        ToolTipService.SetToolTip(ActivitiesNavigationItem,
+            running == 0 ? "查看当前活动和最近任务" : $"{running} 项活动正在进行");
+    }
+
+    private void RootNavigation_DisplayModeChanged(NavigationView sender, NavigationViewDisplayModeChangedEventArgs args)
+    {
+        UpdatePaneToggleButtonStyle(args.DisplayMode);
+    }
+
+    private void UpdatePaneToggleButtonStyle(NavigationViewDisplayMode displayMode)
+    {
+        if (displayMode == NavigationViewDisplayMode.Expanded)
+        {
+            RootNavigation.ClearValue(NavigationView.PaneToggleButtonStyleProperty);
+            return;
+        }
+
+        if (RootNavigation.Resources["WindowedPaneToggleButtonStyle"] is Style style)
+            RootNavigation.PaneToggleButtonStyle = style;
     }
 
     private void SetWindowSize(int width, int height)
@@ -256,6 +367,8 @@ public sealed partial class MainWindow : Window
         WindowId id = Win32Interop.GetWindowIdFromWindow(hwnd);
         AppWindow appWindow = AppWindow.GetFromWindowId(id);
         double scale = Math.Max(96u, GetDpiForWindow(hwnd)) / 96.0;
+        if (appWindow.Presenter is OverlappedPresenter presenter)
+            presenter.PreferredMinimumWidth = (int)Math.Round(450 * scale);
         RectInt32 workArea = DisplayArea.GetFromWindowId(id, DisplayAreaFallback.Primary).WorkArea;
         int margin = (int)Math.Round(24 * scale);
         int pixelWidth = Math.Min((int)Math.Round(width * scale), Math.Max(1, workArea.Width - margin * 2));

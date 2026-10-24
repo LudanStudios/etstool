@@ -1,6 +1,14 @@
-# ETS Tool by @azursmelt（beta 1.2.0）
+# ETS Tool by @azursmelt（beta 1.8.0）
 
 WinUI 3 版 ETS 助手，包含试卷监听、自动答题、试卷管理、答案提取、抓包调试和中英文界面。
+
+## beta 1.8.0（2026-10-23）
+
+- 首次启动引导填写 DeepSeek 与阿里云 TTS 凭据；体验模式改为明确选择，公用 Worker 有设备/IP 日限额。
+- ETS Tool 运行期间可临时将 VB-CABLE 设为默认录音设备，关闭程序时恢复之前的默认输入。
+- 首页改为快速开始布局；答题设置收纳到折叠凭据区，随机种子自动生成，并增加自动听力 Beta 开关。
+- 试卷管理可在确认后将题干、选项和答案发送到 DeepSeek，生成 PDF 并在应用中预览。
+- 开发者工具需在“关于”连续点击版本号 7 次并确认后显示；偏好设置增加 GitHub Release/提交更新提示。
 
 主程序：`_winui\ETS-Assistant-WinUI.exe`  
 后台引擎：`ETS-Assistant-Engine.exe` + `_internal_engine\`  
@@ -8,11 +16,12 @@ WinUI 3 版 ETS 助手，包含试卷监听、自动答题、试卷管理、答�
 
 ## 在新电脑上运行
 
-把整个 `ETS` 文件夹复制到新电脑即可，不需要安装 Python、.NET 或 Windows App Runtime。必须保留 `ETS-Assistant-Engine.exe` 旁边的整个 `_internal_engine` 文件夹；不要只分发 EXE，也不要从文件夹中单独挑选文件。引擎依赖该目录中的 Python DLL、标准库扩展和第三方库。
+把整个 `ETS` 文件夹复制到新电脑即可，主程序和自动答题不需要安装 Python、.NET 或 Windows App Runtime。必须保留 `ETS-Assistant-Engine.exe` 旁边的整个 `_internal_engine` 文件夹；不要只分发 EXE，也不要从文件夹中单独挑选文件。引擎依赖该目录中的 Python DLL、标准库扩展和第三方库。
 
 - `_winui` 已包含 .NET 8 和 Windows App SDK 自包含运行时。
 - `ETS-Assistant-Engine.exe` 和 `_internal_engine` 已包含 Python 运行时及依赖。
-- Python 源码只用于重新构建，运行程序时不需要 Python。
+- Python 源码只用于重新构建和“一键自动口语”；主程序、自动答题和手动 TTS 播放不需要 Python。
+- “一键自动口语”需要本机安装 Python 3.10+ 64 位，并能在 PATH 中找到 `python.exe`；`tools\CablePlayer` 已自包含，不需要 .NET。
 
 仍然需要：
 
@@ -32,7 +41,7 @@ WinUI 3 版 ETS 助手，包含试卷监听、自动答题、试卷管理、答�
 
 ## 界面与设置
 
-- **运行概览**：ETS 状态、当前试卷、答题进度和答案；在 ETS 中手动切到第 1 题后，可点“手动重置”重新开始答题。
+- **运行概览**：ETS 状态、当前试卷、答题进度和答案；检测到听力题时，听力答案会和选择题一起显示在“试卷答案”里；在 ETS 中手动切到第 1 题后，可点“手动重置”重新开始答题。
 - **试卷管理**：试卷列表、打开目录、提取答案、分析并复制答案、删除。
 - **答题设置**：正确率、随机种子、跳题间隔、开机启动、口语模式和 DeepSeek API Key。
 - **运行记录**：最近的监听、转换和答题日志。
@@ -42,9 +51,30 @@ WinUI 3 版 ETS 助手，包含试卷监听、自动答题、试卷管理、答�
 
 配置和界面偏好保存在 `%APPDATA%\ETS`。桌面快捷方式和登录启动项只影响当前 Windows 用户，不修改 ETS 安装目录中的厂商文件。
 
+## Cloudflare 免费服务
+
+免密 Worker 地址 `https://ets.azursmelt.us.ci` 已内置在程序中，无需填写。没有本机凭据时，听力、DeepSeek 口语生成和阿里云 TTS 都会自动走 Worker；每项服务分别按每台设备每天最多 10 次、同一来源 IP 每天最多 30 次计数，按北京时间 00:00 重置。口语生成每次生成计 1 次，TTS 每次完整回答合成计 1 次（长文本分段仍算一次）。DeepSeek Key 和阿里云 AccessKey/AppKey 只保存在 Worker Secret 中；填写本机凭据后则直连服务商，不占用 Worker 额度。听力原文、口语题干/提示词和 TTS 文本会发送给对应服务。部署步骤见 [`backend/cloudflare-worker/README.md`](backend/cloudflare-worker/README.md)。
+
 ## DeepSeek 口语测试
 
 在“答题设置”页填入 DeepSeek API Key 并保存，密钥会用 Windows DPAPI 加密后存放在 `%APPDATA%\ETS\deepseek_api_key.bin`，不会写入配置文件或仓库。
+
+同一页支持 CSV 批量凭据导入，可一次写入 DeepSeek 和阿里云 TTS 凭据：
+
+```csv
+type,api_key,access_key_id,access_key_secret,app_key
+deepseek,sk-xxxx,,,
+aliyun,,LTAIxxxx,secret,appkey
+```
+
+也支持无表头格式：
+
+```csv
+deepseek,sk-xxxx
+aliyun,LTAIxxxx,secret,appkey
+```
+
+导入后会分别使用 Windows DPAPI 加密保存，界面不显示明文，程序也不提供导出功能；原始 CSV 文件不会被复制进程序目录，如包含明文密钥请自行妥善保管或删除。
 
 同一页还可以切换口语模式：
 
@@ -57,7 +87,7 @@ WinUI 3 版 ETS 助手，包含试卷监听、自动答题、试卷管理、答�
 
 ## 阿里云 TTS 测试
 
-在“测试工具”开发者页的阿里云 TTS 配置区填写 RAM AccessKey ID、AccessKey Secret 和智能语音交互项目 AppKey。助手只使用主程序 EXE 旁边的 `aliyun_tts_credentials.bin` 保存凭据，并通过当前 Windows 用户的 DPAPI 加密。每次启动只从该程序目录读取；不会访问 Windows 凭据管理器、`%APPDATA%` 或 `%LOCALAPPDATA%` 中的凭据副本，也不会自动迁移旧凭据。保存失败时请检查程序目录的写入权限。DPAPI 文件绑定当前 Windows 用户，换用户、电脑或 Windows 安装后无法解密；移动程序时应一并保留该文件。建议只使用权限受限的 RAM 用户凭证。
+“测试工具”开发者页仍可填写个人 RAM AccessKey ID、AccessKey Secret 和智能语音交互项目 AppKey。本机凭据只保存在主程序 EXE 旁边的 `aliyun_tts_credentials.bin` 并通过当前 Windows 用户 DPAPI 加密；没有本机凭据时自动使用内置 Worker，并按上文每日限额运行。程序不会访问 Windows 凭据管理器、`%APPDATA%` 或 `%LOCALAPPDATA%` 中的凭据副本，也不会自动迁移旧凭据。建议只使用权限受限的 RAM 用户凭证。
 
 AccessKey ID/Secret 是用于认证的长期凭证；阿里云不提供长期有效的 NLS AccessToken。助手通过阿里云 SDK 调用 `CreateToken`，在进程内缓存 Token，并依据返回的 `ExpireTime` 在到期前重新获取。Token 和 AccessKey Secret 不写日志。
 
@@ -114,4 +144,13 @@ ETS 已打开但助手显示未连接时，先确认 `127.0.0.1:10086` 可访问
 ## 运行位置与权限
 
 监听器需要写入 `%APPDATA%\ETS`（日志和答题历史）。如果程序目录位于 Windows 沙箱或受完整性级别限制的位置（例如 `Codex Sandbox` 工作区），Windows 会以低完整性级别启动程序，监听器写不了日志，答题进程也就不会启动。此时请把运行目录放到普通用户目录（例如 `%LOCALAPPDATA%\Programs\ETS-Assistant`），并让桌面快捷方式和登录启动项指向该目录。
+
+
+
+
+
+
+
+
+
 

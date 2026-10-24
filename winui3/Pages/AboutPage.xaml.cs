@@ -7,14 +7,16 @@ namespace ETSAssistant.WinUI3.Pages;
 
 public sealed partial class AboutPage : Page
 {
+    private int _versionTaps;
+
     public AboutPage()
     {
         InitializeComponent();
         Assembly assembly = typeof(AboutPage).Assembly;
         Version? version = assembly.GetName().Version;
         VersionText.Text = version is null
-            ? "beta 1.7.0"
-            : $"beta {version.Major}.{version.Minor}.{version.Build}";
+            ? "1.0.0"
+            : $"{version.Major}.{version.Minor}.{version.Build}";
 
         string location = assembly.Location;
         ReleaseText.Text = File.Exists(location)
@@ -27,6 +29,14 @@ public sealed partial class AboutPage : Page
 
     private void OpenHomepage_Click(object sender, RoutedEventArgs e) =>
         OpenLink("https://azursmelt.pages.dev");
+
+    private async void VersionText_Tapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e)
+    {
+        _versionTaps++;
+        if (_versionTaps < 7) return;
+        _versionTaps = 0;
+        if (MainWindow.Current is { } window) await window.UnlockDeveloperToolsAsync();
+    }
 
     private static void OpenLink(string url)
     {

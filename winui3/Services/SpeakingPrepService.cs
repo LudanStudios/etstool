@@ -33,11 +33,12 @@ public sealed class SpeakingPrepService
     {
         IReadOnlyList<SpeakingQuestion> questions = _answers.Load(packId);
         if (questions.Count == 0) return new SpeakingPrepOutcome(null, Array.Empty<string>());
-        if (!AliyunTtsCredentialStore.HasCredentials)
+        if (!AliyunTtsCredentialStore.HasCredentials &&
+            !AppPreferencesService.Current.ExperienceModeEnabled)
         {
             return new SpeakingPrepOutcome(null, new[]
             {
-                "未配置阿里云 TTS 凭证，无法生成口语音频。请到“答题设置”填写 AccessKey ID、AccessKey Secret 和 AppKey。"
+                "未配置阿里云 TTS 凭证，且体验模式未启用。请填写个人凭证，或在偏好设置中启用体验模式以使用有每日限额的公用 Worker。"
             });
         }
 

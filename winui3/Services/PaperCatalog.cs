@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.UI.Xaml;
 
 namespace ETSAssistant.WinUI3.Services;
 
@@ -10,6 +11,8 @@ public sealed record PaperEntry(string PackId, string Title, string FolderPath, 
     string? MarkdownPath, string? PdfPath, int UnreadableFiles)
 {
     public bool IsConverted => MarkdownPath is not null || PdfPath is not null;
+    public Visibility DetailedAnalysisVisibility => ApiKeyStore.HasKey ||
+        AppPreferencesService.Current.ExperienceModeEnabled ? Visibility.Visible : Visibility.Collapsed;
     public string Summary => $"编号 {PackId} · {UnitCount} 个内容单元 · {ChoiceCount} 道选择题";
     public string ConversionText => PdfPath is not null ? "Markdown / PDF" : MarkdownPath is not null ? "Markdown" : "未转换";
     public string UpdatedText => Updated.ToString("yyyy-MM-dd HH:mm");

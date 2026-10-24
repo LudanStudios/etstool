@@ -21,6 +21,14 @@ public sealed class AppPreferencesService
     public string SpeakingMode { get; private set; } = "standard";
     public bool CredentialsReminderShown { get; private set; }
     public bool VirtualCableReminderShown { get; private set; }
+    public bool WelcomeCompleted { get; private set; }
+    public bool ExperienceModeEnabled { get; private set; }
+    public bool AllPersonalCredentialsConfigured => ApiKeyStore.HasKey && AliyunTtsCredentialStore.HasCredentials;
+    public bool AutoListeningEnabled { get; private set; }
+    public bool AutoUpdateEnabled { get; private set; } = true;
+    public bool VerboseLoggingEnabled { get; private set; }
+    public bool DeveloperToolsUnlocked { get; private set; }
+    public DateTimeOffset? LastUpdateCheckUtc { get; private set; }
     public event Action? ThemeChanged;
     public event Action? LanguageChanged;
     public event Action? SpeakingModeChanged;
@@ -50,6 +58,65 @@ public sealed class AppPreferencesService
         SpeakingMode = mode;
         Save();
         SpeakingModeChanged?.Invoke();
+    }
+
+    public void SetExperienceMode(bool enabled)
+    {
+        if (enabled && AllPersonalCredentialsConfigured) enabled = false;
+        if (ExperienceModeEnabled == enabled) return;
+        ExperienceModeEnabled = enabled;
+        Save();
+        AssistantService.Current.SyncExperienceSettings();
+    }
+
+    public bool EnforceExperienceModeCredentialPolicy()
+    {
+        if (!AllPersonalCredentialsConfigured) return false;
+        SetExperienceMode(false);
+        return true;
+    }
+
+    public void SetAutoListening(bool enabled)
+    {
+        if (AutoListeningEnabled == enabled) return;
+        AutoListeningEnabled = enabled;
+        Save();
+        AssistantService.Current.SyncExperienceSettings();
+    }
+
+    public void SetAutoUpdate(bool enabled)
+    {
+        if (AutoUpdateEnabled == enabled) return;
+        AutoUpdateEnabled = enabled;
+        Save();
+    }
+
+    public void SetVerboseLogging(bool enabled)
+    {
+        if (VerboseLoggingEnabled == enabled) return;
+        VerboseLoggingEnabled = enabled;
+        Save();
+        AssistantService.Current.SyncExperienceSettings();
+    }
+
+    public void MarkWelcomeCompleted()
+    {
+        if (WelcomeCompleted) return;
+        WelcomeCompleted = true;
+        Save();
+    }
+
+    public void UnlockDeveloperTools()
+    {
+        if (DeveloperToolsUnlocked) return;
+        DeveloperToolsUnlocked = true;
+        Save();
+    }
+
+    public void MarkUpdateCheck(DateTimeOffset checkedAt)
+    {
+        LastUpdateCheckUtc = checkedAt;
+        Save();
     }
 
     public void MarkCredentialsReminderShown()
@@ -97,6 +164,17 @@ public sealed class AppPreferencesService
             if (document.RootElement.TryGetProperty("virtual_cable_reminder_shown", out JsonElement cableReminder) &&
                 cableReminder.ValueKind is JsonValueKind.True or JsonValueKind.False)
                 VirtualCableReminderShown = cableReminder.GetBoolean();
+            WelcomeCompleted = ReadBool(document.RootElement, "welcome_completed");
+            ExperienceModeEnabled = ReadBool(document.RootElement, "experience_mode_enabled");
+            AutoListeningEnabled = ReadBool(document.RootElement, "auto_listening_enabled");
+            AutoUpdateEnabled = !document.RootElement.TryGetProperty("auto_update_enabled", out JsonElement update) ||
+                                update.ValueKind is not (JsonValueKind.True or JsonValueKind.False) || update.GetBoolean();
+            VerboseLoggingEnabled = ReadBool(document.RootElement, "verbose_logging_enabled");
+            DeveloperToolsUnlocked = ReadBool(document.RootElement, "developer_tools_unlocked");
+            if (document.RootElement.TryGetProperty("last_update_check_utc", out JsonElement lastCheck) &&
+                lastCheck.ValueKind == JsonValueKind.String &&
+                DateTimeOffset.TryParse(lastCheck.GetString(), out DateTimeOffset parsedCheck))
+                LastUpdateCheckUtc = parsedCheck;
         }
         catch (Exception) { }
     }
@@ -112,9 +190,19 @@ public sealed class AppPreferencesService
                 language = Language,
                 speaking_mode = SpeakingMode,
                 credentials_reminder_shown = CredentialsReminderShown,
-                virtual_cable_reminder_shown = VirtualCableReminderShown
+                virtual_cable_reminder_shown = VirtualCableReminderShown,
+                welcome_completed = WelcomeCompleted,
+                experience_mode_enabled = ExperienceModeEnabled,
+                auto_listening_enabled = AutoListeningEnabled,
+                auto_update_enabled = AutoUpdateEnabled,
+                verbose_logging_enabled = VerboseLoggingEnabled,
+                developer_tools_unlocked = DeveloperToolsUnlocked,
+                last_update_check_utc = LastUpdateCheckUtc?.ToString("O")
             }));
         }
         catch (Exception) { }
     }
+
+    private static bool ReadBool(JsonElement root, string name) =>
+        root.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.True;
 }

@@ -26,6 +26,7 @@ public partial class App : Application
             _instanceMutex = new Mutex(true, "Local\\ETSAssistantWinUI3-v1", out bool createdNew);
             if (!createdNew) { Environment.Exit(0); return; }
             AliyunTtsCredentialStore.Initialize();
+            _ = AppPreferencesService.Current.EnforceExperienceModeCredentialPolicy();
             _window = new MainWindow();
             _window.Activate();
         }

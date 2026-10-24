@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using Microsoft.UI;
+using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -240,6 +241,9 @@ public sealed partial class SpeakingPrepWindow : Window
     private void ApplyTheme()
     {
         AppPreferencesService.Current.ApplyTheme(RootGrid);
+        BackdropFallback.Visibility = MicaController.IsSupported()
+            ? Visibility.Collapsed
+            : Visibility.Visible;
         UpdateTitleBarColors();
     }
 
