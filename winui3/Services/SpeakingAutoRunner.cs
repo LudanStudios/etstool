@@ -2,63 +2,96 @@ using System.Diagnostics;
 
 namespace ETSAssistant.WinUI3.Services;
 
-/// <summary>Starts ets_speaking_auto.py with the packaged CablePlayer helper.</summary>
+/// <summary>Runs the speaking automation through the Python runtime bundled with the engine.</summary>
 public sealed class SpeakingAutoRunner
 {
+    private readonly object _sync = new();
     private Process? _process;
+    private System.Threading.Timer? _logTimer;
+    private string? _logPath;
+    private int _readLineCount;
 
-    public bool IsRunning => _process is { HasExited: false };
+    public bool IsRunning
+    {
+        get
+        {
+            lock (_sync) return _process is { HasExited: false };
+        }
+    }
 
     public event Action<string>? Output;
     public event Action? Exited;
 
-    public bool Start(string appRoot, out string error)
+    public bool Start(string appRoot, string dataRoot, string sessionPath, out string error)
     {
         error = string.Empty;
-        string script = Path.Combine(appRoot, "ets_speaking_auto.py");
-        if (!File.Exists(script))
+        string engine = Path.Combine(appRoot, "ETS-Assistant-Engine.exe");
+        string player = Path.Combine(appRoot, "tools", "CablePlayer", "CablePlayer.exe");
+        if (!File.Exists(engine))
         {
-            error = $"缺少 {script}";
+            error = $"缺少后台引擎：{engine}";
+            return false;
+        }
+        if (!File.Exists(player))
+        {
+            error = $"缺少音频播放工具：{player}";
+            return false;
+        }
+        if (!File.Exists(sessionPath))
+        {
+            error = $"找不到口语会话：{sessionPath}";
             return false;
         }
 
-        string? python = ResolvePythonPath(appRoot);
-        if (python is null)
+        string logPath = Path.Combine(dataRoot, "ets_speaking_auto.log");
+        int existingLineCount = 0;
+        try
         {
-            error = "未找到 python.exe。自动口语目前需要本机安装 Python 3。";
+            Directory.CreateDirectory(dataRoot);
+            if (File.Exists(logPath)) existingLineCount = File.ReadAllLines(logPath).Length;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            error = $"无法准备自动口语日志：{ex.Message}";
             return false;
         }
 
-        var startInfo = new ProcessStartInfo(python)
+        var startInfo = new ProcessStartInfo(engine)
         {
             WorkingDirectory = appRoot,
             UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true
+            CreateNoWindow = true
         };
-        startInfo.ArgumentList.Add(script);
-        string player = Path.Combine(appRoot, "tools", "CablePlayer", "CablePlayer.exe");
-        if (File.Exists(player))
-        {
-            startInfo.ArgumentList.Add("--player");
-            startInfo.ArgumentList.Add(player);
-        }
+        startInfo.ArgumentList.Add("--speaking-auto");
+        startInfo.ArgumentList.Add("--session");
+        startInfo.ArgumentList.Add(sessionPath);
+        startInfo.ArgumentList.Add("--data-root");
+        startInfo.ArgumentList.Add(dataRoot);
+        startInfo.ArgumentList.Add("--log");
+        startInfo.ArgumentList.Add(logPath);
+        startInfo.ArgumentList.Add("--player");
+        startInfo.ArgumentList.Add(player);
 
-        var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
-        process.OutputDataReceived += (_, args) => Report(args.Data);
-        process.ErrorDataReceived += (_, args) => Report(args.Data);
-        process.Exited += (_, _) =>
-        {
-            _process = null;
-            Exited?.Invoke();
-        };
+        var process = new Process { StartInfo = startInfo };
         try
         {
-            process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-            _process = process;
+            if (!process.Start())
+            {
+                process.Dispose();
+                error = "无法启动自动口语引擎。";
+                return false;
+            }
+
+            lock (_sync)
+            {
+                _process = process;
+                _logPath = logPath;
+                _readLineCount = existingLineCount;
+                _logTimer = new System.Threading.Timer(_ => ReadNewLogLines(), null, 0, 300);
+            }
+            process.Exited += (_, _) => HandleExited(process);
+            process.EnableRaisingEvents = true;
+            if (process.HasExited) HandleExited(process);
             return true;
         }
         catch (Exception ex)
@@ -73,32 +106,42 @@ public sealed class SpeakingAutoRunner
     {
         try
         {
-            if (_process is { HasExited: false }) _process.Kill(true);
+            Process? process;
+            lock (_sync) process = _process;
+            if (process is { HasExited: false }) process.Kill(true);
         }
         catch (Exception)
         {
         }
     }
 
-    private void Report(string? line)
+    private void ReadNewLogLines()
     {
-        if (!string.IsNullOrWhiteSpace(line)) Output?.Invoke(line.Trim());
+        string[] newLines;
+        lock (_sync)
+        {
+            if (_logPath is null) return;
+            string[] lines;
+            try { lines = File.ReadAllLines(_logPath); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return; }
+            if (lines.Length < _readLineCount) _readLineCount = 0;
+            newLines = lines.Skip(_readLineCount).ToArray();
+            _readLineCount = lines.Length;
+        }
+        foreach (string line in newLines)
+            if (!string.IsNullOrWhiteSpace(line)) Output?.Invoke(line.Trim());
     }
 
-    private static string? ResolvePythonPath(string root)
+    private void HandleExited(Process process)
     {
-        var candidates = new List<string>();
-        string? path = Environment.GetEnvironmentVariable("PATH");
-        if (!string.IsNullOrEmpty(path))
+        ReadNewLogLines();
+        lock (_sync)
         {
-            foreach (string directory in path.Split(';', StringSplitOptions.RemoveEmptyEntries))
-            {
-                try { candidates.Add(Path.Combine(directory.Trim('"'), "python.exe")); }
-                catch (ArgumentException) { }
-            }
+            if (!ReferenceEquals(_process, process)) return;
+            _process = null;
+            _logTimer?.Dispose();
+            _logTimer = null;
         }
-        candidates.Add(Path.Combine(root, ".build", "tools", "python", "python.exe"));
-        candidates.Add(@"C:\Python314\python.exe");
-        return candidates.FirstOrDefault(File.Exists);
+        Exited?.Invoke();
     }
 }

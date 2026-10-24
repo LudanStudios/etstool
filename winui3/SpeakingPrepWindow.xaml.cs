@@ -227,7 +227,18 @@ public sealed partial class SpeakingPrepWindow : Window
             return;
         }
 
-        if (!_autoRunner.Start(AssistantService.Current.AppRoot, out string error))
+        AssistantService assistant = AssistantService.Current;
+        string[] sessionCandidates =
+        [
+            Path.Combine(assistant.DataRoot, "_assistant", "speaking_session.json"),
+            Path.Combine(assistant.DataRoot, "temp", "speaking_session.json"),
+            Path.Combine(assistant.AppRoot, "temp", "speaking_session.json")
+        ];
+        string sessionPath = sessionCandidates
+            .Where(File.Exists)
+            .OrderByDescending(path => File.GetLastWriteTimeUtc(path))
+            .FirstOrDefault() ?? sessionCandidates[0];
+        if (!_autoRunner.Start(assistant.AppRoot, assistant.DataRoot, sessionPath, out string error))
         {
             ErrorBar.Severity = InfoBarSeverity.Error;
             ErrorBar.Message = error;

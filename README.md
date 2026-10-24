@@ -12,8 +12,8 @@ WinUI 3 桌面助手，提供试卷监听、自动答题、试卷管理、答案
 
 - `_winui` 已包含 .NET 8 和 Windows App SDK 自包含运行时。
 - `ETS-Assistant-Engine.exe` 和 `_internal_engine` 已包含 Python 运行时及依赖。
-- Python 源码只用于重新构建和“一键自动口语”；主程序、自动答题和手动 TTS 播放不需要 Python。
-- “一键自动口语”需要本机安装 Python 3.10+ 64 位，并能在 PATH 中找到 `python.exe`；`tools\CablePlayer` 已自包含，不需要 .NET。
+- Python 源码只用于重新构建；主程序、自动答题、手动 TTS 播放和“一键自动口语”都使用随程序自包含的运行时，不需要安装 Python。
+- `tools\CablePlayer` 已自包含，不需要安装 .NET。
 
 仍然需要：
 

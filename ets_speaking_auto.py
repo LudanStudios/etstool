@@ -18,22 +18,28 @@ from pathlib import Path
 
 from ets_auto_answer import CDPClient, devtools_targets
 
-ROOT = Path(__file__).resolve().parent
+APP_ROOT = (
+    Path(sys.executable).resolve().parent
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parent
+)
+DATA_ROOT = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "ETS"
+LOG_PATH = DATA_ROOT / "ets_speaking_auto.log"
 CABLE_PLAYER = next(
     (path for path in (
-        ROOT / "tools" / "CablePlayer" / "CablePlayer.exe",
-        ROOT / ".build" / "tools" / "cableplayer" / "out" / "CablePlayer.exe",
+        APP_ROOT / "tools" / "CablePlayer" / "CablePlayer.exe",
+        APP_ROOT / ".build" / "tools" / "cableplayer" / "out" / "CablePlayer.exe",
     ) if path.is_file()),
-    ROOT / "tools" / "CablePlayer" / "CablePlayer.exe",
+    APP_ROOT / "tools" / "CablePlayer" / "CablePlayer.exe",
 )
 
 
-def find_session(explicit: str | None) -> Path:
+def find_session(explicit: str | None, data_root: Path) -> Path:
     if explicit:
         return Path(explicit)
     candidates = [
-        ROOT / "temp" / "speaking_session.json",
-        Path.home() / "AppData" / "Roaming" / "ETS" / "_assistant" / "speaking_session.json",
+        data_root / "_assistant" / "speaking_session.json",
+        data_root / "temp" / "speaking_session.json",
     ]
     for path in candidates:
         if path.is_file():
@@ -45,7 +51,8 @@ def cleanup_temp_audio(root: Path) -> None:
     """Delete generated TTS WAVs and the virtual-mic copy after a finished run."""
     removed = 0
     total = 0
-    for folder in (root / "temp" / "tts-test",):
+    folders = {root / "temp" / "tts-test", APP_ROOT / "temp" / "tts-test"}
+    for folder in folders:
         if not folder.is_dir():
             continue
         for wav in folder.glob("*.wav"):
@@ -63,18 +70,21 @@ def cleanup_temp_audio(root: Path) -> None:
             removed += 1
     except OSError:
         pass
-    print(f"cleanup: removed {removed} audio file(s), {total / 1024 / 1024:.1f} MB", flush=True)
+    log(f"cleanup: removed {removed} audio file(s), {total / 1024 / 1024:.1f} MB")
 
 
 def log(message: str) -> None:
-    print(message, flush=True)
     try:
-        path = ROOT / "temp" / "speaking_auto.log"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as handle:
+        LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with LOG_PATH.open("a", encoding="utf-8") as handle:
             handle.write(f"{time.strftime('%H:%M:%S')} {message}\n")
     except OSError:
         pass
+    if sys.stdout is not None:
+        try:
+            print(message, flush=True)
+        except OSError:
+            pass
 
 
 def page_state(client: CDPClient) -> dict:
@@ -118,31 +128,36 @@ def click_fix(client: CDPClient) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
+    global DATA_ROOT, LOG_PATH
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--session", default=None)
+    parser.add_argument("--data-root", type=Path, default=DATA_ROOT)
+    parser.add_argument("--log", type=Path, default=None)
     parser.add_argument("--start-index", type=int, default=0)
     parser.add_argument("--player", default=str(CABLE_PLAYER))
     parser.add_argument("--max-question-seconds", type=float, default=90)
     parser.add_argument("--keep-temp", action="store_true", help="keep generated WAVs after the run")
     args = parser.parse_args(argv)
 
-    session = json.loads(find_session(args.session).read_text(encoding="utf-8-sig"))
+    DATA_ROOT = args.data_root.resolve()
+    LOG_PATH = args.log.resolve() if args.log else DATA_ROOT / "ets_speaking_auto.log"
+    session = json.loads(find_session(args.session, DATA_ROOT).read_text(encoding="utf-8-sig"))
     wavs = [item["WavPath"] for item in session.get("Items", [])]
     if not wavs:
-        print("session has no WAV files", file=sys.stderr)
+        log("session has no WAV files")
         return 1
     log(f"session pack={session.get('PackId')} items={len(wavs)} mode={session.get('Mode')}")
 
     targets = devtools_targets()
     if not targets:
-        print("ETS DevTools page not found (is ETS running with port 10086?)", file=sys.stderr)
+        log("ETS DevTools page not found (is ETS running with port 10086?)")
         return 2
     client = CDPClient(targets[0]["webSocketDebuggerUrl"])
     page_url = client.evaluate("location.href")
     match = re.search(r"[?&#]set_id=(\d+)", page_url)
     page_pack = match.group(1) if match else ""
     if page_pack and str(session.get("PackId")) != page_pack:
-        print(f"session pack {session.get('PackId')} does not match page pack {page_pack}", file=sys.stderr)
+        log(f"session pack {session.get('PackId')} does not match page pack {page_pack}")
         client.close()
         return 3
     player: subprocess.Popen[str] | None = None
@@ -227,7 +242,7 @@ def main(argv: list[str] | None = None) -> int:
             player.terminate()
         client.close()
     if finished and played > 0 and not args.keep_temp:
-        cleanup_temp_audio(ROOT)
+        cleanup_temp_audio(DATA_ROOT)
     elif played == 0:
         log("本次没有实际播放音频，保留 temp WAV 以便重试。")
     return 0

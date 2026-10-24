@@ -25,6 +25,10 @@ def dispatch_worker(argv: list[str]) -> int:
         import exam_pack_to_markdown_pdf
 
         return exam_pack_to_markdown_pdf.main([args[0], *( ["--watch"] if mode == "--converter-watch" else [])])
+    if mode == "--speaking-auto":
+        import ets_speaking_auto
+
+        return ets_speaking_auto.main(args)
     return -1
 
 

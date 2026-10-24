@@ -28,7 +28,7 @@ public sealed partial class ToolsPage : Page
     private string? _speakingPackId;
     private IReadOnlyList<SpeakingPaper> _speakingPapers = Array.Empty<SpeakingPaper>();
     private string? _lastTtsWavPath;
-    private Process? _autoSpeakingProcess;
+    private readonly SpeakingAutoRunner _autoSpeakingRunner = new();
     private bool _portAvailable;
     private bool _updatingCapture;
     private bool _updatingVerbose;
@@ -38,6 +38,12 @@ public sealed partial class ToolsPage : Page
         InitializeComponent();
         _capture.StatusChanged += OnCaptureStatusChanged;
         _cable.PlaybackEnded += OnCablePlaybackEnded;
+        _autoSpeakingRunner.Output += ReportAutoSpeaking;
+        _autoSpeakingRunner.Exited += () => DispatcherQueue.TryEnqueue(() =>
+        {
+            AutoSpeakingButtonText.Text = "开始自动口语";
+            AutoSpeakingStatusText.Text = "自动口语已结束。";
+        });
         Unloaded += (_, _) =>
         {
             _capture.StatusChanged -= OnCaptureStatusChanged;
@@ -967,10 +973,9 @@ public sealed partial class ToolsPage : Page
 
     private void AutoSpeaking_Click(object sender, RoutedEventArgs e)
     {
-        if (_autoSpeakingProcess is { HasExited: false })
+        if (_autoSpeakingRunner.IsRunning)
         {
-            try { _autoSpeakingProcess.Kill(true); }
-            catch (Exception) { }
+            _autoSpeakingRunner.Stop();
             AutoSpeakingStatusText.Text = "正在停止自动口语…";
             return;
         }
@@ -1008,83 +1013,19 @@ public sealed partial class ToolsPage : Page
             return;
         }
 
-        string root = _service.AppRoot;
-        string script = Path.Combine(root, "ets_speaking_auto.py");
-        if (!File.Exists(script))
+        if (!_autoSpeakingRunner.Start(_service.AppRoot, _service.DataRoot, _sessionStore.FilePath, out string error))
         {
-            ShowMessage("找不到自动口语脚本", $"缺少 {script}", InfoBarSeverity.Error);
+            ShowMessage("自动口语启动失败", error, InfoBarSeverity.Error);
             return;
         }
-        string? python = ResolvePythonPath(root);
-        if (python is null)
-        {
-            ShowMessage("未找到 Python",
-                "自动口语目前需要本机的 python.exe。安装 Python 3 后重试，或把 python 放到 PATH 里。",
-                InfoBarSeverity.Error);
-            return;
-        }
-
-        var startInfo = new ProcessStartInfo(python)
-        {
-            WorkingDirectory = root,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true
-        };
-        startInfo.ArgumentList.Add(script);
-        string player = Path.Combine(root, "tools", "CablePlayer", "CablePlayer.exe");
-        if (File.Exists(player))
-        {
-            startInfo.ArgumentList.Add("--player");
-            startInfo.ArgumentList.Add(player);
-        }
-
-        var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
-        process.OutputDataReceived += (_, args) => ReportAutoSpeaking(args.Data);
-        process.ErrorDataReceived += (_, args) => ReportAutoSpeaking(args.Data);
-        process.Exited += (_, _) => DispatcherQueue.TryEnqueue(() =>
-        {
-            AutoSpeakingButtonText.Text = "开始自动口语";
-            AutoSpeakingStatusText.Text = "自动口语已结束。";
-        });
-        try
-        {
-            process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-            _autoSpeakingProcess = process;
-            AutoSpeakingButtonText.Text = "停止自动口语";
-            AutoSpeakingStatusText.Text = "自动口语运行中，请保持 ETS 停在口语题页面…";
-        }
-        catch (Exception ex)
-        {
-            process.Dispose();
-            ShowMessage("自动口语启动失败", ex.Message, InfoBarSeverity.Error);
-        }
+        AutoSpeakingButtonText.Text = "停止自动口语";
+        AutoSpeakingStatusText.Text = "自动口语运行中，请保持 ETS 停在口语题页面…";
     }
 
     private void ReportAutoSpeaking(string? line)
     {
         if (string.IsNullOrWhiteSpace(line)) return;
         DispatcherQueue.TryEnqueue(() => AutoSpeakingStatusText.Text = line.Trim());
-    }
-
-    private static string? ResolvePythonPath(string root)
-    {
-        var candidates = new List<string>();
-        string? path = Environment.GetEnvironmentVariable("PATH");
-        if (!string.IsNullOrEmpty(path))
-        {
-            foreach (string directory in path.Split(';', StringSplitOptions.RemoveEmptyEntries))
-            {
-                try { candidates.Add(Path.Combine(directory.Trim('"'), "python.exe")); }
-                catch (ArgumentException) { }
-            }
-        }
-        candidates.Add(Path.Combine(root, ".build", "tools", "python", "python.exe"));
-        candidates.Add(@"C:\Python314\python.exe");
-        return candidates.FirstOrDefault(File.Exists);
     }
 
     private void ShowMessage(string title, string message, InfoBarSeverity severity)
