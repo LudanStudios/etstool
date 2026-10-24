@@ -1,10 +1,11 @@
-ETS Tool 1.0.0
+ETS Tool 1.0.1
 Build: 2026-10-24
 Root: .
 Runtime: .\_winui\ETS-Assistant-WinUI.exe
 Engine: .\ETS-Assistant-Engine.exe
 
 最近更新：
+- 新增 MSI 安装与卸载，支持自定义安装路径、可选安装 VB-CABLE，以及卸载时选择保留或删除用户数据和移除虚拟麦克风驱动
 - 窗口模式下折叠导航按钮使用半透明背景；主窗口最小宽度设为 450 DIP
 - 修复窄窗口下首页“一键初始化并启动”按钮被压成小块的问题，改为占满操作区整行
 - 窄窗口下页面标题避开导航菜单按钮；试卷列表合并日期列并为操作按钮保留空间
