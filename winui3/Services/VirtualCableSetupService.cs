@@ -4,7 +4,7 @@ using System.IO.Compression;
 
 namespace ETSAssistant.WinUI3.Services;
 
-/// <summary>Extracts the complete bundled VB-CABLE package before starting its setup program.</summary>
+/// <summary>Extracts the complete bundled VB-CABLE package before starting its install/remove setup UI.</summary>
 public static class VirtualCableSetupService
 {
     private const string PackageName = "VBCABLE_Driver_Pack45.zip";
@@ -18,8 +18,8 @@ public static class VirtualCableSetupService
 
     public static bool HasInstaller(string appRoot) => File.Exists(PackagePath(appRoot));
 
-    /// <summary>Extracts every driver file to a local temporary folder, then starts setup with UAC.</summary>
-    public static async Task<int> RunInstallerAsync(string appRoot)
+    /// <summary>Extracts every driver file to a local temporary folder, then starts the vendor setup UI with UAC.</summary>
+    public static async Task<int> RunSetupAsync(string appRoot)
     {
         string packagePath = PackagePath(appRoot);
         if (!File.Exists(packagePath)) throw new FileNotFoundException("找不到完整的 VB-CABLE 驱动包。", packagePath);

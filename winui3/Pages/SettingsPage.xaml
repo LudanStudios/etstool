@@ -67,7 +67,38 @@
                 </StackPanel>
             </Border>
 
-                <Expander x:Name="CredentialsExpander" IsExpanded="False" HorizontalAlignment="Stretch"
+            <Border Padding="24" CornerRadius="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <StackPanel Spacing="14">
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="VB-CABLE 虚拟声卡" FontSize="17" FontWeight="SemiBold" />
+                        <TextBlock x:Name="CableStatusText" Text="正在检测虚拟声卡…" FontSize="12" Opacity="0.72"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Text="在这里管理驱动。安装和卸载需要管理员权限；卸载完成后 Windows 通常需要重启。卸载驱动不会卸载 ETS Assistant。"
+                                   FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button x:Name="InstallVirtualCableButton" Click="InstallVirtualCable_Click"
+                                Style="{StaticResource AccentButtonStyle}">
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <SymbolIcon Symbol="Download" /><TextBlock Text="安装驱动" />
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="UninstallVirtualCableButton" Click="UninstallVirtualCable_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <SymbolIcon Symbol="Delete" /><TextBlock Text="卸载驱动" />
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="RefreshVirtualCableButton" Click="RefreshVirtualCable_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <SymbolIcon Symbol="Refresh" /><TextBlock Text="刷新状态" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                    <InfoBar x:Name="CableInfoBar" IsOpen="False" />
+                </StackPanel>
+            </Border>
+            <Expander x:Name="CredentialsExpander" IsExpanded="False" HorizontalAlignment="Stretch"
                           HorizontalContentAlignment="Stretch" VerticalContentAlignment="Top"
                           MinHeight="88" CornerRadius="16" Padding="24">
                     <Expander.Header>

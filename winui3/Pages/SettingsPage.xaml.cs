@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Diagnostics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -11,6 +13,7 @@ public sealed partial class SettingsPage : Page
 {
     private readonly AssistantService _service = AssistantService.Current;
     private bool _loading;
+    private bool _virtualCableBusy;
 
     public SettingsPage()
     {
@@ -33,9 +36,136 @@ public sealed partial class SettingsPage : Page
         UpdateApiKeyStatus();
         UpdateAliyunStatus();
         _ = AppPreferencesService.Current.EnforceExperienceModeCredentialPolicy();
+        _ = RefreshVirtualCableStatusAsync();
     }
 
     public void ExpandCredentials() => CredentialsExpander.IsExpanded = true;
+
+    private async Task RefreshVirtualCableStatusAsync()
+    {
+        try
+        {
+            var cable = new VirtualCableService();
+            await cable.RefreshAsync();
+            CableStatusText.Text = cable.IsReady
+                ? $"状态：已就绪（{cable.Current!.Name} → {cable.Capture!.Name}）"
+                : cable.IsAvailable
+                    ? $"状态：已检测到播放端 {cable.Current!.Name}，但没有检测到 CABLE Output。"
+                    : "状态：未检测到 VB-CABLE 虚拟声卡。";
+        }
+        catch (Exception ex)
+        {
+            CableStatusText.Text = "状态检测失败：" + ex.Message;
+        }
+    }
+
+    private async void RefreshVirtualCable_Click(object sender, RoutedEventArgs e) =>
+        await RefreshVirtualCableStatusAsync();
+
+    private async void InstallVirtualCable_Click(object sender, RoutedEventArgs e) =>
+        await RunVirtualCableSetupAsync(uninstall: false);
+
+    private async void UninstallVirtualCable_Click(object sender, RoutedEventArgs e) =>
+        await RunVirtualCableSetupAsync(uninstall: true);
+
+    private async Task RunVirtualCableSetupAsync(bool uninstall)
+    {
+        if (_virtualCableBusy) return;
+        _virtualCableBusy = true;
+        InstallVirtualCableButton.IsEnabled = false;
+        UninstallVirtualCableButton.IsEnabled = false;
+        RefreshVirtualCableButton.IsEnabled = false;
+
+        try
+        {
+            if (!VirtualCableSetupService.HasInstaller(_service.AppRoot))
+            {
+                InfoBarPresenter.Show(CableInfoBar, "找不到 VB-CABLE 驱动包",
+                    $"请检查应用目录中的文件：{VirtualCableSetupService.PackagePath(_service.AppRoot)}",
+                    InfoBarSeverity.Error);
+                return;
+            }
+
+            string action = uninstall ? "卸载" : "安装";
+            var dialog = new ContentDialog
+            {
+                Title = uninstall ? "卸载 VB-CABLE 驱动" : "安装 VB-CABLE 驱动",
+                Content = uninstall
+                    ? "接下来会打开 VB-CABLE 官方设置程序。请在窗口中点击“Remove Driver”移除驱动。卸载完成后会询问是否立即重启。"
+                    : "接下来会打开 VB-CABLE 官方设置程序。请在窗口中点击“Install Driver”安装驱动，并允许管理员权限。安装完成后建议重启电脑。",
+                PrimaryButtonText = uninstall ? "打开卸载程序" : "打开安装程序",
+                CloseButtonText = "取消",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = XamlRoot
+            };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+
+            InfoBarPresenter.Show(CableInfoBar, $"正在{action}",
+                "官方设置程序会请求管理员权限。请在程序窗口中完成对应操作后关闭它。",
+                InfoBarSeverity.Informational);
+            int exitCode = await VirtualCableSetupService.RunSetupAsync(_service.AppRoot);
+            if (exitCode != 0)
+            {
+                InfoBarPresenter.Show(CableInfoBar, $"{action}程序已退出",
+                    $"VB-CABLE 设置程序退出代码：{exitCode}。", InfoBarSeverity.Warning);
+                return;
+            }
+
+            await RefreshVirtualCableStatusAsync();
+            if (uninstall)
+            {
+                await OfferCableRestartAsync();
+            }
+            else
+            {
+                InfoBarPresenter.Show(CableInfoBar, "VB-CABLE 设置程序已关闭",
+                    "如果已完成安装但设备尚未出现，请重启 Windows 后再刷新状态。",
+                    InfoBarSeverity.Success);
+            }
+        }
+        catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            InfoBarPresenter.Show(CableInfoBar, "操作已取消",
+                "没有批准管理员权限，驱动没有更改。", InfoBarSeverity.Warning);
+        }
+        catch (Exception ex)
+        {
+            InfoBarPresenter.Show(CableInfoBar, "VB-CABLE 操作失败", ex.Message, InfoBarSeverity.Error);
+        }
+        finally
+        {
+            _virtualCableBusy = false;
+            InstallVirtualCableButton.IsEnabled = true;
+            UninstallVirtualCableButton.IsEnabled = true;
+            RefreshVirtualCableButton.IsEnabled = true;
+        }
+    }
+
+    private async Task OfferCableRestartAsync()
+    {
+        var dialog = new ContentDialog
+        {
+            Title = "是否立即重启？",
+            Content = "如果你刚才在 VB-CABLE 官方程序中选择了“Remove Driver”，重启 Windows 可完成驱动卸载。请先保存其他应用中的工作。",
+            PrimaryButtonText = "立即重启",
+            CloseButtonText = "稍后重启",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = XamlRoot
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+
+        try
+        {
+            Process.Start(new ProcessStartInfo("shutdown.exe", "/r /t 0")
+            {
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            InfoBarPresenter.Show(CableInfoBar, "无法启动重启", ex.Message, InfoBarSeverity.Error);
+        }
+    }
 
     private void SpeakingModeBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {

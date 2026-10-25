@@ -234,9 +234,9 @@ public sealed partial class SpeakingPrepWindow : Window
                 ErrorBar.Severity = InfoBarSeverity.Warning;
                 ErrorBar.Message = cable.IsAvailable
                     ? "检测到 CABLE Input，但没有启用录音端 CABLE Output。请打开录音设备启用它，并把 ETS 麦克风设为 CABLE Output。"
-                    : "未安装 VB-CABLE 虚拟声卡。请到“测试工具 → 自动口语测试”点“安装/配置虚拟声卡”。";
+                    : "未安装 VB-CABLE 虚拟声卡。请到“答题设置”安装驱动。";
                 ErrorBar.IsOpen = true;
-                StatusText.Text = "音频已生成；配置虚拟声卡后可启动自动口语。";
+                StatusText.Text = "音频已生成；请到“答题设置”配置虚拟声卡后启动自动口语。";
                 return;
             }
 
