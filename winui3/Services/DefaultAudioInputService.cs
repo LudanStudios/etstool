@@ -12,6 +12,7 @@ public sealed class DefaultAudioInputService
     private static readonly Lazy<DefaultAudioInputService> Lazy = new(() => new DefaultAudioInputService());
     public static DefaultAudioInputService Current => Lazy.Value;
     private string? _originalDeviceId;
+    private string? _originalRenderDeviceId;
     private string? _virtualDeviceId;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
@@ -24,7 +25,7 @@ public sealed class DefaultAudioInputService
             StringComparison.OrdinalIgnoreCase));
         string name = match?.Name ?? id;
         return new DefaultAudioInputStatus(id, name,
-            name.Contains("CABLE Output", StringComparison.OrdinalIgnoreCase));
+            IsVirtualName(name));
     }
 
     public async Task<string> BeginSessionAsync()
@@ -37,6 +38,11 @@ public sealed class DefaultAudioInputService
             _originalDeviceId ??= current.IsVirtualCable
                 ? await FindPhysicalFallbackAsync()
                 : current.DeviceId;
+            AudioEndpointStatus? render = await GetDefaultRenderStatusAsync();
+            if (render is not null)
+                _originalRenderDeviceId ??= render.IsVirtualCable
+                    ? await FindPhysicalRenderFallbackAsync()
+                    : render.DeviceId;
             VirtualCableService cable = new();
             await cable.RefreshAsync();
             if (cable.Capture is null) return $"当前默认输入：{current.Name}；未检测到 CABLE Output。";
@@ -88,15 +94,24 @@ public sealed class DefaultAudioInputService
         await _gate.WaitAsync();
         try
         {
-            if (string.IsNullOrWhiteSpace(_originalDeviceId) || string.IsNullOrWhiteSpace(_virtualDeviceId)) return;
             DefaultAudioInputStatus? current = await GetStatusAsync();
-            if (current is not null && string.Equals(current.DeviceId, _virtualDeviceId, StringComparison.OrdinalIgnoreCase))
+            if (!string.IsNullOrWhiteSpace(_originalDeviceId) &&
+                !string.IsNullOrWhiteSpace(_virtualDeviceId) && current is not null &&
+                string.Equals(current.DeviceId, _virtualDeviceId, StringComparison.OrdinalIgnoreCase))
                 SetDefaultEndpoint(_originalDeviceId);
-            _originalDeviceId = null;
-            _virtualDeviceId = null;
+
+            AudioEndpointStatus? render = await GetDefaultRenderStatusAsync();
+            if (!string.IsNullOrWhiteSpace(_originalRenderDeviceId) && render?.IsVirtualCable == true)
+                SetDefaultEndpoint(_originalRenderDeviceId);
         }
         catch (Exception) { }
-        finally { _gate.Release(); }
+        finally
+        {
+            _originalDeviceId = null;
+            _originalRenderDeviceId = null;
+            _virtualDeviceId = null;
+            _gate.Release();
+        }
     }
 
     private static void SetDefaultEndpoint(string deviceId)
@@ -129,9 +144,36 @@ public sealed class DefaultAudioInputService
             !IsVirtualName(device.Name))?.Id;
     }
 
+    private sealed record AudioEndpointStatus(string DeviceId, string Name, bool IsVirtualCable);
+
+    private static async Task<AudioEndpointStatus?> GetDefaultRenderStatusAsync()
+    {
+        string id = MediaDevice.GetDefaultAudioRenderId(AudioDeviceRole.Default);
+        if (string.IsNullOrWhiteSpace(id)) return null;
+        DeviceInformationCollection devices = await DeviceInformation.FindAllAsync(DeviceClass.AudioRender);
+        DeviceInformation? match = devices.FirstOrDefault(device => string.Equals(device.Id, id,
+            StringComparison.OrdinalIgnoreCase));
+        string name = match?.Name ?? id;
+        return new AudioEndpointStatus(id, name, IsVirtualName(name));
+    }
+
+    private static async Task<string?> FindPhysicalRenderFallbackAsync()
+    {
+        string communications = MediaDevice.GetDefaultAudioRenderId(AudioDeviceRole.Communications);
+        DeviceInformationCollection devices = await DeviceInformation.FindAllAsync(DeviceClass.AudioRender);
+        DeviceInformation? communicationDevice = devices.FirstOrDefault(device =>
+            string.Equals(device.Id, communications, StringComparison.OrdinalIgnoreCase));
+        if (communicationDevice is not null && !IsVirtualName(communicationDevice.Name))
+            return communicationDevice.Id;
+        return devices.FirstOrDefault(device => !IsVirtualName(device.Name))?.Id;
+    }
+
     private static bool IsVirtualName(string name) =>
         name.Contains("CABLE Output", StringComparison.OrdinalIgnoreCase) ||
-        name.Contains("VB-Audio", StringComparison.OrdinalIgnoreCase);
+        name.Contains("CABLE Input", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("VB-Audio", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("VoiceMeeter", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("Virtual Audio Cable", StringComparison.OrdinalIgnoreCase);
 
     private enum EndpointRole { Console = 0, Multimedia = 1, Communications = 2 }
 

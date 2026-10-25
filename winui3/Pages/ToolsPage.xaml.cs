@@ -349,22 +349,22 @@ public sealed partial class ToolsPage : Page
             return;
         }
 
-        string installer = VirtualCableSetupService.InstallerPath(_service.AppRoot);
-        if (!File.Exists(installer))
+        string package = VirtualCableSetupService.PackagePath(_service.AppRoot);
+        if (!File.Exists(package))
         {
-            ShowMessage("找不到 VB-CABLE 安装包", $"缺少 {installer}", InfoBarSeverity.Error);
+            ShowMessage("找不到 VB-CABLE 驱动包", $"缺少 {package}", InfoBarSeverity.Error);
             return;
         }
 
         var content = new StackPanel { Spacing = 8 };
         content.Children.Add(new TextBlock
         {
-            Text = "将运行随程序附带的 VB-CABLE 安装程序。需要管理员权限，安装完成后建议重启电脑。",
+            Text = "将先把完整驱动包解压到临时文件夹，再以管理员权限运行安装程序。安装完成后建议重启电脑。",
             TextWrapping = TextWrapping.Wrap
         });
         content.Children.Add(new TextBlock
         {
-            Text = $"安装包：{installer}",
+            Text = $"驱动包：{package}",
             FontSize = 12,
             Opacity = 0.65,
             TextWrapping = TextWrapping.Wrap
@@ -384,7 +384,13 @@ public sealed partial class ToolsPage : Page
         {
             ShowMessage("正在安装", "请在安装程序中允许管理员权限，完成后回到这里。",
                 InfoBarSeverity.Informational);
-            await VirtualCableSetupService.RunInstallerAsync(_service.AppRoot);
+            int exitCode = await VirtualCableSetupService.RunInstallerAsync(_service.AppRoot);
+            if (exitCode != 0)
+            {
+                ShowMessage("安装失败", $"VB-CABLE 安装程序退出，代码 {exitCode}。请确认已允许管理员权限。",
+                    InfoBarSeverity.Error);
+                return;
+            }
             await RefreshCableAsync();
             if (_cable.IsReady)
             {

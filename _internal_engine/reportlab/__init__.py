@@ -1,13 +1,13 @@
 #Copyright ReportLab Europe Ltd. 2000-2026
 #see license.txt for license details
 __doc__="""The Reportlab PDF generation library."""
-Version = "5.0.1"
+Version = "5.1.0"
 __version__=Version
-__date__='20260820'
+__date__='20261022'
 
 import sys, os
 
-__min_python_version__ = (3,9)
+__min_python_version__ = (3,10)
 if sys.version_info< __min_python_version__:
     raise ImportError("""reportlab requires %s.%s+; other versions are unsupported.
 If you want to try with other python versions edit line 10 of reportlab/__init__

@@ -759,14 +759,15 @@ class Macro(Flowable):
     """This is not actually drawn (i.e. it has zero height)
     but is executed when it would fit in the frame.  Allows direct
     access to the canvas through the object 'canvas'"""
-    def __init__(self, command):
+    def __init__(self, command, g=None):
         self.command = command
+        self.g = g
     def __repr__(self):
         return "Macro(%s)" % repr(self.command)
     def wrap(self, availWidth, availHeight):
         return (0,0)
     def draw(self):
-        rl_safe_exec(self.command, g=None, l={'canvas':self.canv})
+        rl_safe_exec(self.command, g=self.g, l={'canvas':self.canv})
 
 def _nullCallable(*args,**kwds):
     pass
@@ -989,6 +990,11 @@ class PTOContainer(_Container,Flowable):
         for _ in _flowableSublist(content):
             if isinstance(_,PTOContainer):
                 C.extend(_._content)
+            elif isinstance(_,ListFlowable):
+                cc = cdeepcopy(_._content)
+                for y in cc:
+                    if not hasattr(y,'_ptoinfo'): y._ptoinfo = I
+                C.extend(cc)
             else:
                 C.append(_)
                 if not hasattr(_,'_ptoinfo'): _._ptoinfo = I

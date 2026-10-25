@@ -75,6 +75,7 @@ public sealed partial class SpeakingPrepWindow : Window
     private string _packId = string.Empty;
     private CancellationTokenSource? _cancellation;
     private bool _sessionReady;
+    private bool _autoStartInProgress;
 
     public SpeakingPrepWindow()
     {
@@ -162,12 +163,12 @@ public sealed partial class SpeakingPrepWindow : Window
 
             OverallProgress.Value = outcome.Session.Items.Count;
             ProgressCountText.Text = $"{outcome.Session.Items.Count}/{_items.Count}";
-            StatusText.Text = $"完成：{outcome.Session.Items.Count} 条音频，可以开始自动口语。";
-            foreach (SpeakingPrepItem item in _items)
-                if (item.Status != "完成") item.Status = "失败";
 
             if (outcome.Errors.Count > 0)
             {
+                StatusText.Text = $"部分完成：{outcome.Session.Items.Count}/{_items.Count} 条音频；自动口语未启动。";
+                foreach (SpeakingPrepItem item in _items)
+                    if (item.Status != "完成") item.Status = "失败";
                 ErrorBar.Severity = InfoBarSeverity.Warning;
                 ErrorBar.Message = string.Join(Environment.NewLine, outcome.Errors.Take(2));
                 ErrorBar.IsOpen = true;
@@ -175,11 +176,14 @@ public sealed partial class SpeakingPrepWindow : Window
             }
             else
             {
+                StatusText.Text = $"生成完成：{outcome.Session.Items.Count} 条音频，正在自动启动口语。";
+                foreach (SpeakingPrepItem item in _items)
+                    item.Status = "完成";
                 ErrorBar.IsOpen = false;
                 _sessionReady = true;
                 HeaderStatusText.Visibility = Visibility.Collapsed;
                 StartAutoButton.Visibility = Visibility.Visible;
-                StartAutoButtonText.Text = "开始自动口语";
+                await StartAutoAsync();
             }
         }
         catch (OperationCanceledException)
@@ -212,41 +216,59 @@ public sealed partial class SpeakingPrepWindow : Window
             StatusText.Text = "正在停止自动口语…";
             return;
         }
-        if (!_sessionReady) return;
+        await StartAutoAsync();
+    }
 
-        var cable = new VirtualCableService();
-        try { await cable.RefreshAsync(); }
-        catch (Exception) { }
-        if (!cable.IsReady)
+    private async Task StartAutoAsync()
+    {
+        if (!_sessionReady || _autoStartInProgress || _autoRunner.IsRunning) return;
+        _autoStartInProgress = true;
+        StartAutoButton.IsEnabled = false;
+        try
         {
-            ErrorBar.Severity = InfoBarSeverity.Warning;
-            ErrorBar.Message = cable.IsAvailable
-                ? "检测到 CABLE Input，但没有启用录音端 CABLE Output。请打开录音设备启用它，并把 ETS 麦克风设为 CABLE Output。"
-                : "未安装 VB-CABLE 虚拟声卡。请到“测试工具 → 自动口语测试”点“安装/配置虚拟声卡”。";
-            ErrorBar.IsOpen = true;
-            return;
-        }
+            var cable = new VirtualCableService();
+            try { await cable.RefreshAsync(); }
+            catch (Exception) { }
+            if (!cable.IsReady)
+            {
+                ErrorBar.Severity = InfoBarSeverity.Warning;
+                ErrorBar.Message = cable.IsAvailable
+                    ? "检测到 CABLE Input，但没有启用录音端 CABLE Output。请打开录音设备启用它，并把 ETS 麦克风设为 CABLE Output。"
+                    : "未安装 VB-CABLE 虚拟声卡。请到“测试工具 → 自动口语测试”点“安装/配置虚拟声卡”。";
+                ErrorBar.IsOpen = true;
+                StatusText.Text = "音频已生成；配置虚拟声卡后可启动自动口语。";
+                return;
+            }
 
-        AssistantService assistant = AssistantService.Current;
-        string[] sessionCandidates =
-        [
-            Path.Combine(assistant.DataRoot, "_assistant", "speaking_session.json"),
-            Path.Combine(assistant.DataRoot, "temp", "speaking_session.json"),
-            Path.Combine(assistant.AppRoot, "temp", "speaking_session.json")
-        ];
-        string sessionPath = sessionCandidates
-            .Where(File.Exists)
-            .OrderByDescending(path => File.GetLastWriteTimeUtc(path))
-            .FirstOrDefault() ?? sessionCandidates[0];
-        if (!_autoRunner.Start(assistant.AppRoot, assistant.DataRoot, sessionPath, out string error))
-        {
-            ErrorBar.Severity = InfoBarSeverity.Error;
-            ErrorBar.Message = error;
-            ErrorBar.IsOpen = true;
-            return;
+            AssistantService assistant = AssistantService.Current;
+            string[] sessionCandidates =
+            [
+                Path.Combine(assistant.DataRoot, "_assistant", "speaking_session.json"),
+                Path.Combine(assistant.DataRoot, "temp", "speaking_session.json"),
+                Path.Combine(assistant.AppRoot, "temp", "speaking_session.json")
+            ];
+            string sessionPath = sessionCandidates
+                .Where(File.Exists)
+                .OrderByDescending(path => File.GetLastWriteTimeUtc(path))
+                .FirstOrDefault() ?? sessionCandidates[0];
+            if (!_autoRunner.Start(assistant.AppRoot, assistant.DataRoot, sessionPath, out string error))
+            {
+                ErrorBar.Severity = InfoBarSeverity.Error;
+                ErrorBar.Message = error;
+                ErrorBar.IsOpen = true;
+                StatusText.Text = "音频已生成，但自动口语未能启动。";
+                return;
+            }
+
+            ErrorBar.IsOpen = false;
+            StartAutoButtonText.Text = "停止自动口语";
+            StatusText.Text = "自动口语已启动，等待 ETS 进入录音阶段…";
         }
-        StartAutoButtonText.Text = "停止自动口语";
-        StatusText.Text = "自动口语运行中…";
+        finally
+        {
+            _autoStartInProgress = false;
+            StartAutoButton.IsEnabled = true;
+        }
     }
 
     private void ApplyTheme()

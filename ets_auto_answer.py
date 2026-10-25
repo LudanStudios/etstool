@@ -16,7 +16,6 @@ import json
 import os
 import random
 import re
-import shutil
 import socket
 import struct
 import time
@@ -573,73 +572,6 @@ def visible_questions(client: CDPClient) -> list[dict[str, Any]]:
     return data.get("questions", []) if data.get("ready") else []
 
 
-def submission_complete(client: CDPClient) -> bool:
-    """Return true only when ETS displays a recognizable submitted/result page."""
-    raw = client.evaluate(
-        "JSON.stringify({url:location.href,text:[document.body?.innerText||'',"
-        "...[...document.querySelectorAll('iframe')].map(f=>{try{return f.contentDocument?.body?.innerText||''}catch(_){return ''}})"
-        "].join('\\n')})"
-    )
-    try:
-        page = json.loads(raw or "{}")
-    except json.JSONDecodeError:
-        return False
-    result_visible = bool(re.search(
-        r"提交成功|已提交|答题结果|练习结果|成绩|本次练习完成|练习完成|完成答题|正确率|得分",
-        page.get("text", ""),
-    ))
-    if result_visible:
-        return True
-    return False
-
-
-def confirm_and_delete_pack(root: Path, pack_dir: Path) -> bool:
-    """Ask before permanently deleting a numeric exam-pack folder under root."""
-    resolved_root = root.resolve()
-    resolved_pack = pack_dir.resolve()
-    if (
-        pack_dir.is_symlink()
-        or resolved_pack.parent != resolved_root
-        or not resolved_pack.name.isdigit()
-        or not resolved_pack.is_dir()
-    ):
-        print(f"Refusing to delete an unexpected exam-pack path: {pack_dir}", flush=True)
-        return False
-
-    try:
-        import tkinter as tk
-        from tkinter import messagebox
-
-        dialog = tk.Tk()
-        dialog.withdraw()
-        dialog.attributes("-topmost", True)
-        try:
-            should_delete = messagebox.askyesno(
-                "ETS 试卷清理",
-                f"试卷 {resolved_pack.name} 已提交。\n\n"
-                "是否永久删除这个试卷包及其中的转换文件以释放磁盘空间？\n"
-                "此操作不可撤销。",
-                default=messagebox.NO,
-                parent=dialog,
-            )
-        finally:
-            dialog.destroy()
-    except Exception as exc:
-        print(f"Could not show the exam-pack deletion prompt: {exc}", flush=True)
-        return False
-
-    if not should_delete:
-        print(f"Kept exam pack {resolved_pack.name} at the user's request.", flush=True)
-        return False
-    try:
-        shutil.rmtree(resolved_pack)
-    except OSError as exc:
-        print(f"Could not delete exam pack {resolved_pack.name}: {exc}", flush=True)
-        return False
-    print(f"Permanently deleted submitted exam pack {resolved_pack.name}.", flush=True)
-    return True
-
-
 def choose_answer(client: CDPClient, question: dict[str, Any], letter: str) -> bool:
     question_id = str(question.get("id", ""))
     index = "ABCD".find(letter)
@@ -831,8 +763,6 @@ def run_once(
 def watch(root: Path, endpoint: str, config_path: Path | None = None) -> int:
     handled: set[tuple[str, str]] = set()
     processed: dict[tuple[str, str], set[str]] = {}
-    pending_cleanup: dict[tuple[str, str], Path] = {}
-    cleanup_prompted: set[tuple[str, str]] = set()
     analysis_sessions: dict[tuple[str, str], str] = {}
     free_answer_cache: dict[tuple[str, str], dict[str, str]] = {}
     free_answer_last_attempt: dict[tuple[str, str], float] = {}
@@ -877,23 +807,6 @@ def watch(root: Path, endpoint: str, config_path: Path | None = None) -> int:
             for target in devtools_targets(endpoint):
                 pack_id = pack_id_from_url(str(target.get("url", "")))
                 if not pack_id:
-                    # Some ETS versions drop set_id from the result-page URL.
-                    # If only one pack is awaiting its result page, use that page
-                    # to finish the pending confirmation.
-                    if len(pending_cleanup) == 1:
-                        session_key, pack_dir = next(iter(pending_cleanup.items()))
-                        try:
-                            client = CDPClient(target["webSocketDebuggerUrl"])
-                            try:
-                                submitted = submission_complete(client)
-                            finally:
-                                client.close()
-                            if submitted:
-                                cleanup_prompted.add(session_key)
-                                confirm_and_delete_pack(root, pack_dir)
-                                pending_cleanup.pop(session_key, None)
-                        except (OSError, CDPError, ValueError, json.JSONDecodeError):
-                            pass
                     continue
                 # A fresh homework_id indicates a fresh practice session.
                 fragment = urlsplit(urlparse(str(target.get("url", ""))).fragment)
@@ -909,9 +822,6 @@ def watch(root: Path, endpoint: str, config_path: Path | None = None) -> int:
                     free_answer_cache.pop(session_key, None)
                     free_answer_last_attempt.pop(session_key, None)
                     free_answer_quota_blocked.discard(session_key)
-                    cleanup_prompted.discard(session_key)
-                    for pending_key in [key for key in pending_cleanup if key[0] == pack_id]:
-                        pending_cleanup.pop(pending_key, None)
                     last_reset_at = reset_request[0]
                     consume_manual_reset(root, reset_request[0])
                     acknowledge_manual_reset(root, reset_request[0], pack_id, "applied")
@@ -921,47 +831,12 @@ def watch(root: Path, endpoint: str, config_path: Path | None = None) -> int:
                         flush=True,
                     )
                     reset_request = None
-                pending_matches = [key for key in pending_cleanup if key[0] == pack_id]
-                pending_key = (
-                    session_key if session_key in pending_cleanup
-                    else pending_matches[0] if len(pending_matches) == 1
-                    else None
-                )
-                if pending_key is not None:
-                    try:
-                        client = CDPClient(target["webSocketDebuggerUrl"])
-                        try:
-                            submitted = submission_complete(client)
-                        finally:
-                            client.close()
-                        if submitted:
-                            cleanup_prompted.add(pending_key)
-                            confirm_and_delete_pack(root, pending_cleanup.pop(pending_key))
-                    except (OSError, CDPError, ValueError, json.JSONDecodeError):
-                        pass
-                    continue
-                # Recover the deletion prompt if the worker was restarted after ETS
-                # reached its result page and its in-memory pending state was lost.
                 pack_dir = root / pack_id
-                if session_key not in cleanup_prompted and pack_dir.is_dir():
-                    try:
-                        client = CDPClient(target["webSocketDebuggerUrl"])
-                        try:
-                            submitted = submission_complete(client)
-                        finally:
-                            client.close()
-                        if submitted:
-                            cleanup_prompted.add(session_key)
-                            confirm_and_delete_pack(root, pack_dir)
-                            continue
-                    except (OSError, CDPError, ValueError, json.JSONDecodeError):
-                        pass
                 if session_key in handled:
                     # ETS can reuse the same homework_id when the user starts
                     # another practice attempt. Treat a return to the first
                     # question as a fresh pass through the same pack.
                     try:
-                        pack_dir = root / pack_id
                         answers = load_answers(pack_dir)
                         client = CDPClient(target["webSocketDebuggerUrl"])
                         try:
@@ -1045,13 +920,7 @@ def watch(root: Path, endpoint: str, config_path: Path | None = None) -> int:
                     answered.add(content_id)
                 elif status == "complete":
                     handled.add(session_key)
-                    pack_dir = root / pack_id
-                    if pack_dir.is_dir():
-                        pending_cleanup[session_key] = pack_dir
-                        print(
-                            f"Answering is complete for pack {pack_id}; waiting for ETS to show its submitted/result page before asking about deletion.",
-                            flush=True,
-                        )
+                    print(f"Answering is complete for pack {pack_id}; keeping the exam pack and converted files.", flush=True)
         except (OSError, ValueError, json.JSONDecodeError):
             pass
         time.sleep(WATCH_INTERVAL_SECONDS)

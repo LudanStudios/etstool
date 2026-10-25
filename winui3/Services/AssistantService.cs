@@ -32,8 +32,12 @@ public sealed partial class AssistantService
     public string ReadmePath { get; }
     public string? EtsExe { get; private set; }
     public string LastError { get; set; } = string.Empty;
-    public bool IsEtsRunning => new[] { "Ets", "ETSShell", "EtsCore" }
-        .Any(name => Process.GetProcessesByName(name).Length > 0) || IsDebugPortOpen();
+    public bool IsEtsShellProcessRunning =>
+        Process.GetProcessesByName("ETSShell").Length > 0 ||
+        IsNamedProcessAtPath("Shell", EtsExe is null ? null : Path.Combine(Path.GetDirectoryName(EtsExe)!, "shell.exe"));
+    public bool IsEtsProcessRunning => new[] { "Ets", "ETSShell", "EtsCore" }
+        .Any(name => Process.GetProcessesByName(name).Length > 0) || IsEtsShellProcessRunning;
+    public bool IsEtsRunning => IsEtsProcessRunning || IsDebugPortOpen();
     public bool IsAutostartEnabled => !string.IsNullOrWhiteSpace(ReadAutostartValue());
 
     private AssistantService()
@@ -225,7 +229,7 @@ public sealed partial class AssistantService
     public int EndEtsProcesses()
     {
         int ended = 0;
-        foreach (string name in new[] { "Ets", "ETSShell", "EtsCore" })
+        foreach (string name in new[] { "Ets", "ETSShell", "EtsCore", "Shell" })
         {
             foreach (Process process in Process.GetProcessesByName(name))
             {
@@ -233,6 +237,9 @@ public sealed partial class AssistantService
                 {
                     try
                     {
+                        if (name == "Shell" && EtsExe is not null &&
+                            !IsSameExecutable(process, Path.Combine(Path.GetDirectoryName(EtsExe)!, "shell.exe")))
+                            continue;
                         if (process.HasExited) continue;
                         process.Kill();
                         process.WaitForExit(2000);
@@ -244,6 +251,32 @@ public sealed partial class AssistantService
             }
         }
         return ended;
+    }
+
+    private static bool IsNamedProcessAtPath(string name, string? expectedPath)
+    {
+        if (string.IsNullOrWhiteSpace(expectedPath)) return false;
+        foreach (Process process in Process.GetProcessesByName(name))
+        {
+            using (process)
+                if (IsSameExecutable(process, expectedPath)) return true;
+        }
+        return false;
+    }
+
+    private static bool IsSameExecutable(Process process, string expectedPath)
+    {
+        try
+        {
+            string? path = process.MainModule?.FileName;
+            return !string.IsNullOrWhiteSpace(path) &&
+                   string.Equals(Path.GetFullPath(path), Path.GetFullPath(expectedPath), StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or
+                                   UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     public string InitializeAndOpen(AssistantSettings settings, string extraArguments = "")

@@ -20,8 +20,12 @@ public sealed partial class MainWindow : Window
     private readonly CurrentPaperService _paperService = new(AssistantService.Current.DataRoot);
     private readonly SpeakingAnswerService _speakingAnswers = new(AssistantService.Current.DataRoot);
     private DispatcherQueueTimer? _paperTimer;
+    private DispatcherQueueTimer? _audioSessionTimer;
     private string? _lastPrepPackId;
     private bool _checkingSpeakingPaper;
+    private bool _checkingAudioSession;
+    private bool _audioSessionActive;
+    private bool _audioSessionSawShell;
     private SpeakingPrepWindow? _prepWindow;
 
     public MainWindow()
@@ -33,6 +37,7 @@ public sealed partial class MainWindow : Window
         Closed += async (_, _) =>
         {
             AnalysisActivityService.Current.Changed -= UpdateActivityNavigation;
+            _audioSessionTimer?.Stop();
             try { await DefaultAudioInputService.Current.EndSessionAsync(); }
             catch (Exception) { }
             Current = null;
@@ -78,7 +83,11 @@ public sealed partial class MainWindow : Window
         RootGrid.Loaded += async (_, _) =>
         {
             UpdatePaneToggleButtonStyle(RootNavigation.DisplayMode);
-            _ = await DefaultAudioInputService.Current.BeginSessionAsync();
+            _audioSessionTimer = DispatcherQueue.CreateTimer();
+            _audioSessionTimer.Interval = TimeSpan.FromSeconds(1);
+            _audioSessionTimer.Tick += async (_, _) => await SyncAudioSessionWithEtsAsync();
+            _audioSessionTimer.Start();
+            await SyncAudioSessionWithEtsAsync();
             await ShowWelcomeAsync();
             await CheckVirtualCableAsync();
             await CheckStartupForUpdatesAsync();
@@ -89,6 +98,29 @@ public sealed partial class MainWindow : Window
         _paperTimer.Tick += async (_, _) => await CheckSpeakingPaperAsync();
         _paperTimer.Start();
         Closed += (_, _) => _paperTimer.Stop();
+    }
+
+    private async Task SyncAudioSessionWithEtsAsync()
+    {
+        if (_checkingAudioSession) return;
+        _checkingAudioSession = true;
+        try
+        {
+            AssistantService assistant = AssistantService.Current;
+            bool shellRunning = assistant.IsEtsShellProcessRunning;
+            if (shellRunning) _audioSessionSawShell = true;
+            bool etsRunning = _audioSessionSawShell
+                ? shellRunning
+                : assistant.IsEtsProcessRunning;
+            if (etsRunning == _audioSessionActive) return;
+            if (etsRunning)
+                _ = await DefaultAudioInputService.Current.BeginSessionAsync();
+            else
+                await DefaultAudioInputService.Current.EndSessionAsync();
+            _audioSessionActive = etsRunning;
+        }
+        catch (Exception) { }
+        finally { _checkingAudioSession = false; }
     }
 
     private async Task CheckSpeakingPaperAsync()
@@ -109,12 +141,10 @@ public sealed partial class MainWindow : Window
             IReadOnlyList<SpeakingQuestion> questions = _speakingAnswers.Load(packId);
             if (questions.Count == 0) return;
 
-            var sessionStore = new SpeakingSessionStore(AssistantService.Current.AppRoot);
-            SpeakingSession? existing = sessionStore.Load();
-            if (existing is not null && existing.PackId == packId && existing.Items.Count > 0 &&
-                existing.Items.All(item => File.Exists(item.WavPath)))
-                return;
-
+            // 这个窗口既是 TTS 生成进度，也是“开始自动口语”的唯一入口。
+            // 上一轮已经生成过音频时也必须重新打开：用户可能在考试中途退出，
+            // 重新进入同一份试卷后还要继续作答后面的口语题。
+            // SpeakingPrepService 会直接复用仍然有效的音频，不会重复调用接口。
             string title = _speakingAnswers.LoadAllPapers()
                 .FirstOrDefault(paper => paper.PackId == packId)?.Title ?? $"试卷 {packId}";
             ShowSpeakingPrep(packId, title, questions);

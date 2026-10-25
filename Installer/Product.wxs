@@ -1,0 +1,41 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package Name="ETS Assistant" Manufacturer="LudanStudios" Version="$(var.ProductVersion)" Language="1033" UpgradeCode="A949543C-89D6-4F59-853F-933C34F9F221" Scope="perMachine">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of ETS Assistant is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+    <Icon Id="ETSAssistantIcon" SourceFile="..\winui3\Assets\ProgramIcon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="ETSAssistantIcon" />
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="ETS Assistant" />
+    </StandardDirectory>
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="MicrosoftDirectory" Name="Microsoft">
+        <Directory Id="WindowsShellDirectory" Name="Windows">
+          <Directory Id="CommonStartMenuDirectory" Name="Start Menu">
+            <Directory Id="CommonProgramsDirectory" Name="Programs">
+              <Directory Id="APPLICATIONPROGRAMFOLDER" Name="ETS Assistant" />
+            </Directory>
+          </Directory>
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+    <Feature Id="MainApplication" Title="ETS Assistant" Level="1">
+      <ComponentGroupRef Id="ApplicationFiles" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="ApplicationFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(var.PayloadDirectory)\**" />
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <Component Id="StartMenuShortcut" Directory="APPLICATIONPROGRAMFOLDER" Guid="7D2309A2-62DA-4621-A21E-A45AB7CAFC72">
+      <Shortcut Id="ETSAssistantShortcut" Name="ETS Assistant" Target="[INSTALLFOLDER]_winui\ETS-Assistant-WinUI.exe" WorkingDirectory="INSTALLFOLDER" Icon="ETSAssistantIcon" />
+      <RemoveFolder Id="RemoveApplicationProgramFolder" On="uninstall" />
+      <RegistryValue Root="HKLM" Key="Software\LudanStudios\ETS Assistant" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+  </Fragment>
+</Wix>

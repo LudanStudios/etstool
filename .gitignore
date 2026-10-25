@@ -4,6 +4,10 @@
 archive/
 
 # .NET 编译中间产物
+Installer/bin/
+Installer/obj/
+tests/**/bin/
+tests/**/obj/
 winui3/bin/
 winui3/obj/
 

@@ -1,3 +1,6 @@
+[CmdletBinding()]
+param([switch]$SkipListenerSetup)
+
 $ErrorActionPreference = 'Stop'
 
 $root = [IO.Path]::GetFullPath($PSScriptRoot)
@@ -97,9 +100,9 @@ if (Test-Path -LiteralPath (Join-Path $root '.git')) {
 $dotnetPublishArgs = @(
     'publish', $csproj, '--configuration', 'Release', '--runtime', 'win-x64',
     '--self-contained', 'true', '--output', $stageUi,
-    "-p:BaseIntermediateOutputPath=$intermediateObj\",
-    "-p:MSBuildProjectExtensionsPath=$intermediateObj\",
-    "-p:BaseOutputPath=$intermediateBin\"
+    "-p:BaseIntermediateOutputPath=$intermediateObj/",
+    "-p:MSBuildProjectExtensionsPath=$intermediateObj/",
+    "-p:BaseOutputPath=$intermediateBin/"
 )
 if (Test-Path -LiteralPath $nugetConfig -PathType Leaf) {
     $dotnetPublishArgs += "-p:RestoreConfigFile=$nugetConfig"
@@ -159,7 +162,9 @@ if (Test-Path -LiteralPath $archivedCredential -PathType Leaf) {
     Move-Item -LiteralPath $archivedCredential -Destination $currentCredential
 }
 
-& (Join-Path $root 'install_ets_answer_listener.ps1')
+if (-not $SkipListenerSetup) {
+    & (Join-Path $root 'install_ets_answer_listener.ps1')
+}
 if (-not ('ETSAssistantBuild.IconCache' -as [type])) {
     Add-Type @'
 using System;
@@ -175,4 +180,8 @@ namespace ETSAssistantBuild {
 [ETSAssistantBuild.IconCache]::SHChangeNotify(0x08000000, 0x1000, [IntPtr]::Zero, [IntPtr]::Zero)
 Write-Output "WinUI 3 assistant: $(Join-Path $targetUi 'ETS-Assistant-WinUI.exe')"
 Write-Output "Background engine: $targetEngine"
-Write-Output 'Updated login listener and desktop shortcuts; removed legacy assistant launchers.'
+if ($SkipListenerSetup) {
+    Write-Output 'Built runtime without installing login listeners or changing desktop shortcuts.'
+} else {
+    Write-Output 'Updated login listener and desktop shortcuts; removed legacy assistant launchers.'
+}

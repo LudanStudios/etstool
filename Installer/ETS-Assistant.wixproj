@@ -1,0 +1,15 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <ProductVersion Condition="'$(ProductVersion)' == ''">1.1.0</ProductVersion>
+    <PayloadDirectory Condition="'$(PayloadDirectory)' == ''">$(MSBuildThisFileDirectory)..\.build\release\payload</PayloadDirectory>
+    <OutputName>ETS-Assistant-r$(ProductVersion)</OutputName>
+    <!-- ICE03 predates valid Windows LCIDs 1152/1153/1169 and has a short Language-column limit. The package script normalizes only MSI File.Language metadata after linking; binary resources remain unchanged. -->
+    <SuppressIces>ICE03</SuppressIces>
+    <DefineConstants>$(DefineConstants);ProductVersion=$(ProductVersion);PayloadDirectory=$(PayloadDirectory)</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="5.0.2" />
+  </ItemGroup>
+</Project>

@@ -122,7 +122,7 @@
                                         Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
                             <StackPanel Grid.Column="1" Margin="12,0,22,0" VerticalAlignment="Center" Spacing="3">
                                 <TextBlock Text="自动检查更新" FontSize="15" FontWeight="SemiBold" />
-                                <TextBlock Text="默认开启。定期查看 GitHub 最新 Release 和提交；发现较新版本时提示你查看。"
+                                <TextBlock Text="默认开启。定期查看 GitHub 代码与 Release 版本；同版本的代码和 MSI 安装包按同一版本处理。"
                                            FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                             </StackPanel>
                             <ToggleSwitch x:Name="AutoUpdateToggle" Grid.Column="2" OnContent="开" OffContent="关"

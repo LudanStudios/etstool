@@ -89,14 +89,15 @@ def log(message: str) -> None:
 
 def page_state(client: CDPClient) -> dict:
     raw = client.evaluate(
-        "JSON.stringify({"
-        "text:document.body.innerText,"
+        "(()=>{const text=document.body.innerText;return JSON.stringify({"
+        "text,"
         "stop:!!document.querySelector('button.btn-stopRecord'),"
         "play:!!document.querySelector('button.btn-play'),"
         "exam:!!document.querySelector('.exam-panel, .exam-progress, video.examVideo'),"
+        "recording:/(?:^|\\n)\\s*录音中(?:\\s|$)/.test(text),"
         "fix:[...document.querySelectorAll('button,span')].some(e=>e.offsetParent!==null&&e.innerText&&e.innerText.trim()==='订正'),"
         "next:[...document.querySelectorAll('button')].some(b=>b.offsetParent!==null&&b.innerText.trim()==='下一步'&&!b.disabled)"
-        "})"
+        "})})()"
     )
     return json.loads(raw)
 
@@ -156,6 +157,7 @@ def main(argv: list[str] | None = None) -> int:
     page_url = client.evaluate("location.href")
     match = re.search(r"[?&#]set_id=(\d+)", page_url)
     page_pack = match.group(1) if match else ""
+    mock_exam = re.search(r"#/modelTestMode(?:[/?#]|$)", page_url, re.IGNORECASE) is not None
     if page_pack and str(session.get("PackId")) != page_pack:
         log(f"session pack {session.get('PackId')} does not match page pack {page_pack}")
         client.close()
@@ -166,11 +168,12 @@ def main(argv: list[str] | None = None) -> int:
     finished = False
     played = 0
     fix_attempts = 0
+    mock_waiting_for_recording_end = False
 
     initial = page_state(client)
     log(f"page={page_url[:160]}")
-    log(f"exam={initial['exam']} play={initial['play']} fix={initial['fix']} text={initial['text'][:120]!r}")
-    if not initial["exam"] and not initial["fix"]:
+    log(f"mock={mock_exam} exam={initial['exam']} play={initial['play']} fix={initial['fix']} text={initial['text'][:120]!r}")
+    if not mock_exam and not initial["exam"] and not initial["fix"]:
         log("当前页面不是口语练习/答题页，未播放音频，保留 WAV。请先打开一道口语题再点开始自动口语。")
         client.close()
         return 4
@@ -179,7 +182,9 @@ def main(argv: list[str] | None = None) -> int:
         while True:
             state = page_state(client)
             text = state["text"]
-            if "练习结束" in text or "提交成功" in text:
+            if ("练习结束" in text or "提交成功" in text) and (
+                not mock_exam or (played > 0 and not state["recording"])
+            ):
                 if state["fix"] and fix_attempts < 2:
                     fix_attempts += 1
                     log("练习已结束，点击“订正”重新开始。")
@@ -189,6 +194,48 @@ def main(argv: list[str] | None = None) -> int:
                 log("practice finished")
                 finished = True
                 break
+            if mock_exam:
+                # Simulation exams control the recorder themselves. They have no
+                # .btn-play/.btn-stopRecord buttons, so wait for their visible
+                # recording phase and let ETS advance after its timer expires.
+                if state["recording"]:
+                    if player is None and not mock_waiting_for_recording_end and index < len(wavs):
+                        started_at = time.time()
+                        played += 1
+                        log(f"[{index + 1}/{len(wavs)}] mock recording, playing {Path(wavs[index]).name}")
+                        player = subprocess.Popen(
+                            [args.player, wavs[index]],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            text=True,
+                            encoding="utf-8",
+                            errors="replace",
+                        )
+                    elif player is not None and player.poll() is not None:
+                        log(f"[{index + 1}/{len(wavs)}] playback ended; waiting for ETS recording to end")
+                        player = None
+                        mock_waiting_for_recording_end = True
+                    elif player is not None and time.time() - started_at > args.max_question_seconds:
+                        player.terminate()
+                        player = None
+                        mock_waiting_for_recording_end = True
+                        log(f"[{index + 1}/{len(wavs)}] playback timed out; waiting for ETS recording to end")
+                    time.sleep(0.2)
+                    continue
+                if player is not None:
+                    player.terminate()
+                    player = None
+                    mock_waiting_for_recording_end = True
+                if mock_waiting_for_recording_end:
+                    index += 1
+                    mock_waiting_for_recording_end = False
+                    log(f"[{index}/{len(wavs)}] mock recording ended")
+                if index >= len(wavs):
+                    log("all WAV items consumed")
+                    finished = True
+                    break
+                time.sleep(0.3)
+                continue
             if state["stop"]:
                 if player is None and index < len(wavs):
                     started_at = time.time()

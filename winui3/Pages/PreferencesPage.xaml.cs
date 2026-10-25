@@ -140,7 +140,7 @@ public sealed partial class PreferencesPage : Page
     private async void CheckUpdates_Click(object sender, RoutedEventArgs e)
     {
         CheckUpdatesButtonEnabled(false);
-        UpdateStatusText.Text = "正在检查 GitHub Release 和最新提交…";
+        UpdateStatusText.Text = "正在检查 GitHub 代码版本和 Release 版本…";
         try
         {
             UpdateCheckResult result = await new GitHubUpdateService().CheckAsync();

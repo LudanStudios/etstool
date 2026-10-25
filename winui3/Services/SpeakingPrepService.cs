@@ -28,11 +28,40 @@ public sealed class SpeakingPrepService
 
     public IReadOnlyList<SpeakingQuestion> LoadQuestions(string packId) => _answers.Load(packId);
 
+    /// <summary>
+    /// Returns the audio prepared for this paper on an earlier visit when it is
+    /// still usable, so leaving and re-entering a simulated exam does not pay
+    /// for the whole paper again.
+    /// </summary>
+    private SpeakingSession? FindReusableSession(string packId, string mode,
+        IReadOnlyList<SpeakingQuestion> questions)
+    {
+        SpeakingSession? session = _sessionStore.Load();
+        if (session is null || session.PackId != packId) return null;
+        if (!string.Equals(session.Mode, mode, StringComparison.Ordinal)) return null;
+        if (session.Items.Count != questions.Count) return null;
+        if (!session.Items.Select(item => item.Number).SequenceEqual(questions.Select(question => question.Number)))
+            return null;
+        return session.Items.All(item => !string.IsNullOrWhiteSpace(item.WavPath) && File.Exists(item.WavPath))
+            ? session
+            : null;
+    }
+
     public async Task<SpeakingPrepOutcome> PrepareAsync(string packId,
         IProgress<SpeakingPrepProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         IReadOnlyList<SpeakingQuestion> questions = _answers.Load(packId);
         if (questions.Count == 0) return new SpeakingPrepOutcome(null, Array.Empty<string>());
+
+        string mode = AppPreferencesService.Current.SpeakingMode;
+        SpeakingSession? reusable = FindReusableSession(packId, mode, questions);
+        if (reusable is not null)
+        {
+            progress?.Report(new SpeakingPrepProgress(reusable.Items.Count, questions.Count,
+                $"已有 {reusable.Items.Count} 条可用音频，无需重新生成"));
+            return new SpeakingPrepOutcome(reusable, Array.Empty<string>());
+        }
+
         if (!AliyunTtsCredentialStore.HasCredentials &&
             !AppPreferencesService.Current.ExperienceModeEnabled)
         {
@@ -45,7 +74,6 @@ public sealed class SpeakingPrepService
         await Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            string mode = AppPreferencesService.Current.SpeakingMode;
             var items = new List<SpeakingSessionItem>();
             var errors = new List<string>();
             int completed = 0;

@@ -16,10 +16,10 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>ETS-Assistant-WinUI</AssemblyName>
     <RootNamespace>ETSAssistant.WinUI3</RootNamespace>
-    <Version>1.0.1</Version>
-    <AssemblyVersion>1.0.1.0</AssemblyVersion>
-    <FileVersion>1.0.1.0</FileVersion>
-    <InformationalVersion>1.0.1</InformationalVersion>
+    <Version>1.1.0</Version>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
+    <InformationalVersion>1.1.0</InformationalVersion>
     <WindowsSdkPackageVersion>10.0.26100.56</WindowsSdkPackageVersion>
   </PropertyGroup>
   <ItemGroup>
@@ -32,6 +32,10 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
     <PackageReference Include="aliyun-net-sdk-core" Version="1.6.2" />
     <Content Include="Assets\ProgramIcon.png;Assets\ProgramIcon.ico;Assets\AboutBackground.png;Assets\llm_stt.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="..\tools\VBCABLE\VBCABLE_Driver_Pack45.zip" Link="tools\VBCABLE\VBCABLE_Driver_Pack45.zip">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>

@@ -17,6 +17,7 @@ ETS_EXES = {
     "etsshell.exe",
     "ets.exe",
     "etscore.exe",
+    "shell.exe",
 }
 ETS_INSTALL_ROOT = Path(os.environ.get("ETS_INSTALL_ROOT", r"C:\Program Files (x86)\ETS"))
 ETS_EXE = Path(os.environ.get("ETS_EXE_PATH", str(ETS_INSTALL_ROOT / "Ets.exe")))
@@ -95,6 +96,7 @@ def ets_is_running(ets_exe: Path | None = None) -> bool:
         os.path.normcase(os.path.normpath(str(ets_exe))),
         os.path.normcase(os.path.normpath(str(ets_exe.parent / "ETSShell.exe"))),
         os.path.normcase(os.path.normpath(str(ets_exe.parent / "Ets.exe"))),
+        os.path.normcase(os.path.normpath(str(ets_exe.parent / "shell.exe"))),
     }
     snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
     if snapshot == INVALID_HANDLE_VALUE:
@@ -122,7 +124,7 @@ def ets_is_running(ets_exe: Path | None = None) -> bool:
                     path = os.path.normcase(os.path.normpath(buffer.value))
                     if path in expected_paths:
                         return True
-                    if entry.szExeFile.casefold() == "etscore.exe":
+                    if entry.szExeFile.casefold() in {"etscore.exe", "shell.exe"}:
                         try:
                             if os.path.commonpath([path, install_root]) == install_root:
                                 return True
