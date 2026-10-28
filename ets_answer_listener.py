@@ -229,7 +229,7 @@ def stop_process(process: subprocess.Popen[bytes] | None, label: str, *, tree: b
         return
     try:
         if tree:
-            # The visible PowerShell terminal also owns the converter watcher.
+            # Stop the listener-owned worker tree; this helper runs without a console window.
             subprocess.run(
                 ["taskkill.exe", "/PID", str(process.pid), "/T", "/F"],
                 stdin=subprocess.DEVNULL,

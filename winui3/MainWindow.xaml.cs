@@ -184,7 +184,7 @@ public sealed partial class MainWindow : Window
         if (cable.IsReady) return;
 
         string message = !cable.IsAvailable
-            ? "未检测到 VB-CABLE 虚拟声卡。需要时可在“关于”中连续点击版本号 7 次，确认后进入开发者工具安装或检查虚拟麦克风。"
+            ? "未检测到 VB-CABLE 虚拟声卡。需要时请到“答题设置”安装或检查虚拟声卡驱动。"
             : "检测到 CABLE Input，但没有找到录音端 CABLE Output。请检查录音设备是否启用。";
         var dialog = new ContentDialog
         {
@@ -259,7 +259,7 @@ public sealed partial class MainWindow : Window
     private async Task CheckStartupForUpdatesAsync()
     {
         AppPreferencesService preferences = AppPreferencesService.Current;
-        if (!preferences.AutoUpdateEnabled ||
+        if (preferences.InternalTestNoUpdatesEnabled || !preferences.AutoUpdateEnabled ||
             preferences.LastUpdateCheckUtc is DateTimeOffset last && DateTimeOffset.UtcNow - last < TimeSpan.FromHours(24))
             return;
         try

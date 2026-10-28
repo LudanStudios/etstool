@@ -27,6 +27,7 @@ public sealed partial class PreferencesPage : Page
         SetUsageVisibility(_preferences.ExperienceModeEnabled);
         _loading = false;
         LocalizationService.Current.Apply(this);
+        RefreshUpdateSettings();
         RefreshExperienceModeAvailability();
         Loaded += PreferencesPage_Loaded;
     }
@@ -134,11 +135,13 @@ public sealed partial class PreferencesPage : Page
 
     private void AutoUpdateToggle_Toggled(object sender, RoutedEventArgs e)
     {
-        if (!_loading) _preferences.SetAutoUpdate(AutoUpdateToggle.IsOn);
+        if (!_loading && !_preferences.InternalTestNoUpdatesEnabled)
+            _preferences.SetAutoUpdate(AutoUpdateToggle.IsOn);
     }
 
     private async void CheckUpdates_Click(object sender, RoutedEventArgs e)
     {
+        if (_preferences.InternalTestNoUpdatesEnabled) return;
         CheckUpdatesButtonEnabled(false);
         UpdateStatusText.Text = "正在检查 GitHub 代码版本和 Release 版本…";
         try
@@ -174,5 +177,18 @@ public sealed partial class PreferencesPage : Page
     private void CheckUpdatesButtonEnabled(bool enabled)
     {
         CheckUpdatesButton.IsEnabled = enabled;
+    }
+
+    private void RefreshUpdateSettings()
+    {
+        bool internalTestMode = _preferences.InternalTestNoUpdatesEnabled;
+        UpdateControlsPanel.Visibility = internalTestMode ? Visibility.Collapsed : Visibility.Visible;
+        InternalTestNoUpdatesText.Visibility = internalTestMode ? Visibility.Visible : Visibility.Collapsed;
+        if (!internalTestMode) return;
+
+        Version? version = typeof(PreferencesPage).Assembly.GetName().Version;
+        string versionText = version is null ? "1.1.2" : $"{version.Major}.{version.Minor}.{version.Build}";
+        string format = LocalizationService.Current.Translate("当前版本：{0} 内部测试版本，无法配置更新。");
+        InternalTestNoUpdatesText.Text = string.Format(format, versionText);
     }
 }

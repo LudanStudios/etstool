@@ -8,12 +8,16 @@ $ErrorActionPreference = 'Stop'
 $groups = @(& whoami.exe /groups 2>$null)
 $isLowIntegrity = ($groups -join "`n") -match 'S-1-16-4096'
 if ($isLowIntegrity) {
-    throw 'This shell is Low integrity and cannot safely refresh a normal-user test copy. Run the refresh from a normal Explorer/PowerShell session; the desktop shortcut launches the test app directly at normal integrity.'
+    throw 'This shell is Low integrity and cannot safely refresh a normal-user test copy. Run this script from a normal Explorer/PowerShell session; it will start the test app after refreshing the copy.'
 }
 
 $source = [IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\')
 $programs = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Programs')).TrimEnd('\')
 $runtime = [IO.Path]::GetFullPath((Join-Path $programs 'ETS-Assistant-Test-FullDriver')).TrimEnd('\')
+$testRuntimeRoots = @(
+    $runtime,
+    [IO.Path]::GetFullPath((Join-Path $programs 'ETS-Assistant-Test')).TrimEnd('\')
+)
 $sourceExe = Join-Path $source '_winui\ETS-Assistant-WinUI.exe'
 $runtimeExe = Join-Path $runtime '_winui\ETS-Assistant-WinUI.exe'
 $sourceEngine = Join-Path $source 'ETS-Assistant-Engine.exe'
@@ -103,25 +107,28 @@ foreach ($shortcutName in @(
     $shortcutPath = Join-Path $desktop $shortcutName
     if (-not (Test-Path -LiteralPath $shortcutPath)) { continue }
     $shortcut = $shell.CreateShortcut($shortcutPath)
-    # Explorer starts the app with its normal user token. A low-integrity
-    # PowerShell caller would otherwise pass its Low token to child processes.
-    $shortcut.TargetPath = $runtimeExe
-    $shortcut.Arguments = ''
-    $shortcut.WorkingDirectory = Split-Path -Parent $runtimeExe
-    $shortcut.IconLocation = (Join-Path $runtime '_winui\Assets\ProgramIcon.ico') + ',0'
-    $shortcut.Save()
+    if ([string]::IsNullOrWhiteSpace($shortcut.TargetPath)) { continue }
+    $target = [IO.Path]::GetFullPath($shortcut.TargetPath)
+    $targetsTestRuntime = $false
+    foreach ($testRoot in $testRuntimeRoots) {
+        if ($target.StartsWith($testRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            $targetsTestRuntime = $true
+            break
+        }
+    }
+    if ($targetsTestRuntime) {
+        # Remove shortcuts left by older script versions that made the test
+        # copy appear as a second installed ETS Assistant app in search.
+        Remove-Item -LiteralPath $shortcutPath -Force
+    }
 }
 
-$runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-$oldRun = (Get-ItemProperty -Path $runKey -Name 'ETS Answer Listener' -ErrorAction SilentlyContinue).'ETS Answer Listener'
-if ($oldRun -and $oldRun.IndexOf($sourceEngine, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
-    $newRun = $oldRun.Replace($sourceEngine, $runtimeEngine).Replace($source, $runtime)
-    Set-ItemProperty -Path $runKey -Name 'ETS Answer Listener' -Value $newRun
-}
+# Keep the user's existing login startup entry unchanged. Testing is started
+# explicitly from this script and must not redirect normal startup to a test copy.
 
 if ($listenerProcesses.Count -and -not $NoLaunch) {
     if ($isLowIntegrity) {
-        Write-Warning 'The Low-integrity launcher cannot restart the background listener. The updated login entry will start it from the normal Explorer session.'
+        Write-Warning 'The Low-integrity launcher cannot restart the background listener. The existing login startup entry is unchanged.'
     } else {
         $etsExe = 'C:\Program Files (x86)\ETS\Ets.exe'
         $arguments = '--background-listener --root "{0}" --config "{1}" --ets-exe "{2}" --debug-port 10086' -f
@@ -134,7 +141,7 @@ Write-Output "Refreshed test runtime from $source"
 Write-Output "Runtime: $runtime"
 if (-not $NoLaunch) {
     if ($isLowIntegrity) {
-        Write-Warning 'This launcher is Low integrity and cannot promote its child process. The refreshed desktop shortcut points directly to the test app; open that shortcut from Explorer to run with the normal user token.'
+        Write-Warning 'This launcher is Low integrity and cannot promote its child process. Run the script from a normal Explorer/PowerShell session to start the test app at normal integrity.'
     } else {
         Start-Process -FilePath $runtimeExe -WorkingDirectory (Split-Path -Parent $runtimeExe)
     }

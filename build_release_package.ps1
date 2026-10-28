@@ -20,6 +20,8 @@ foreach ($relativeRoot in $manifestRoots) {
     if ($item.PSIsContainer) {
         foreach ($file in Get-ChildItem -LiteralPath $path -Recurse -File -Force) {
             if ($file.Name.ToLowerInvariant() -in $excludedNames) { continue }
+            if ($file.Extension -ieq '.pdb') { continue }
+            if ($relativeRoot -eq '_internal_engine' -and $file.Name -ieq 'README.md') { continue }
             $runtimeFiles.Add($file)
         }
     } else {

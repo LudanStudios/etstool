@@ -259,6 +259,7 @@
   "关": "Off",
   "自动检查更新": "Check for updates automatically",
   "默认开启。定期查看 GitHub 最新 Release 和提交；发现较新版本时提示你查看。": "Enabled by default. Periodically check GitHub releases and commits, and notify you when an update is available.",
+  "当前版本：{0} 内部测试版本，无法配置更新。": "Current version: {0} is an internal test build; update settings are unavailable.",
   "手动检查": "Manual check",
   "尚未检查。": "Not checked yet.",
   "立即检查": "Check now",

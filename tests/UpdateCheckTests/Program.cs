@@ -5,23 +5,23 @@ using ETSAssistant.WinUI3.Services;
 
 if (args.Contains("--live"))
 {
-    UpdateCheckResult result = await new GitHubUpdateService(new HttpClient(), new Version(1, 1, 1, 0)).CheckAsync();
+    UpdateCheckResult result = await new GitHubUpdateService(new HttpClient(), new Version(1, 1, 2, 0)).CheckAsync();
     Console.WriteLine($"Live GitHub: {result.Message}");
-    if (result.UpdateAvailable) throw new Exception("The current 1.1.1 release and code must not trigger an update.");
+    if (result.UpdateAvailable) throw new Exception("The current 1.1.2 release and code must not trigger an update.");
     return;
 }
 
-await Check("matching code and MSI", "1.1.1", "1.1.1", false, "当前版本已是最新。");
-await Check("matching revision and metadata", "v1.1.1+msi", "1.1.1.42", false, "当前版本已是最新。");
+await Check("matching code and MSI", "1.1.2", "1.1.2", false, "当前版本已是最新。");
+await Check("matching revision and metadata", "v1.1.2+msi", "1.1.2.42", false, "当前版本已是最新。");
 await Check("newer MSI and code", "1.2.0", "1.2.0", true, "发现新版本 1.0.2");
-await Check("newer code only", "1.1.1", "1.2.0", true, "发现新代码版本 1.0.2");
+await Check("newer code only", "1.1.2", "1.2.0", true, "发现新代码版本 1.0.2");
 await Check("older remote sources", "1.0.0", "1.0.0", false, "当前版本已是最新。");
 Console.WriteLine("All update check scenarios passed.");
 
 static async Task Check(string name, string releaseVersion, string codeVersion, bool expectedUpdate, string expectedMessage)
 {
     using var client = new HttpClient(new FakeGitHubHandler(releaseVersion, codeVersion));
-    UpdateCheckResult result = await new GitHubUpdateService(client, new Version(1, 1, 1, 0)).CheckAsync();
+    UpdateCheckResult result = await new GitHubUpdateService(client, new Version(1, 1, 2, 0)).CheckAsync();
     if (result.UpdateAvailable != expectedUpdate || !result.Message.Contains(expectedMessage, StringComparison.Ordinal))
         throw new Exception($"{name}: unexpected result: {result}");
     if (expectedUpdate)

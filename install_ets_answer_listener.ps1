@@ -6,6 +6,19 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath($PSScriptRoot)
+$testRuntimeRoots = @(
+    (Join-Path $env:LOCALAPPDATA 'Programs\ETS-Assistant-Test-FullDriver'),
+    (Join-Path $env:LOCALAPPDATA 'Programs\ETS-Assistant-Test')
+) | ForEach-Object { [IO.Path]::GetFullPath($_).TrimEnd('\') }
+function Test-IsTestRuntimeTarget([string]$Target) {
+    if ([string]::IsNullOrWhiteSpace($Target)) { return $false }
+    try { $targetPath = [IO.Path]::GetFullPath($Target) }
+    catch { return $false }
+    foreach ($testRoot in $testRuntimeRoots) {
+        if ($targetPath.StartsWith($testRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { return $true }
+    }
+    return $false
+}
 $packRoot = Join-Path $env:APPDATA 'ETS'
 $config = Join-Path $root 'ets_answer_config.yaml'
 $launcher = Join-Path $root 'ETS-Assistant-Engine.exe'
@@ -60,19 +73,25 @@ Set-AssistantShortcut (Join-Path $desktop 'ETS.lnk') $EtsExe ("--remote-debuggin
 $startupLink = Join-Path $startup 'ETS Assistant.lnk'
 if (Test-Path -LiteralPath $startupLink) {
     $link = $shell.CreateShortcut($startupLink)
-    if ($link.TargetPath -ieq $ui -or $legacyPaths -contains $link.TargetPath) { Remove-Item -LiteralPath $startupLink }
+    if ($link.TargetPath -ieq $ui -or $legacyPaths -contains $link.TargetPath -or
+        (Test-IsTestRuntimeTarget $link.TargetPath)) { Remove-Item -LiteralPath $startupLink }
 }
 $oldDesktopLink = Join-Path $desktop 'ETS Answer Listener.lnk'
 if (Test-Path -LiteralPath $oldDesktopLink) {
     $link = $shell.CreateShortcut($oldDesktopLink)
-    if ($link.TargetPath -ieq $EtsExe -or $legacyPaths -contains $link.TargetPath) { Remove-Item -LiteralPath $oldDesktopLink }
+    if ($link.TargetPath -ieq $EtsExe -or $legacyPaths -contains $link.TargetPath -or
+        (Test-IsTestRuntimeTarget $link.TargetPath)) { Remove-Item -LiteralPath $oldDesktopLink }
 }
 $shortcutRoots = @($desktop, [Environment]::GetFolderPath('Programs'), (Join-Path $env:APPDATA 'Microsoft\Internet Explorer\Quick Launch\User Pinned'))
 foreach ($folder in $shortcutRoots) {
     if (-not (Test-Path -LiteralPath $folder)) { continue }
     foreach ($file in @(Get-ChildItem -LiteralPath $folder -Filter '*.lnk' -File -Recurse -Force -ErrorAction SilentlyContinue)) {
         $link = $shell.CreateShortcut($file.FullName)
-        if ($legacyPaths -contains $link.TargetPath) {
+        if (Test-IsTestRuntimeTarget $link.TargetPath) {
+            # Retire stale test-copy shortcuts so Windows Search shows one app.
+            Remove-Item -LiteralPath $file.FullName
+        }
+        elseif ($legacyPaths -contains $link.TargetPath) {
             if ($file.FullName.StartsWith($startup + '\', [StringComparison]::OrdinalIgnoreCase)) { Remove-Item -LiteralPath $file.FullName }
             else { Set-AssistantShortcut $file.FullName $ui '' ($icon + ',0') }
         }

@@ -5,6 +5,9 @@ namespace ETSAssistant.WinUI3.Services;
 
 public sealed class AppPreferencesService
 {
+    // 手工开关：仅内部测试时设为 true；正式版保持 false。
+    private const bool InternalTestNoUpdates = false;
+
     private static readonly Lazy<AppPreferencesService> Lazy = new(() => new AppPreferencesService());
     public static AppPreferencesService Current => Lazy.Value;
 
@@ -26,6 +29,7 @@ public sealed class AppPreferencesService
     public bool AllPersonalCredentialsConfigured => ApiKeyStore.HasKey && AliyunTtsCredentialStore.HasCredentials;
     public bool AutoListeningEnabled { get; private set; }
     public bool AutoUpdateEnabled { get; private set; } = true;
+    public bool InternalTestNoUpdatesEnabled => InternalTestNoUpdates;
     public bool VerboseLoggingEnabled { get; private set; }
     public bool DeveloperToolsUnlocked { get; private set; }
     public DateTimeOffset? LastUpdateCheckUtc { get; private set; }
@@ -86,6 +90,7 @@ public sealed class AppPreferencesService
 
     public void SetAutoUpdate(bool enabled)
     {
+        if (InternalTestNoUpdatesEnabled) return;
         if (AutoUpdateEnabled == enabled) return;
         AutoUpdateEnabled = enabled;
         Save();

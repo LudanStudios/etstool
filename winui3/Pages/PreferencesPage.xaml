@@ -117,31 +117,35 @@
                                        FontSize="11" Opacity="0.62" TextWrapping="Wrap" />
                         </StackPanel>
                         <Rectangle Height="1" Fill="{ThemeResource CardStrokeColorDefaultBrush}" Margin="16,0" />
-                        <Grid ColumnDefinitions="44,*,Auto" Padding="16,14">
-                            <SymbolIcon Symbol="Download" Width="21" Height="21" VerticalAlignment="Center"
-                                        Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
-                            <StackPanel Grid.Column="1" Margin="12,0,22,0" VerticalAlignment="Center" Spacing="3">
-                                <TextBlock Text="自动检查更新" FontSize="15" FontWeight="SemiBold" />
-                                <TextBlock Text="默认开启。定期查看 GitHub 代码与 Release 版本；同版本的代码和 MSI 安装包按同一版本处理。"
-                                           FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
-                            </StackPanel>
-                            <ToggleSwitch x:Name="AutoUpdateToggle" Grid.Column="2" OnContent="开" OffContent="关"
-                                          Toggled="AutoUpdateToggle_Toggled" VerticalAlignment="Center" />
-                        </Grid>
-                        <Rectangle Height="1" Fill="{ThemeResource CardStrokeColorDefaultBrush}" Margin="16,0" />
-                        <Grid ColumnDefinitions="44,*,Auto" Padding="16,14">
-                            <SymbolIcon Symbol="Refresh" Width="21" Height="21" VerticalAlignment="Center"
-                                        Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
-                            <StackPanel Grid.Column="1" Margin="12,0,18,0" VerticalAlignment="Center" Spacing="3">
-                                <TextBlock Text="手动检查" FontSize="15" FontWeight="SemiBold" />
-                                <TextBlock x:Name="UpdateStatusText" Text="尚未检查。" FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
-                            </StackPanel>
-                            <Button x:Name="CheckUpdatesButton" Grid.Column="2" Click="CheckUpdates_Click"
-                                    Content="立即检查" VerticalAlignment="Center" />
-                        </Grid>
+                        <StackPanel x:Name="UpdateControlsPanel">
+                            <Grid ColumnDefinitions="44,*,Auto" Padding="16,14">
+                                <SymbolIcon Symbol="Download" Width="21" Height="21" VerticalAlignment="Center"
+                                            Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
+                                <StackPanel Grid.Column="1" Margin="12,0,22,0" VerticalAlignment="Center" Spacing="3">
+                                    <TextBlock Text="自动检查更新" FontSize="15" FontWeight="SemiBold" />
+                                    <TextBlock Text="默认开启。定期查看 GitHub 代码与 Release 版本；同版本的代码和 MSI 安装包按同一版本处理。"
+                                               FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <ToggleSwitch x:Name="AutoUpdateToggle" Grid.Column="2" OnContent="开" OffContent="关"
+                                              Toggled="AutoUpdateToggle_Toggled" VerticalAlignment="Center" />
+                            </Grid>
+                            <Rectangle Height="1" Fill="{ThemeResource CardStrokeColorDefaultBrush}" Margin="16,0" />
+                            <Grid ColumnDefinitions="44,*,Auto" Padding="16,14">
+                                <SymbolIcon Symbol="Refresh" Width="21" Height="21" VerticalAlignment="Center"
+                                            Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
+                                <StackPanel Grid.Column="1" Margin="12,0,18,0" VerticalAlignment="Center" Spacing="3">
+                                    <TextBlock Text="手动检查" FontSize="15" FontWeight="SemiBold" />
+                                    <TextBlock x:Name="UpdateStatusText" Text="尚未检查。" FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <Button x:Name="CheckUpdatesButton" Grid.Column="2" Click="CheckUpdates_Click"
+                                        Content="立即检查" VerticalAlignment="Center" />
+                            </Grid>
+                            <InfoBar x:Name="UpdateInfoBar" IsOpen="False" />
+                        </StackPanel>
+                        <TextBlock x:Name="InternalTestNoUpdatesText" Visibility="Collapsed"
+                                   FontSize="14" Padding="16,18" TextWrapping="Wrap" />
                     </StackPanel>
                 </Border>
-                <InfoBar x:Name="UpdateInfoBar" IsOpen="False" />
             </StackPanel>
             <TextBlock Text="设置会立即应用并保存在本机。" FontSize="12" Opacity="0.65" Margin="4,0,0,0" />
         </StackPanel>

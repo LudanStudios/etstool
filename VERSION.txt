@@ -1,10 +1,11 @@
-ETS Tool 1.1.1
-Build: 2026-10-25
+ETS Tool 1.1.2
+Build: 2026-10-26
 Root: .
 Runtime: .\_winui\ETS-Assistant-WinUI.exe
 Engine: .\ETS-Assistant-Engine.exe
 
 最近更新：
+- 正式版 1.1.2：修正虚拟声卡设置引导；恢复偏好设置中的自动与手动更新检查。
 - 正式版 1.1.1：答题设置新增 VB-CABLE 驱动状态、安装和卸载入口；卸载设置程序关闭后可选择立即重启。
 - 正式版 1.1.0：发布 MSI 安装包和便携 ZIP；MSI 支持自定义安装目录并在卸载时保留用户数据。
 - 口语 TTS 全部生成成功后自动启动“自动口语”，由运行器等待 ETS 进入录音阶段；生成失败时不会启动
