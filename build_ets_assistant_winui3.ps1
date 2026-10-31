@@ -130,7 +130,20 @@ foreach ($runtimeFile in $vcRuntimeFiles) {
 
 $ownedExecutables = @($targetEngine, (Join-Path $targetUi 'ETS-Assistant-WinUI.exe'),
     (Join-Path $root 'ETS-Assistant-Fast.exe'), (Join-Path $root 'ETS-Assistant.exe'))
-$running = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $ownedExecutables -contains $_.ExecutablePath })
+try {
+    $running = @(Get-CimInstance Win32_Process -ErrorAction Stop |
+        Where-Object { $_.ExecutablePath -and $ownedExecutables -contains $_.ExecutablePath })
+} catch {
+    # WMI/CIM can be unavailable in restricted or non-elevated PowerShell sessions.
+    # Fall back to process paths so the build can still safely avoid replacing a running app.
+    $running = @(Get-Process -ErrorAction SilentlyContinue | ForEach-Object {
+        $processPath = $null
+        try { $processPath = $_.Path } catch { }
+        if ($processPath -and $ownedExecutables -contains $processPath) {
+            [pscustomobject]@{ ProcessId = $_.Id; CommandLine = '' }
+        }
+    })
+}
 $running = @($running | Where-Object { $_.CommandLine -like '*--background-listener*' }) +
            @($running | Where-Object { $_.CommandLine -notlike '*--background-listener*' })
 foreach ($process in $running) { Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue }

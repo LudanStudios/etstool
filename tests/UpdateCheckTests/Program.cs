@@ -5,28 +5,28 @@ using ETSAssistant.WinUI3.Services;
 
 if (args.Contains("--live"))
 {
-    UpdateCheckResult result = await new GitHubUpdateService(new HttpClient(), new Version(1, 1, 2, 0)).CheckAsync();
+    UpdateCheckResult result = await new GitHubUpdateService(new HttpClient(), new Version(1, 2, 2, 0)).CheckAsync();
     Console.WriteLine($"Live GitHub: {result.Message}");
-    if (result.UpdateAvailable) throw new Exception("The current 1.1.2 release and code must not trigger an update.");
+    if (result.UpdateAvailable) throw new Exception("The current 1.2.2 release and code must not trigger an update.");
     return;
 }
 
-await Check("matching code and MSI", "1.1.2", "1.1.2", false, "当前版本已是最新。");
-await Check("matching revision and metadata", "v1.1.2+msi", "1.1.2.42", false, "当前版本已是最新。");
-await Check("newer MSI and code", "1.2.0", "1.2.0", true, "发现新版本 1.0.2");
-await Check("newer code only", "1.1.2", "1.2.0", true, "发现新代码版本 1.0.2");
+await Check("matching code and MSI", "1.2.2", "1.2.2", false, "当前版本已是最新。");
+await Check("matching revision and metadata", "v1.2.2+msi", "1.2.2.42", false, "当前版本已是最新。");
+await Check("newer MSI and code", "1.2.3", "1.2.3", true, "发现新版本 1.2.3");
+await Check("newer code only", "1.2.2", "1.2.3", true, "发现新代码版本 1.2.3");
 await Check("older remote sources", "1.0.0", "1.0.0", false, "当前版本已是最新。");
 Console.WriteLine("All update check scenarios passed.");
 
 static async Task Check(string name, string releaseVersion, string codeVersion, bool expectedUpdate, string expectedMessage)
 {
     using var client = new HttpClient(new FakeGitHubHandler(releaseVersion, codeVersion));
-    UpdateCheckResult result = await new GitHubUpdateService(client, new Version(1, 1, 2, 0)).CheckAsync();
+    UpdateCheckResult result = await new GitHubUpdateService(client, new Version(1, 2, 2, 0)).CheckAsync();
     if (result.UpdateAvailable != expectedUpdate || !result.Message.Contains(expectedMessage, StringComparison.Ordinal))
         throw new Exception($"{name}: unexpected result: {result}");
     if (expectedUpdate)
     {
-        string expectedPath = codeVersion == "1.2.0" && releaseVersion != "1.2.0" ? "/commit/" : "/releases/tag/";
+        string expectedPath = codeVersion == "1.2.3" && releaseVersion != "1.2.3" ? "/commit/" : "/releases/tag/";
         if (!result.Url.Contains(expectedPath, StringComparison.Ordinal))
             throw new Exception($"{name}: wrong update destination: {result.Url}");
     }

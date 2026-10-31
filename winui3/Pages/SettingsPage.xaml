@@ -37,7 +37,7 @@
                                 <ComboBoxItem Content="标答模式（提取试卷推荐答案，供 TTS 使用）" Tag="standard" />
                                 <ComboBoxItem Content="生成模式（使用 DeepSeek 生成回答）" Tag="flexible" />
                             </ComboBox>
-                            <TextBlock Text="生成模式使用个人 API Key，或在启用体验模式后使用公用 Worker。"
+                            <TextBlock Text="生成模式需要填写个人 DeepSeek API Key。"
                                        FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                         </StackPanel>
                     </Grid>
@@ -45,18 +45,6 @@
                     <StackPanel Spacing="3">
                         <CheckBox x:Name="AutostartCheck" Content="登录 Windows 时在后台启动监听器" />
                         <TextBlock Text="开启后会等待 ETS 启动；ETS 打开时自动显示助手窗口。" FontSize="12" Opacity="0.68" />
-                    </StackPanel>
-                    <StackPanel Spacing="5">
-                        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                            <CheckBox x:Name="AutoListeningCheck" Content="开启自动听力" />
-                            <Border Style="{StaticResource BetaBadgeStyle}">
-                                <TextBlock Text="BETA" FontSize="10" FontWeight="SemiBold" Foreground="White"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            </Border>
-                        </StackPanel>
-                        <TextBlock Text="开启后，缺少本地答案的听力题可请求听力 Worker。必须同时启用偏好设置中的体验模式；每设备每天最多 10 次完整听力，同一 IP 每天最多 30 次。音频和题目内容会发送到公用服务。"
-                                   HorizontalAlignment="Stretch" TextAlignment="Left"
-                                   FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                     </StackPanel>
                     <InfoBar x:Name="SaveInfoBar" IsOpen="False" />
                     <Button Click="Save_Click" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Left">
@@ -103,9 +91,9 @@
                           MinHeight="88" CornerRadius="16" Padding="24">
                     <Expander.Header>
                         <StackPanel Spacing="5" Margin="8,0,0,0" HorizontalAlignment="Stretch">
-                            <TextBlock Text="服务凭据（可选）" FontSize="17" FontWeight="SemiBold"
+                            <TextBlock Text="服务凭据（按需填写）" FontSize="17" FontWeight="SemiBold"
                                        HorizontalAlignment="Left" />
-                            <TextBlock Text="个人凭据保存在本机；不填写时需要在偏好设置中主动启用体验模式。"
+                            <TextBlock Text="个人凭据保存在本机。DeepSeek 功能需要 API Key，TTS 语音合成需要阿里云 RAM 凭据与 AppID。"
                                        FontSize="12" Opacity="0.68" TextWrapping="Wrap" HorizontalAlignment="Left" />
                         </StackPanel>
                     </Expander.Header>
@@ -128,7 +116,7 @@
                             HorizontalAlignment="Stretch">
                         <StackPanel Spacing="14" HorizontalAlignment="Stretch">
                             <TextBlock Text="DeepSeek API Key" FontWeight="SemiBold" HorizontalAlignment="Left" />
-                            <TextBlock Text="使用个人 Key 时直接调用 DeepSeek，不占体验模式额度。使用 Windows DPAPI 加密保存。"
+                            <TextBlock Text="用于口语生成和试卷解析。使用 Windows DPAPI 加密保存在本机。"
                                        FontSize="12" Opacity="0.68" TextWrapping="Wrap" HorizontalAlignment="Left" />
                             <PasswordBox x:Name="ApiKeyBox" PlaceholderText="粘贴 DeepSeek API Key（sk-…）"
                                          PasswordRevealMode="Peek" MinHeight="44" HorizontalAlignment="Stretch" />
@@ -145,7 +133,7 @@
                             HorizontalAlignment="Stretch">
                         <StackPanel Spacing="14" HorizontalAlignment="Stretch">
                             <TextBlock Text="阿里云 TTS（RAM 凭据）" FontWeight="SemiBold" HorizontalAlignment="Left" />
-                            <TextBlock Text="个人凭据优先；未填写时只有启用体验模式才会调用公用 TTS Worker，每设备每天最多 10 次，同一 IP 每天最多 30 次。"
+                            <TextBlock Text="使用个人 RAM 凭据和 TTS AppID 调用阿里云语音合成；使用 Windows DPAPI 加密保存在本机。"
                                        FontSize="12" Opacity="0.68" TextWrapping="Wrap" HorizontalAlignment="Left" />
                             <TextBox x:Name="AliyunRamNameBox" Header="RAM Name / AccessKey ID" MinHeight="44" HorizontalAlignment="Stretch" />
                             <PasswordBox x:Name="AliyunRamKeyBox" Header="RAM Key / AccessKey Secret"

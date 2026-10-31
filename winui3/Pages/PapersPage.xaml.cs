@@ -111,20 +111,17 @@ public sealed partial class PapersPage : Page
     private async void DetailedAnalysis_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.DataContext is not PaperEntry paper) return;
-        bool useWorker = !ApiKeyStore.HasKey && AppPreferencesService.Current.ExperienceModeEnabled;
-        if (!ApiKeyStore.HasKey && !useWorker)
+        if (!ApiKeyStore.HasKey)
         {
-            ShowMessage("需要启用解析服务", "请填写个人 DeepSeek API Key，或在偏好设置中启用体验模式。",
-                InfoBarSeverity.Warning);
+            if (MainWindow.Current is { } mainWindow)
+                await mainWindow.PromptForMissingCredentialsAsync();
             return;
         }
 
         var confirm = new ContentDialog
         {
             Title = "发送试题到 DeepSeek？",
-            Content = useWorker
-                ? $"详细解析会将“{paper.Title}”的题干、选项和标准答案发送到公用体验 Worker，再由服务端调用 DeepSeek。每次通过校验的完整解析请求立即扣 1 次体验模式“试卷解析”额度；即使 DeepSeek 上游失败也不退还（本设备每天最多 10 次，同一 IP 每天最多 30 次）。不会发送本机凭据或作答历史。继续？"
-                : $"详细解析（Beta）会将“{paper.Title}”的题干、选项和标准答案发送给 DeepSeek，用于逐题生成讲解。不会发送本机凭据或作答历史。请求由你的个人 API Key 计费。继续？",
+            Content = $"详细解析（Beta）会将“{paper.Title}”的题干、选项和标准答案发送给 DeepSeek，用于逐题生成讲解。不会发送本机凭据或作答历史。请求由你的个人 API Key 计费。继续？",
             PrimaryButtonText = "确认并继续",
             CloseButtonText = "取消",
             DefaultButton = ContentDialogButton.None,

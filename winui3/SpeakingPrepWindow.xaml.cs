@@ -152,6 +152,13 @@ public sealed partial class SpeakingPrepWindow : Window
             SpeakingPrepOutcome outcome = await service.PrepareAsync(_packId, progress, _cancellation.Token);
             if (outcome.Session is null)
             {
+                if (outcome.Errors.Contains("未填写有效的凭据\n无法完成指定操作。", StringComparer.Ordinal) &&
+                    MainWindow.Current is { } mainWindow)
+                {
+                    Close();
+                    await mainWindow.PromptForMissingCredentialsAsync();
+                    return;
+                }
                 StatusText.Text = "没有生成音频。";
                 ProgressCountText.Text = $"0/{_items.Count}";
                 ErrorBar.Severity = InfoBarSeverity.Error;

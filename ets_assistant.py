@@ -40,11 +40,17 @@ def main(argv: list[str] | None = None) -> int:
     if arguments:
         ets_answer_listener.log(f"Unsupported engine mode: {arguments[0]}")
         return 2
-    if ets_answer_listener.start_assistant_window() is not None:
+    if ets_answer_listener.start_assistant_window():
         return 0
+    winui_exe = ets_answer_listener.SCRIPT_ROOT / "_winui" / "ETS-Assistant-WinUI.exe"
+    message = (
+        "找不到新版助手。请保留完整的 _winui 程序目录。"
+        if not winui_exe.is_file()
+        else "Windows 未能启动管理员版助手。请在用户帐户控制提示中允许启动；如果没有出现提示，请从完整的 _winui 程序目录启动。"
+    )
     ctypes.windll.user32.MessageBoxW(
         None,
-        "找不到或无法启动新版助手。请保留完整的 _winui 程序目录。",
+        message,
         "ETS 自动监听助手",
         0x10,
     )

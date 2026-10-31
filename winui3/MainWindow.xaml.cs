@@ -22,11 +22,13 @@ public sealed partial class MainWindow : Window
     private DispatcherQueueTimer? _paperTimer;
     private DispatcherQueueTimer? _audioSessionTimer;
     private string? _lastPrepPackId;
+    private string? _promptedMissingCredentialsPackId;
     private bool _checkingSpeakingPaper;
     private bool _checkingAudioSession;
     private bool _audioSessionActive;
     private bool _audioSessionSawShell;
     private SpeakingPrepWindow? _prepWindow;
+    private DispatcherQueueTimer? _paneClosingTimer;
 
     public MainWindow()
     {
@@ -37,6 +39,7 @@ public sealed partial class MainWindow : Window
         Closed += async (_, _) =>
         {
             AnalysisActivityService.Current.Changed -= UpdateActivityNavigation;
+            EtsWindowPreviewService.RestoreAll();
             _audioSessionTimer?.Stop();
             try { await DefaultAudioInputService.Current.EndSessionAsync(); }
             catch (Exception) { }
@@ -133,13 +136,28 @@ public sealed partial class MainWindow : Window
             if (packId is null)
             {
                 _lastPrepPackId = null;
+                _promptedMissingCredentialsPackId = null;
                 return;
             }
             if (string.Equals(packId, _lastPrepPackId, StringComparison.Ordinal)) return;
-            _lastPrepPackId = packId;
 
             IReadOnlyList<SpeakingQuestion> questions = _speakingAnswers.Load(packId);
             if (questions.Count == 0) return;
+
+            bool credentialsMissing = !AliyunTtsCredentialStore.HasCredentials ||
+                AppPreferencesService.Current.SpeakingMode == "flexible" && !ApiKeyStore.HasKey;
+            if (credentialsMissing)
+            {
+                if (!string.Equals(packId, _promptedMissingCredentialsPackId, StringComparison.Ordinal))
+                {
+                    _promptedMissingCredentialsPackId = packId;
+                    await PromptForMissingCredentialsAsync();
+                }
+                return;
+            }
+
+            _lastPrepPackId = packId;
+            _promptedMissingCredentialsPackId = null;
 
             // 这个窗口既是 TTS 生成进度，也是“开始自动口语”的唯一入口。
             // 上一轮已经生成过音频时也必须重新打开：用户可能在考试中途退出，
@@ -227,7 +245,7 @@ public sealed partial class MainWindow : Window
         });
         content.Children.Add(new TextBlock
         {
-            Text = "如果选择体验模式，缺少个人凭据的功能会把题目、听力内容或 TTS 文本发送到公用 Cloudflare Worker。听力每设备每天最多 10 次完整请求、同一 IP 每天最多 30 次；口语与 TTS 也有每日限额。你可以先填写自己的凭据，也可以之后在偏好设置中启用体验模式。",
+            Text = "DeepSeek 口语生成和试卷解析需要 DeepSeek API Key；TTS 语音合成需要阿里云 RAM 凭据与 AppID。凭据保存在本机。",
             FontSize = 12,
             Opacity = 0.7,
             TextWrapping = TextWrapping.Wrap
@@ -237,21 +255,31 @@ public sealed partial class MainWindow : Window
         {
             Title = "欢迎使用 ETS Tool",
             Content = content,
-            PrimaryButtonText = "填写凭据",
-            SecondaryButtonText = "启用体验模式",
-            CloseButtonText = "暂不启用",
+            PrimaryButtonText = "去填写",
+            CloseButtonText = "完成",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = RootGrid.XamlRoot
         };
         ContentDialogResult result = await dialog.ShowAsync();
         preferences.MarkCredentialsReminderShown();
         preferences.MarkWelcomeCompleted();
-        if (result == ContentDialogResult.Secondary)
-        {
-            preferences.SetExperienceMode(true);
-            return;
-        }
         if (result != ContentDialogResult.Primary) return;
+        NavigateToTag("settings");
+        if (PageFrame.Content is Pages.SettingsPage settingsPage) settingsPage.ExpandCredentials();
+    }
+
+    public async Task PromptForMissingCredentialsAsync()
+    {
+        var dialog = new ContentDialog
+        {
+            Title = "未填写有效的凭据",
+            Content = "无法完成指定操作。",
+            PrimaryButtonText = "去填写",
+            CloseButtonText = "完成",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = RootGrid.XamlRoot
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
         NavigateToTag("settings");
         if (PageFrame.Content is Pages.SettingsPage settingsPage) settingsPage.ExpandCredentials();
     }
@@ -348,6 +376,7 @@ public sealed partial class MainWindow : Window
         Type? page = item.Tag?.ToString() switch
         {
             "overview" => typeof(Pages.OverviewPage),
+            "etsPreview" => typeof(Pages.EtsPreviewPage),
             "papers" => typeof(Pages.PapersPage),
             "settings" => typeof(Pages.SettingsPage),
             "logs" => typeof(Pages.LogsPage),
@@ -377,6 +406,39 @@ public sealed partial class MainWindow : Window
     private void RootNavigation_DisplayModeChanged(NavigationView sender, NavigationViewDisplayModeChangedEventArgs args)
     {
         UpdatePaneToggleButtonStyle(args.DisplayMode);
+        UpdateNavigationPaneOverlayState();
+    }
+
+    private void RootNavigation_PaneOpening(NavigationView sender, object args)
+    {
+        _paneClosingTimer?.Stop();
+        EtsWindowPreviewService.Shared.SetNavigationPaneOverlayOpen(
+            sender.DisplayMode != NavigationViewDisplayMode.Expanded);
+    }
+
+    private void RootNavigation_PaneClosing(NavigationView sender, object args)
+    {
+        _paneClosingTimer?.Stop();
+        _paneClosingTimer ??= DispatcherQueue.CreateTimer();
+        _paneClosingTimer.Interval = TimeSpan.FromMilliseconds(350);
+        _paneClosingTimer.Tick -= PaneClosingTimer_Tick;
+        _paneClosingTimer.Tick += PaneClosingTimer_Tick;
+        _paneClosingTimer.Start();
+    }
+
+    private void PaneClosingTimer_Tick(DispatcherQueueTimer sender, object args)
+    {
+        sender.Stop();
+        UpdateNavigationPaneOverlayState();
+    }
+
+    private void UpdateNavigationPaneOverlayState()
+    {
+        bool isOverlay = RootNavigation.IsPaneOpen &&
+                         RootNavigation.DisplayMode != NavigationViewDisplayMode.Expanded;
+        if (isOverlay)
+            _paneClosingTimer?.Stop();
+        EtsWindowPreviewService.Shared.SetNavigationPaneOverlayOpen(isOverlay);
     }
 
     private void UpdatePaneToggleButtonStyle(NavigationViewDisplayMode displayMode)

@@ -82,14 +82,12 @@ public sealed partial class OverviewPage : Page
         ListenerText.Text = _service.IsAutostartEnabled
             ? "监听器：已设置为登录 Windows 后自启动。"
             : "监听器：尚未设置登录自启动，可在答题设置中开启。";
-        AppPreferencesService preferences = AppPreferencesService.Current;
         CredentialStatusText.Text = $"凭据：DeepSeek {(ApiKeyStore.HasKey ? "已配置" : "未配置")} · 阿里云 TTS " +
-            $"{(AliyunTtsCredentialStore.HasCredentials ? "已配置" : "未配置")} · " +
-            (preferences.ExperienceModeEnabled ? "体验模式已启用" : "体验模式关闭");
+            $"{(AliyunTtsCredentialStore.HasCredentials ? "已配置" : "未配置")}";
+        AppPreferencesService preferences = AppPreferencesService.Current;
         AssistantSettings config = _service.LoadSettings();
         AnswerConfigText.Text = $"正确率 {config.Accuracy:P0} · 跳题间隔 {config.SkipInterval:0.##} 秒 · " +
-            $"口语模式 {(preferences.SpeakingMode == "flexible" ? "生成" : "标答")} · " +
-            $"自动听力 Beta {(preferences.AutoListeningEnabled ? "开启" : "关闭")}";
+            $"口语模式 {(preferences.SpeakingMode == "flexible" ? "生成" : "标答")}";
         EtsErrorBar.IsOpen = !found;
         if (!string.IsNullOrWhiteSpace(_service.LastError))
         {
@@ -168,6 +166,7 @@ public sealed partial class OverviewPage : Page
             string message = warnings.Length == 0 ? "监听器已启动，ETS 正在打开。" : warnings;
             InfoBarPresenter.Show(GeneralInfoBar, title, message,
                 warnings.Length == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
+            MainWindow.Current?.NavigateToTag("etsPreview");
         }
         catch (Exception ex) { await ShowErrorAsync(ex.Message); }
     }

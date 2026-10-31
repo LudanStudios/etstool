@@ -2,3 +2,4 @@
 accuracy_rate: 1.00
 random_seed: '20261014'
 skip_interval_seconds: 0
+verbose_logging_enabled: false

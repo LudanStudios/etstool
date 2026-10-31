@@ -13,24 +13,11 @@ public sealed class PaperAnalysisService
         CancellationToken cancellationToken = default)
     {
         string apiKey = ApiKeyStore.Load();
+        if (string.IsNullOrWhiteSpace(apiKey))
+            throw new InvalidOperationException("未填写有效的凭据\n无法完成指定操作。");
+
         IReadOnlyList<string> batches = ReadQuestionBatches(paper.FolderPath);
         if (batches.Count == 0) throw new InvalidDataException("试卷中没有可发送的题干与标准答案。");
-
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            if (!AppPreferencesService.Current.ExperienceModeEnabled)
-                throw new InvalidOperationException(
-                    "详细解析需要个人 DeepSeek API Key，或在偏好设置中开启体验模式。每次体验模式完整解析扣 1 次额度。 ");
-
-            cancellationToken.ThrowIfCancellationRequested();
-            progress?.Report($"正在通过体验模式 Worker 解析整卷（共 {batches.Count} 组，本次计 1 次额度）…");
-            WorkerPaperAnalysisResult result = await FreeServiceWorkerClient
-                .AnalyzePaperAsync(paper.Title, batches, cancellationToken).ConfigureAwait(false);
-            progress?.Report(result.RemainingToday >= 0
-                ? $"解析完成，体验模式设备今日剩余 {result.RemainingToday} 次。"
-                : "解析完成。");
-            return result.Markdown;
-        }
 
         var output = new StringBuilder($"# {paper.Title}：逐题解析\n\n");
         for (int index = 0; index < batches.Count; index++)

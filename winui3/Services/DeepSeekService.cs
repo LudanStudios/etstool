@@ -5,8 +5,7 @@ using System.Text.Json;
 
 namespace ETSAssistant.WinUI3.Services;
 
-public sealed record DeepSeekResult(bool Success, string Text, string Error = "", int StatusCode = 0,
-    int? RemainingToday = null, bool UsedWorker = false);
+public sealed record DeepSeekResult(bool Success, string Text, string Error = "", int StatusCode = 0);
 
 /// <summary>
 /// Minimal DeepSeek chat client for speaking-question tests. Every request sends
@@ -33,6 +32,10 @@ public sealed class DeepSeekService
         stem = (stem ?? string.Empty).Trim();
         if (stem.Length == 0) return new DeepSeekResult(false, string.Empty, "请先输入口语题干。");
 
+        string apiKey = ApiKeyStore.Load();
+        if (apiKey.Length == 0)
+            return new DeepSeekResult(false, string.Empty, "未填写有效的凭据\n无法完成指定操作。");
+
         string? attachment = FindAttachment();
         if (attachment is null)
             return new DeepSeekResult(false, string.Empty,
@@ -46,25 +49,6 @@ public sealed class DeepSeekService
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return new DeepSeekResult(false, string.Empty, $"无法读取附件 {Path.GetFileName(attachment)}：{ex.Message}");
-        }
-
-        string apiKey = ApiKeyStore.Load();
-        if (apiKey.Length == 0)
-        {
-            if (!AppPreferencesService.Current.ExperienceModeEnabled)
-                return new DeepSeekResult(false, string.Empty,
-                    "尚未配置 DeepSeek API Key，且体验模式未启用。可在偏好设置中启用体验模式（公用 Worker 有每日限额），或先填写个人 Key。");
-            try
-            {
-                WorkerTextResult result = await FreeServiceWorkerClient
-                    .GenerateSpeakingAnswerAsync(stem, instructions, cancellationToken).ConfigureAwait(false);
-                return new DeepSeekResult(true, result.Text, RemainingToday: result.RemainingToday, UsedWorker: true);
-            }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or
-                                      InvalidOperationException or JsonException)
-            {
-                return new DeepSeekResult(false, string.Empty, $"内置口语服务失败：{ex.Message}");
-            }
         }
 
         string payload = JsonSerializer.Serialize(new

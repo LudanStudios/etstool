@@ -27,7 +27,6 @@ public sealed class LocalizationService
         ("后台引擎：", "Engine: "),
         ("系统：", "System: "),
         ("抓包文件：", "Capture file: "),
-        ("读取体验模式用量失败：", "Could not read Experience Mode usage: ")
     };
 
     public void Load(string language)

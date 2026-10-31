@@ -94,7 +94,7 @@ public sealed partial class ToolsPage : Page
         if (_updatingVerbose) return;
         AppPreferencesService.Current.SetVerboseLogging(VerboseLoggingToggle.IsOn);
         ShowMessage("详细日志已更新", VerboseLoggingToggle.IsOn
-            ? "后台监听器会在日志中附加听力匹配和 Worker 诊断细节。"
+            ? "后台监听器会在日志中附加听力匹配诊断细节。"
             : "后台监听器已关闭详细级别日志。", InfoBarSeverity.Informational);
     }
 
@@ -364,12 +364,11 @@ public sealed partial class ToolsPage : Page
             ShowMessage("没有口语题", "这份试卷里没有可生成的口语题。", InfoBarSeverity.Warning);
             return;
         }
-        if (!AliyunTtsCredentialStore.HasCredentials &&
-            !AppPreferencesService.Current.ExperienceModeEnabled)
+        string mode = AppPreferencesService.Current.SpeakingMode;
+        if (!AliyunTtsCredentialStore.HasCredentials || mode == "flexible" && !ApiKeyStore.HasKey)
         {
-            ShowMessage("未配置阿里云 TTS 凭证",
-                "请填写阿里云 TTS 个人凭证，或在偏好设置中启用体验模式，以使用有每日限额的公用 Worker。",
-                InfoBarSeverity.Warning);
+            if (MainWindow.Current is { } mainWindow)
+                await mainWindow.PromptForMissingCredentialsAsync();
             return;
         }
 
@@ -378,7 +377,6 @@ public sealed partial class ToolsPage : Page
         BatchProgress.Minimum = 0;
         BatchProgress.Maximum = paper.Questions.Count;
         BatchProgress.Value = 0;
-        string mode = AppPreferencesService.Current.SpeakingMode;
         var items = new List<SpeakingSessionItem>();
         var errors = new List<string>();
         int failed = 0;
@@ -506,9 +504,7 @@ public sealed partial class ToolsPage : Page
     {
         string keyState = ApiKeyStore.HasKey
             ? "API Key：本机已配置（直连）"
-            : AppPreferencesService.Current.ExperienceModeEnabled
-                ? "API Key：启用体验模式后使用公用 Worker（有每日限额）"
-                : "API Key：未配置；体验模式已关闭";
+            : "API Key：未配置";
         string attachment = _deepSeek.FindAttachment() ?? "未找到 llm_stt.md";
         string mode = AppPreferencesService.Current.SpeakingMode == "flexible" ? "生成模式" : "标答模式";
         DeepSeekStatusText.Text = $"{mode} · {keyState} · 模型 {DeepSeekService.Model} · 附件：{attachment}";
@@ -623,6 +619,13 @@ public sealed partial class ToolsPage : Page
             return;
         }
 
+        if (!ApiKeyStore.HasKey)
+        {
+            if (MainWindow.Current is { } mainWindow)
+                await mainWindow.PromptForMissingCredentialsAsync();
+            return;
+        }
+
         AskDeepSeekButton.IsEnabled = false;
         DeepSeekProgress.IsActive = true;
         try
@@ -631,10 +634,7 @@ public sealed partial class ToolsPage : Page
             if (result.Success)
             {
                 SpeakingResultBox.Text = result.Text;
-                string source = result.UsedWorker
-                    ? $"内置 Worker，今日剩余 {Math.Max(0, result.RemainingToday ?? 0)} 次"
-                    : "本机 API Key";
-                ShowMessage("DeepSeek 已返回", $"模型 {DeepSeekService.Model} · {source} · 返回 {result.Text.Length} 个字符。",
+                ShowMessage("DeepSeek 已返回", $"模型 {DeepSeekService.Model} · 返回 {result.Text.Length} 个字符。",
                     InfoBarSeverity.Success);
             }
             else
@@ -675,6 +675,12 @@ public sealed partial class ToolsPage : Page
             ShowMessage("没有可合成的回答", "先提取标答或调用 DeepSeek 生成一条回答。", InfoBarSeverity.Warning);
             return;
         }
+        if (!AliyunTtsCredentialStore.HasCredentials)
+        {
+            if (MainWindow.Current is { } mainWindow)
+                await mainWindow.PromptForMissingCredentialsAsync();
+            return;
+        }
 
         AliyunTtsButton.IsEnabled = false;
         AliyunTtsProgress.IsActive = true;
@@ -690,11 +696,8 @@ public sealed partial class ToolsPage : Page
             AliyunTtsStatusText.Text = $"WAV 已保存：{result.FilePath}";
             _lastTtsWavPath = result.FilePath;
             Process.Start(new ProcessStartInfo(result.FilePath) { UseShellExecute = true });
-            string source = result.UsedWorker
-                ? $"内置 Worker，今日剩余 {Math.Max(0, result.RemainingToday ?? 0)} 次"
-                : "本机阿里云凭据";
             ShowMessage("阿里云 TTS 已完成",
-                $"Betty 已合成并打开 WAV 文件（{result.ChunkCount} 段）；{source}。", InfoBarSeverity.Success);
+                $"Betty 已合成并打开 WAV 文件（{result.ChunkCount} 段）。", InfoBarSeverity.Success);
         }
         catch (Exception ex)
         {

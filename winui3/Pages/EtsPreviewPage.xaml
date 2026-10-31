@@ -1,0 +1,74 @@
+<Page
+    x:Class="ETSAssistant.WinUI3.Pages.EtsPreviewPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid x:Name="ResponsiveContent" Margin="30,26,30,30"
+          RowDefinitions="Auto,Auto,*" RowSpacing="14">
+        <Grid ColumnDefinitions="28,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="5">
+            <SymbolIcon Symbol="View" Width="25" Height="25"
+                        Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                        VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Text="程序预览" FontSize="30" FontWeight="SemiBold" />
+            <TextBlock Grid.Row="1" Grid.Column="1"
+                       Text="自动查找已运行的 ETS，在助手窗口中预览并保留原有点击与触摸操作。不会自动启动 ETS。"
+                       FontSize="15" Opacity="0.72" TextWrapping="Wrap" />
+        </Grid>
+
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="8" VerticalAlignment="Center">
+            <Button x:Name="StartEtsButton" Click="StartEtsButton_Click"
+                    Width="40" Height="40" Padding="0" ToolTipService.ToolTip="启动 ETS"
+                    AutomationProperties.Name="启动 ETS"
+                    Style="{StaticResource AccentButtonStyle}">
+                <SymbolIcon Symbol="Play" />
+            </Button>
+            <Button x:Name="ConnectButton" Grid.Column="1" Click="ConnectButton_Click" MinHeight="40">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <SymbolIcon Symbol="Refresh" />
+                    <TextBlock Text="重新检查" />
+                </StackPanel>
+            </Button>
+            <Button x:Name="EndEtsButton" Grid.Column="2"
+                    Width="40" Height="40" Padding="0" ToolTipService.ToolTip="结束 ETS 进程"
+                    AutomationProperties.Name="结束 ETS 进程"
+                    Background="#C42B1C" Foreground="White" BorderBrush="#C42B1C">
+                <Button.Flyout>
+                    <Flyout x:Name="EndEtsFlyout" Placement="Top"
+                            Opened="EndEtsFlyout_Opened" Closed="EndEtsFlyout_Closed">
+                        <StackPanel Width="260" Spacing="10">
+                            <TextBlock x:Name="EndEtsConfirmationTitle" Text="结束 ETS 进程？" FontSize="15" FontWeight="SemiBold" />
+                            <TextBlock x:Name="EndEtsConfirmationMessage" Text="ETS 将立即关闭，未保存的操作可能丢失。" TextWrapping="Wrap" Opacity="0.8" />
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                                <Button x:Name="CancelEndEtsButton" Content="取消" Click="CancelEndEtsFlyout_Click" />
+                                <Button x:Name="ConfirmEndEtsButton" Content="结束 ETS"
+                                        Background="#C42B1C" Foreground="White" BorderBrush="#C42B1C"
+                                        Click="ConfirmEndEts_Click" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Flyout>
+                </Button.Flyout>
+                <SymbolIcon Symbol="Stop" />
+            </Button>
+            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                <ProgressRing x:Name="ConnectionRing" Width="18" Height="18" IsActive="False" />
+                <TextBlock x:Name="ConnectionStatus" Text="打开此页面不会自动启动 ETS；点击上方按钮手动连接。" TextWrapping="Wrap"
+                           VerticalAlignment="Center" Opacity="0.78" />
+            </StackPanel>
+        </Grid>
+
+        <Border Grid.Row="2" Padding="0" CornerRadius="12" Background="#FF11151B"
+                BorderThickness="0">
+            <Grid x:Name="PreviewViewport" Background="#FF11151B"
+                  SizeChanged="PreviewViewport_SizeChanged">
+                <StackPanel x:Name="PreviewPlaceholder" HorizontalAlignment="Center"
+                            VerticalAlignment="Center" Spacing="10" MaxWidth="440" Margin="24">
+                    <SymbolIcon Symbol="View" Width="34" Height="34" HorizontalAlignment="Center"
+                                Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                    <TextBlock Text="ETS 窗口将在这里显示" FontSize="19" FontWeight="SemiBold"
+                               HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+                    <TextBlock Text="此处显示已运行的 ETS 窗口，并可直接操作。"
+                               Opacity="0.7" TextAlignment="Center" TextWrapping="Wrap" />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Page>

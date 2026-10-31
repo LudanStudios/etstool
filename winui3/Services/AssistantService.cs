@@ -13,8 +13,6 @@ public sealed record AssistantSettings(
     string Seed,
     double SkipInterval,
     bool StartAtLogin,
-    bool AutoListeningEnabled = false,
-    bool ExperienceModeEnabled = false,
     bool VerboseLoggingEnabled = false);
 
 public sealed partial class AssistantService
@@ -71,7 +69,6 @@ public sealed partial class AssistantService
     {
         double accuracy = 1.0, skip = 0.0;
         string seed = "default";
-        bool autoListening = false, experienceMode = false;
         if (File.Exists(ConfigPath))
         {
             foreach (string rawLine in File.ReadLines(ConfigPath, Encoding.UTF8))
@@ -85,15 +82,11 @@ public sealed partial class AssistantService
                 if (key == "accuracy_rate" && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double a)) accuracy = a;
                 if (key == "random_seed") seed = value;
                 if (key == "skip_interval_seconds" && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double s)) skip = s;
-                if (key == "auto_listening_enabled") autoListening = value.Equals("true", StringComparison.OrdinalIgnoreCase);
-                if (key == "experience_mode_enabled") experienceMode = value.Equals("true", StringComparison.OrdinalIgnoreCase);
             }
         }
         AppPreferencesService preferences = AppPreferencesService.Current;
         return new AssistantSettings(Math.Clamp(accuracy, 0, 1), string.IsNullOrWhiteSpace(seed) ? "default" : seed,
             Math.Clamp(skip, 0, 60), IsAutostartEnabled,
-            preferences.AutoListeningEnabled,
-            preferences.ExperienceModeEnabled,
             preferences.VerboseLoggingEnabled);
     }
 
@@ -113,21 +106,17 @@ public sealed partial class AssistantService
             $"accuracy_rate: {settings.Accuracy.ToString("0.00", CultureInfo.InvariantCulture)}\n" +
             $"random_seed: '{seed}'\n" +
             $"skip_interval_seconds: {settings.SkipInterval.ToString("0.###", CultureInfo.InvariantCulture)}\n" +
-            $"auto_listening_enabled: {settings.AutoListeningEnabled.ToString().ToLowerInvariant()}\n" +
-            $"experience_mode_enabled: {settings.ExperienceModeEnabled.ToString().ToLowerInvariant()}\n" +
             $"verbose_logging_enabled: {settings.VerboseLoggingEnabled.ToString().ToLowerInvariant()}\n";
         File.WriteAllText(ConfigPath, contents, new UTF8Encoding(false));
     }
 
-    public void SyncExperienceSettings()
+    public void SyncListenerSettings()
     {
         try
         {
             AssistantSettings settings = LoadSettings();
             SaveSettings(settings with
             {
-                AutoListeningEnabled = AppPreferencesService.Current.AutoListeningEnabled,
-                ExperienceModeEnabled = AppPreferencesService.Current.ExperienceModeEnabled,
                 VerboseLoggingEnabled = AppPreferencesService.Current.VerboseLoggingEnabled
             });
         }

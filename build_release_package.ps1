@@ -40,7 +40,8 @@ $buildId = Get-Date -Format 'yyyyMMdd-HHmmss'
 $stageRoot = Join-Path (Join-Path $releaseRoot 'staging') $buildId
 $payload = Join-Path $stageRoot 'payload'
 $wixOutput = Join-Path $stageRoot 'wix'
-New-Item -ItemType Directory -Force -Path $payload, $wixOutput | Out-Null
+$wixIntermediate = Join-Path $stageRoot 'obj'
+New-Item -ItemType Directory -Force -Path $payload, $wixOutput, $wixIntermediate | Out-Null
 
 foreach ($line in $manifestLines) {
     if ($line -notmatch '^([0-9a-f]{64})  (.+)$') { throw "Invalid generated manifest line: $line" }
@@ -63,7 +64,7 @@ $installerProject = Join-Path $root 'Installer\ETS-Assistant.wixproj'
 $buildStarted = Get-Date
 $msiName = "ETS-Assistant-r$version.msi"
 $zipName = "ETS-Assistant-r$version.zip"
-& dotnet build $installerProject --configuration Release "-p:ProductVersion=$version" "-p:PayloadDirectory=$payload" "-p:OutputPath=$wixOutput\" -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true --verbosity minimal
+& dotnet build $installerProject --configuration Release "-p:ProductVersion=$version" "-p:PayloadDirectory=$payload" "-p:OutputPath=$wixOutput\" "-p:BaseIntermediateOutputPath=$wixIntermediate\" "-p:MSBuildProjectExtensionsPath=$wixIntermediate\" -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true --verbosity minimal
 if ($LASTEXITCODE -ne 0) { throw "WiX MSI build failed with exit code $LASTEXITCODE." }
 $builtMsi = Join-Path $wixOutput $msiName
 if (-not (Test-Path -LiteralPath $builtMsi -PathType Leaf)) {

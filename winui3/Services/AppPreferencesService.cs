@@ -25,9 +25,6 @@ public sealed class AppPreferencesService
     public bool CredentialsReminderShown { get; private set; }
     public bool VirtualCableReminderShown { get; private set; }
     public bool WelcomeCompleted { get; private set; }
-    public bool ExperienceModeEnabled { get; private set; }
-    public bool AllPersonalCredentialsConfigured => ApiKeyStore.HasKey && AliyunTtsCredentialStore.HasCredentials;
-    public bool AutoListeningEnabled { get; private set; }
     public bool AutoUpdateEnabled { get; private set; } = true;
     public bool InternalTestNoUpdatesEnabled => InternalTestNoUpdates;
     public bool VerboseLoggingEnabled { get; private set; }
@@ -64,30 +61,6 @@ public sealed class AppPreferencesService
         SpeakingModeChanged?.Invoke();
     }
 
-    public void SetExperienceMode(bool enabled)
-    {
-        if (enabled && AllPersonalCredentialsConfigured) enabled = false;
-        if (ExperienceModeEnabled == enabled) return;
-        ExperienceModeEnabled = enabled;
-        Save();
-        AssistantService.Current.SyncExperienceSettings();
-    }
-
-    public bool EnforceExperienceModeCredentialPolicy()
-    {
-        if (!AllPersonalCredentialsConfigured) return false;
-        SetExperienceMode(false);
-        return true;
-    }
-
-    public void SetAutoListening(bool enabled)
-    {
-        if (AutoListeningEnabled == enabled) return;
-        AutoListeningEnabled = enabled;
-        Save();
-        AssistantService.Current.SyncExperienceSettings();
-    }
-
     public void SetAutoUpdate(bool enabled)
     {
         if (InternalTestNoUpdatesEnabled) return;
@@ -101,7 +74,7 @@ public sealed class AppPreferencesService
         if (VerboseLoggingEnabled == enabled) return;
         VerboseLoggingEnabled = enabled;
         Save();
-        AssistantService.Current.SyncExperienceSettings();
+        AssistantService.Current.SyncListenerSettings();
     }
 
     public void MarkWelcomeCompleted()
@@ -170,8 +143,6 @@ public sealed class AppPreferencesService
                 cableReminder.ValueKind is JsonValueKind.True or JsonValueKind.False)
                 VirtualCableReminderShown = cableReminder.GetBoolean();
             WelcomeCompleted = ReadBool(document.RootElement, "welcome_completed");
-            ExperienceModeEnabled = ReadBool(document.RootElement, "experience_mode_enabled");
-            AutoListeningEnabled = ReadBool(document.RootElement, "auto_listening_enabled");
             AutoUpdateEnabled = !document.RootElement.TryGetProperty("auto_update_enabled", out JsonElement update) ||
                                 update.ValueKind is not (JsonValueKind.True or JsonValueKind.False) || update.GetBoolean();
             VerboseLoggingEnabled = ReadBool(document.RootElement, "verbose_logging_enabled");
@@ -197,8 +168,6 @@ public sealed class AppPreferencesService
                 credentials_reminder_shown = CredentialsReminderShown,
                 virtual_cable_reminder_shown = VirtualCableReminderShown,
                 welcome_completed = WelcomeCompleted,
-                experience_mode_enabled = ExperienceModeEnabled,
-                auto_listening_enabled = AutoListeningEnabled,
                 auto_update_enabled = AutoUpdateEnabled,
                 verbose_logging_enabled = VerboseLoggingEnabled,
                 developer_tools_unlocked = DeveloperToolsUnlocked,

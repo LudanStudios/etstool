@@ -173,26 +173,37 @@ def start_converter_watcher() -> subprocess.Popen[bytes]:
     return process
 
 
-def start_assistant_window() -> subprocess.Popen[bytes] | None:
-    """Open the WinUI application; never fall back to the retired interface."""
+def start_assistant_window() -> bool:
+    """Open the elevated WinUI application; never fall back to the retired interface."""
     try:
         app_root = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else SCRIPT_ROOT
         winui_exe = app_root / "_winui" / "ETS-Assistant-WinUI.exe"
         if not winui_exe.is_file():
             log(f"WinUI assistant is missing: {winui_exe}. No legacy interface will be launched.")
-            return None
-        process = subprocess.Popen(
-            [str(winui_exe)],
-            cwd=str(app_root),
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        log(f"{winui_exe.name} window started (PID {process.pid}).")
-        return process
+            return False
+
+        # The WinUI manifest requires elevation so it can control ETS windows.
+        # CreateProcess/Popen cannot satisfy that request; ShellExecute's runas
+        # verb starts the app through the normal Windows UAC flow.
+        shell_execute = ctypes.WinDLL("shell32", use_last_error=True).ShellExecuteW
+        shell_execute.argtypes = [
+            wintypes.HWND,
+            wintypes.LPCWSTR,
+            wintypes.LPCWSTR,
+            wintypes.LPCWSTR,
+            wintypes.LPCWSTR,
+            ctypes.c_int,
+        ]
+        shell_execute.restype = ctypes.c_void_p
+        result = shell_execute(None, "runas", str(winui_exe), None, str(app_root), 1)
+        if result is None or result <= 32:
+            log(f"Windows could not elevate {winui_exe} (ShellExecute result {result}).")
+            return False
+        log(f"{winui_exe.name} administrator launch requested through UAC.")
+        return True
     except OSError as exc:
         log(f"Could not open the assistant window: {exc}")
-        return None
+        return False
 
 
 def start_auto_answer_worker() -> subprocess.Popen[bytes] | None:

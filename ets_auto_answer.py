@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
-import http.client
 import json
 import os
 import random
@@ -19,7 +18,6 @@ import re
 import socket
 import struct
 import time
-import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
@@ -32,7 +30,6 @@ from ets_activity import clean_text, record_answer
 DEFAULT_ROOT = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "ETS"
 DEFAULT_DEVTOOLS = "http://127.0.0.1:10086/json/list"
 DEFAULT_CONFIG = Path(__file__).resolve().parent / "ets_answer_config.yaml"
-FREE_LISTENING_WORKER_URL = "https://ets.azursmelt.us.ci"
 RESET_REQUEST_FILE = "reset_request.json"
 RESET_ACK_FILE = "reset_ack.json"
 APP_TITLE = "E听说"
@@ -289,187 +286,6 @@ def load_answers(pack_dir: Path) -> dict[str, str]:
     return answers
 
 
-def load_free_listening_sections(
-    pack_dir: Path,
-    known_answers: dict[str, str],
-) -> tuple[list[dict[str, Any]], dict[tuple[int, int], str], set[str]]:
-    """Build one Worker request from listening groups that contain unanswered questions."""
-    sections: list[dict[str, Any]] = []
-    answer_ids: dict[tuple[int, int], str] = {}
-    missing_ids: set[str] = set()
-    for content_file in sorted(pack_dir.glob("content_*/content.json")):
-        try:
-            with content_file.open("r", encoding="utf-8-sig") as stream:
-                data = json.load(stream)
-        except (OSError, json.JSONDecodeError):
-            continue
-        if data.get("structure_type") != "collector.choose":
-            continue
-        info = data.get("info") or {}
-        questions = info.get("xtlist") or []
-        if not isinstance(questions, list) or not questions:
-            continue
-        is_listening = bool(info.get("audio") or info.get("st_audio")) or any(
-            question.get("xt_wj") or question.get("xt_wj2")
-            for question in questions if isinstance(question, dict)
-        )
-        if not is_listening:
-            continue
-
-        content_id = str(info.get("stid") or content_file.parent.name.removeprefix("content_"))
-        question_items: list[tuple[int, str, dict[str, Any]]] = []
-        needs_request = False
-        for index, question in enumerate(questions, start=1):
-            if not isinstance(question, dict):
-                continue
-            question_number = str(question.get("xt_xh") or index)
-            question_id = f"{content_id}_{question_number}"
-            if known_answers.get(question_id) not in {"A", "B", "C", "D"}:
-                missing_ids.add(question_id)
-                needs_request = True
-            prompt = clean_text(question.get("xt_nr"), 1000)
-            options_raw = question.get("xxlist") or []
-            if not prompt or not isinstance(options_raw, list) or not 2 <= len(options_raw) <= 4:
-                continue
-            options: list[str] = []
-            for option_index, option in enumerate(options_raw):
-                if not isinstance(option, dict):
-                    options = []
-                    break
-                option_text = clean_text(option.get("xx_nr"), 600)
-                if not option_text:
-                    options = []
-                    break
-                label = clean_text(option.get("xx_mc"), 20).strip()
-                expected_label = "ABCD"[option_index]
-                options.append(f"{label or expected_label}. {option_text}")
-            if options:
-                question_items.append((index, question_id, {
-                    "number": index,
-                    "prompt": prompt,
-                    "options": options,
-                }))
-
-        if not needs_request or not question_items:
-            continue
-        passage = clean_text(info.get("st_nr"), 12000)
-        if len(passage) < 20:
-            passage = next((
-                clean_text(question.get("xt_value"), 12000)
-                for question in questions
-                if isinstance(question, dict) and len(clean_text(question.get("xt_value"), 12000)) >= 20
-            ), "")
-        if len(passage) < 20:
-            continue
-
-        section_number = len(sections) + 1
-        sections.append({"passage": passage, "questions": [item[2] for item in question_items]})
-        for ordinal, question_id, _ in question_items:
-            answer_ids[(section_number, ordinal)] = question_id
-    return sections, answer_ids, missing_ids
-
-
-def free_listening_device_id(root: Path) -> str:
-    """Return a stable, locally hashed device identifier without sending raw hardware IDs."""
-    machine_guid = ""
-    if os.name == "nt":
-        try:
-            import winreg
-
-            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography") as key:
-                machine_guid = str(winreg.QueryValueEx(key, "MachineGuid")[0]).strip()
-        except (ImportError, OSError):
-            pass
-    if machine_guid:
-        return hashlib.sha256(f"ets-free-listening-v1:{machine_guid}".encode("utf-8")).hexdigest()
-
-    token_path = root / "_assistant" / "free_listening_device_id"
-    try:
-        token = token_path.read_text(encoding="ascii").strip()
-        if re.fullmatch(r"[a-f0-9]{64}", token):
-            return token
-    except OSError:
-        pass
-    token = hashlib.sha256(uuid.uuid4().bytes).hexdigest()
-    try:
-        token_path.parent.mkdir(parents=True, exist_ok=True)
-        token_path.write_text(token, encoding="ascii")
-    except OSError as exc:
-        raise RuntimeError("无法保存本机设备标识，请检查 ETS 数据目录权限。") from exc
-    return token
-
-
-def request_free_listening_answers(
-    pack_dir: Path,
-    worker_url: str,
-    request_id: str,
-    known_answers: dict[str, str],
-    root: Path,
-) -> tuple[dict[str, str], int | None, str]:
-    sections, answer_ids, missing_ids = load_free_listening_sections(pack_dir, known_answers)
-    if not missing_ids:
-        return {}, None, ""
-    if not sections or any(question_id not in answer_ids.values() for question_id in missing_ids):
-        return {}, None, "听力原文或选项数据不完整，无法提交整段听力。"
-    if (
-        len(sections) > 10
-        or any(not 1 <= len(section["questions"]) <= 20 for section in sections)
-        or sum(len(section["questions"]) for section in sections) > 60
-    ):
-        return {}, None, "整份听力超过免费服务的单次题量上限。"
-
-    payload = json.dumps({"request_id": request_id, "sections": sections}, ensure_ascii=False).encode("utf-8")
-    if len(payload) > 100_000:
-        return {}, None, "整份听力文本超过免费服务的单次请求上限。"
-    request = urllib.request.Request(
-        worker_url + "/v1/listening/solve",
-        data=payload,
-        headers={
-            "Content-Type": "application/json",
-            "X-Device-Id": free_listening_device_id(root),
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=150) as response:
-            result = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        try:
-            details = json.loads(exc.read().decode("utf-8"))
-            details = details if isinstance(details, dict) else {}
-            error_code = str(details.get("error") or "")
-            message = str(details.get("message") or error_code or f"HTTP {exc.code}")
-            if error_code:
-                message = f"{error_code}: {message}"
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-            message = f"HTTP {exc.code}"
-        return {}, None, message
-    except (urllib.error.URLError, TimeoutError, OSError, UnicodeDecodeError, http.client.HTTPException) as exc:
-        return {}, None, f"Worker 网络请求失败：{exc}"
-    except json.JSONDecodeError:
-        return {}, None, "Worker 返回了无效 JSON。"
-
-    if not isinstance(result, dict):
-        return {}, None, "Worker 返回了无效 JSON。"
-    answers: dict[str, str] = {}
-    raw_answers = result.get("answers", [])
-    if not isinstance(raw_answers, list):
-        return {}, None, "Worker 返回的答案格式无效。"
-    for item in raw_answers:
-        try:
-            key = (int(item["section"]), int(item["number"]))
-            answer = str(item["answer"]).strip().upper()
-        except (KeyError, TypeError, ValueError):
-            continue
-        question_id = answer_ids.get(key)
-        if question_id and answer in {"A", "B", "C", "D"}:
-            answers[question_id] = answer
-    if not missing_ids.issubset(answers):
-        return {}, result.get("remaining_today"), "Worker 没有返回全部听力题答案，请稍后重试。"
-    remaining = result.get("remaining_today")
-    return answers, int(remaining) if isinstance(remaining, int) else None, ""
-
-
 def load_question_order(pack_dir: Path) -> dict[str, int]:
     """Read the displayed question numbers; content IDs are not ordered IDs."""
     order: dict[str, int] = {}
@@ -494,10 +310,10 @@ def question_order_key(question_id: str, order: dict[str, int]) -> tuple[int, tu
     return order.get(question_id, 2**63 - 1), question_sort_key(question_id)
 
 
-def load_answer_config(path: Path = DEFAULT_CONFIG) -> tuple[float, str, float, bool, bool, bool]:
+def load_answer_config(path: Path = DEFAULT_CONFIG) -> tuple[float, str, float, bool]:
     """Read the small, flat YAML subset used for QA answer settings."""
     if not path.is_file():
-        return 1.0, "default", 0.0, False, False, False
+        return 1.0, "default", 0.0, False
     values: dict[str, str] = {}
     try:
         for raw_line in path.read_text(encoding="utf-8-sig").splitlines():
@@ -512,9 +328,10 @@ def load_answer_config(path: Path = DEFAULT_CONFIG) -> tuple[float, str, float, 
     except OSError as exc:
         raise ValueError(f"Could not read {path.name}: {exc}") from exc
 
+    # Ignore legacy public-service flags in old config files; no remote fallback exists.
     unknown = set(values) - {
-        "accuracy_rate", "random_seed", "skip_interval_seconds", "free_listening_worker_url",
-        "auto_listening_enabled", "experience_mode_enabled", "verbose_logging_enabled"
+        "accuracy_rate", "random_seed", "skip_interval_seconds", "verbose_logging_enabled",
+        "free_listening_worker_url", "auto_listening_enabled", "experience_mode_enabled"
     }
     if unknown:
         raise ValueError(f"Unknown setting(s) in {path.name}: {', '.join(sorted(unknown))}")
@@ -531,12 +348,8 @@ def load_answer_config(path: Path = DEFAULT_CONFIG) -> tuple[float, str, float, 
         raise ValueError("skip_interval_seconds must be a number from 0.0 to 60.0") from exc
     if not 0.0 <= skip_interval <= 60.0:
         raise ValueError("skip_interval_seconds must be from 0.0 to 60.0")
-    # Keep accepting the old config key so existing installations continue to
-    # load, but always use the endpoint built into this program.
-    auto_listening = values.get("auto_listening_enabled", "false").lower() == "true"
-    experience_mode = values.get("experience_mode_enabled", "false").lower() == "true"
     verbose_logging = values.get("verbose_logging_enabled", "false").lower() == "true"
-    return accuracy, seed, skip_interval, auto_listening, experience_mode, verbose_logging
+    return accuracy, seed, skip_interval, verbose_logging
 
 
 def answer_for_accuracy(
@@ -662,7 +475,6 @@ def run_once(
     skip_interval_seconds: float = 0.0,
     analysis_session_id: str | None = None,
     expected_pack_id: str | None = None,
-    remote_answers: dict[str, str] | None = None,
 ) -> tuple[str, str | None]:
     analysis_session_id = analysis_session_id or uuid.uuid4().hex
     deadline = time.monotonic() + wait_seconds
@@ -681,8 +493,6 @@ def run_once(
                 continue
             try:
                 answers = load_answers(pack_dir)
-                for question_id, answer in (remote_answers or {}).items():
-                    answers.setdefault(question_id, answer)
                 if not answers:
                     continue
                 question_order = load_question_order(pack_dir)
@@ -764,21 +574,17 @@ def watch(root: Path, endpoint: str, config_path: Path | None = None) -> int:
     handled: set[tuple[str, str]] = set()
     processed: dict[tuple[str, str], set[str]] = {}
     analysis_sessions: dict[tuple[str, str], str] = {}
-    free_answer_cache: dict[tuple[str, str], dict[str, str]] = {}
-    free_answer_last_attempt: dict[tuple[str, str], float] = {}
-    free_answer_quota_blocked: set[tuple[str, str]] = set()
     last_reset_at = 0.0
     settings_path = config_path or (root / DEFAULT_CONFIG.name)
     try:
-        accuracy, random_seed, skip_interval, auto_listening_enabled, experience_mode_enabled, verbose_logging_enabled = load_answer_config(settings_path)
+        accuracy, random_seed, skip_interval, verbose_logging_enabled = load_answer_config(settings_path)
     except ValueError as exc:
         print(f"Invalid answer config: {exc}", flush=True)
         return 1
     print(
         f"Auto-answer worker watching ETS on loopback DevTools at port "
         f"{urlparse(endpoint).port}; configured answer accuracy: {accuracy:.0%}; "
-        f"skip retry interval: {skip_interval:g}s; auto listening: {auto_listening_enabled}; "
-        f"experience mode: {experience_mode_enabled}; verbose logs: {verbose_logging_enabled}.",
+        f"skip retry interval: {skip_interval:g}s; verbose logs: {verbose_logging_enabled}.",
         flush=True,
     )
     try:
@@ -793,9 +599,8 @@ def watch(root: Path, endpoint: str, config_path: Path | None = None) -> int:
                 try:
                     current_mtime = settings_path.stat().st_mtime_ns
                     if current_mtime != config_mtime:
-                        new_accuracy, new_seed, new_skip, new_auto_listening, new_experience_mode, new_verbose = load_answer_config(settings_path)
+                        new_accuracy, new_seed, new_skip, new_verbose = load_answer_config(settings_path)
                         accuracy, random_seed, skip_interval = new_accuracy, new_seed, new_skip
-                        auto_listening_enabled, experience_mode_enabled = new_auto_listening, new_experience_mode
                         verbose_logging_enabled = new_verbose
                         config_mtime = current_mtime
                         print("Answer settings reloaded.", flush=True)
@@ -819,9 +624,6 @@ def watch(root: Path, endpoint: str, config_path: Path | None = None) -> int:
                     handled.discard(session_key)
                     processed.pop(session_key, None)
                     analysis_sessions.pop(session_key, None)
-                    free_answer_cache.pop(session_key, None)
-                    free_answer_last_attempt.pop(session_key, None)
-                    free_answer_quota_blocked.discard(session_key)
                     last_reset_at = reset_request[0]
                     consume_manual_reset(root, reset_request[0])
                     acknowledge_manual_reset(root, reset_request[0], pack_id, "applied")
@@ -855,58 +657,12 @@ def watch(root: Path, endpoint: str, config_path: Path | None = None) -> int:
                             handled.discard(session_key)
                             processed.pop(session_key, None)
                             analysis_sessions.pop(session_key, None)
-                            free_answer_cache.pop(session_key, None)
-                            free_answer_last_attempt.pop(session_key, None)
-                            free_answer_quota_blocked.discard(session_key)
                     except (OSError, ValueError, json.JSONDecodeError, CDPError):
                         pass
                     if session_key in handled:
                         continue
                 answered = processed.setdefault(session_key, set())
                 analysis_session_id = analysis_sessions.setdefault(session_key, uuid.uuid4().hex)
-                key_is_configured = (root / "deepseek_api_key.bin").is_file()
-                last_free_attempt = free_answer_last_attempt.get(session_key, float("-inf"))
-                should_try_free_worker = (
-                    auto_listening_enabled
-                    and experience_mode_enabled
-                    and not key_is_configured
-                    and session_key not in free_answer_quota_blocked
-                    and session_key not in free_answer_cache
-                    and time.monotonic() - last_free_attempt >= 30
-                )
-                if should_try_free_worker:
-                    try:
-                        local_answers = load_answers(pack_dir)
-                        _, _, missing_ids = load_free_listening_sections(pack_dir, local_answers)
-                        if verbose_logging_enabled and missing_ids:
-                            print(f"[verbose] pack {pack_id}: {len(missing_ids)} listening answers missing locally", flush=True)
-                        client = CDPClient(target["webSocketDebuggerUrl"])
-                        try:
-                            visible_ids = {str(question.get("id", "")) for question in visible_questions(client)}
-                        finally:
-                            client.close()
-                        if missing_ids.intersection(visible_ids):
-                            free_answer_last_attempt[session_key] = time.monotonic()
-                            remote, remaining, free_error = request_free_listening_answers(
-                                pack_dir, FREE_LISTENING_WORKER_URL, analysis_session_id,
-                                local_answers, root,
-                            )
-                            if free_error:
-                                print(f"Free listening request unavailable for pack {pack_id}: {free_error}", flush=True)
-                                if "daily_quota_exceeded" in free_error or "ip_quota_exceeded" in free_error:
-                                    free_answer_quota_blocked.add(session_key)
-                            else:
-                                free_answer_cache[session_key] = remote
-                                if remote:
-                                    remaining_text = f"; {remaining} free requests left today" if remaining is not None else ""
-                                    print(
-                                        f"Free listening answers received for pack {pack_id} "
-                                        f"({len(remote)} questions{remaining_text}).",
-                                        flush=True,
-                                    )
-                    except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
-                        free_answer_last_attempt[session_key] = time.monotonic()
-                        print(f"Free listening request unavailable for pack {pack_id}: {exc}", flush=True)
                 status, content_id = run_once(
                     root, endpoint, wait_seconds=0.5, processed=answered,
                     accuracy=accuracy, random_seed=random_seed,
@@ -914,7 +670,6 @@ def watch(root: Path, endpoint: str, config_path: Path | None = None) -> int:
                     skip_interval_seconds=skip_interval,
                     analysis_session_id=analysis_session_id,
                     expected_pack_id=pack_id,
-                    remote_answers=free_answer_cache.get(session_key),
                 )
                 if status == "selected" and content_id:
                     answered.add(content_id)

@@ -54,6 +54,9 @@ public sealed class SpeakingPrepService
         if (questions.Count == 0) return new SpeakingPrepOutcome(null, Array.Empty<string>());
 
         string mode = AppPreferencesService.Current.SpeakingMode;
+        if (mode == "flexible" && !ApiKeyStore.HasKey)
+            return new SpeakingPrepOutcome(null, new[] { "未填写有效的凭据\n无法完成指定操作。" });
+
         SpeakingSession? reusable = FindReusableSession(packId, mode, questions);
         if (reusable is not null)
         {
@@ -62,12 +65,11 @@ public sealed class SpeakingPrepService
             return new SpeakingPrepOutcome(reusable, Array.Empty<string>());
         }
 
-        if (!AliyunTtsCredentialStore.HasCredentials &&
-            !AppPreferencesService.Current.ExperienceModeEnabled)
+        if (!AliyunTtsCredentialStore.HasCredentials)
         {
             return new SpeakingPrepOutcome(null, new[]
             {
-                "未配置阿里云 TTS 凭证，且体验模式未启用。请填写个人凭证，或在偏好设置中启用体验模式以使用有每日限额的公用 Worker。"
+                "未填写有效的凭据\n无法完成指定操作。"
             });
         }
 

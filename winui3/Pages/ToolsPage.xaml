@@ -95,7 +95,7 @@
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="18">
                         <StackPanel Spacing="4">
                             <TextBlock Text="详细级别日志" FontSize="16" FontWeight="SemiBold" />
-                            <TextBlock Text="记录听力匹配、Worker 调用和设置重载的诊断细节。日志可能包含试卷编号与运行状态。"
+                            <TextBlock Text="记录听力匹配和设置重载的诊断细节。日志可能包含试卷编号与运行状态。"
                                        FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                         </StackPanel>
                         <ToggleSwitch x:Name="VerboseLoggingToggle" Grid.Column="1" OnContent="开" OffContent="关"
@@ -223,7 +223,7 @@
                         </StackPanel>
                         <TextBox x:Name="SpeakingResultBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
                                  MinHeight="150" PlaceholderText="模型返回的文本会显示在这里。" />
-                        <TextBlock Text="阿里云标准 TTS · Betty 美式英文女声 · WAV 16 kHz。超过 300 字符会自动分段合成并拼接。凭据在“答题设置”中管理；没有个人凭据时需要启用体验模式。"
+                        <TextBlock Text="阿里云标准 TTS · Betty 美式英文女声 · WAV 16 kHz。超过 300 字符会自动分段合成并拼接。需要在“答题设置”中填写阿里云个人凭据。"
                                    FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button x:Name="AliyunTtsButton" Click="AliyunTts_Click"

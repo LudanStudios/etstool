@@ -27,10 +27,12 @@
                         IsPaneToggleButtonVisible="True"
                         Background="Transparent"
                         SelectionChanged="RootNavigation_SelectionChanged"
+                        PaneOpening="RootNavigation_PaneOpening"
+                        PaneClosing="RootNavigation_PaneClosing"
                         DisplayModeChanged="RootNavigation_DisplayModeChanged">
             <NavigationView.Resources>
-                <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="#D918212E" />
-                <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="#D918212E" />
+                <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="#FF18212E" />
+                <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="#FF18212E" />
                 <Style x:Key="WindowedPaneToggleButtonStyle" TargetType="Button"
                        BasedOn="{StaticResource PaneToggleButtonStyle}">
                     <Setter Property="Background" Value="#80333B48" />
@@ -40,6 +42,9 @@
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="运行概览" Tag="overview">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Home" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="程序预览" Tag="etsPreview">
+                    <NavigationViewItem.Icon><SymbolIcon Symbol="View" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem Content="试卷管理" Tag="papers">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Folder" /></NavigationViewItem.Icon>

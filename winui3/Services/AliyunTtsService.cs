@@ -8,8 +8,7 @@ using Aliyun.Acs.Core.Profile;
 
 namespace ETSAssistant.WinUI3.Services;
 
-public sealed record AliyunTtsResult(bool Success, string FilePath = "", string Error = "", int ChunkCount = 0,
-    int? RemainingToday = null, bool UsedWorker = false);
+public sealed record AliyunTtsResult(bool Success, string FilePath = "", string Error = "", int ChunkCount = 0);
 
 /// <summary>
 /// Creates short-lived NLS tokens from configured AccessKey credentials,
@@ -41,31 +40,20 @@ public sealed class AliyunTtsService
             !string.IsNullOrWhiteSpace(credentials.AccessKeyId) &&
             !string.IsNullOrWhiteSpace(credentials.AccessKeySecret) &&
             !string.IsNullOrWhiteSpace(credentials.AppKey);
+        if (!hasLocalCredentials)
+            return new AliyunTtsResult(false, Error: "未填写有效的凭据\n无法完成指定操作。");
+
         IReadOnlyList<string> chunks = SplitText(text, MaxCharactersPerRequest);
 
         try
         {
             var waveFiles = new List<byte[]>(chunks.Count);
-            int? remainingToday = null;
-            if (!hasLocalCredentials)
+            foreach (string chunk in chunks)
             {
-                if (!AppPreferencesService.Current.ExperienceModeEnabled)
-                    return new AliyunTtsResult(false,
-                        Error: "尚未配置阿里云 TTS 凭据，且体验模式未启用。可在偏好设置中启用体验模式（公用 Worker 有每日限额），或先填写个人凭据。");
-                WorkerAudioResult result = await FreeServiceWorkerClient
-                    .SynthesizeTtsAsync(chunks, cancellationToken).ConfigureAwait(false);
-                waveFiles.AddRange(result.Chunks);
-                remainingToday = result.RemainingToday;
-            }
-            else
-            {
-                foreach (string chunk in chunks)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    string token = await GetTokenAsync(credentials!, cancellationToken).ConfigureAwait(false);
-                    waveFiles.Add(await SynthesizeChunkAsync(credentials!.AppKey, token, chunk, cancellationToken)
-                        .ConfigureAwait(false));
-                }
+                cancellationToken.ThrowIfCancellationRequested();
+                string token = await GetTokenAsync(credentials!, cancellationToken).ConfigureAwait(false);
+                waveFiles.Add(await SynthesizeChunkAsync(credentials!.AppKey, token, chunk, cancellationToken)
+                    .ConfigureAwait(false));
             }
 
             byte[] wav = MergeWavFiles(waveFiles);
@@ -74,8 +62,7 @@ public sealed class AliyunTtsService
             string outputPath = Path.Combine(outputDirectory,
                 $"aliyun-tts-{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.wav");
             await File.WriteAllBytesAsync(outputPath, wav, cancellationToken).ConfigureAwait(false);
-            return new AliyunTtsResult(true, outputPath, ChunkCount: chunks.Count,
-                RemainingToday: remainingToday, UsedWorker: !hasLocalCredentials);
+            return new AliyunTtsResult(true, outputPath, ChunkCount: chunks.Count);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
