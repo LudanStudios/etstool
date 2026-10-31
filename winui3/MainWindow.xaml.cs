@@ -29,6 +29,10 @@ public sealed partial class MainWindow : Window
     private bool _audioSessionSawShell;
     private SpeakingPrepWindow? _prepWindow;
     private DispatcherQueueTimer? _paneClosingTimer;
+    private string? _currentPageName;
+    private bool _windowOpenedLogged;
+    private string? _lastAudioSessionError;
+    private string? _lastSpeakingPaperError;
 
     public MainWindow()
     {
@@ -38,6 +42,7 @@ public sealed partial class MainWindow : Window
         UpdateActivityNavigation();
         Closed += async (_, _) =>
         {
+            DiagnosticLogService.Info("etstool.window.closed");
             AnalysisActivityService.Current.Changed -= UpdateActivityNavigation;
             EtsWindowPreviewService.RestoreAll();
             _audioSessionTimer?.Stop();
@@ -54,6 +59,22 @@ public sealed partial class MainWindow : Window
         SetTitleBarColors();
 
         AppPreferencesService preferences = AppPreferencesService.Current;
+        DiagnosticLogService.SetVerboseEnabled(preferences.VerboseLoggingEnabled);
+        Activated += (_, args) =>
+        {
+            if (args.WindowActivationState == WindowActivationState.Deactivated)
+                DiagnosticLogService.Info("etstool.window.deactivated");
+            else
+            {
+                if (!_windowOpenedLogged)
+                {
+                    _windowOpenedLogged = true;
+                    DiagnosticLogService.Info("etstool.window.opened");
+                }
+                else
+                    DiagnosticLogService.Info("etstool.window.activated");
+            }
+        };
         foreach (object item in RootNavigation.MenuItems)
         {
             if (item is NavigationViewItem nav && (nav.Tag as string) == "tools")
@@ -64,12 +85,19 @@ public sealed partial class MainWindow : Window
         ApplyLocalization();
         PageFrame.Navigated += (_, args) =>
         {
+            string pageName = args.Content?.GetType().Name ?? "UnknownPage";
+            if (_currentPageName is not null && !string.Equals(_currentPageName, pageName, StringComparison.Ordinal))
+                DiagnosticLogService.Info("navigation.page.closed", $"page={_currentPageName}");
+            DiagnosticLogService.Info("navigation.page.opened", $"page={pageName}");
+            _currentPageName = pageName;
             if (args.Content is DependencyObject page)
                 DispatcherQueue.TryEnqueue(() =>
                 {
                     LocalizationService.Current.Apply(page);
                     if (page is Page responsivePage)
                         ResponsiveLayoutService.Attach(responsivePage);
+                    if (page is FrameworkElement interactivePage)
+                        DiagnosticLogService.TrackInteractiveControls(interactivePage, pageName);
                 });
         };
         preferences.ThemeChanged += ApplyTheme;
@@ -121,8 +149,16 @@ public sealed partial class MainWindow : Window
             else
                 await DefaultAudioInputService.Current.EndSessionAsync();
             _audioSessionActive = etsRunning;
+            _lastAudioSessionError = null;
         }
-        catch (Exception) { }
+        catch (Exception ex)
+        {
+            if (!string.Equals(_lastAudioSessionError, ex.Message, StringComparison.Ordinal))
+            {
+                DiagnosticLogService.Warn("audio_session.sync.failed", ex.Message);
+                _lastAudioSessionError = ex.Message;
+            }
+        }
         finally { _checkingAudioSession = false; }
     }
 
@@ -167,9 +203,13 @@ public sealed partial class MainWindow : Window
                 .FirstOrDefault(paper => paper.PackId == packId)?.Title ?? $"试卷 {packId}";
             ShowSpeakingPrep(packId, title, questions);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // A transient DevTools/IO failure should not break the main window.
+            if (!string.Equals(_lastSpeakingPaperError, ex.Message, StringComparison.Ordinal))
+            {
+                DiagnosticLogService.Warn("speaking_prep.monitor.failed", ex.Message);
+                _lastSpeakingPaperError = ex.Message;
+            }
         }
         finally
         {
@@ -213,7 +253,7 @@ public sealed partial class MainWindow : Window
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = RootGrid.XamlRoot
         };
-        ContentDialogResult result = await dialog.ShowAsync();
+        ContentDialogResult result = await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog);
         preferences.MarkVirtualCableReminderShown();
         if (result != ContentDialogResult.Primary) return;
         VirtualCableSetupService.OpenRecordingDevices();
@@ -260,7 +300,7 @@ public sealed partial class MainWindow : Window
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = RootGrid.XamlRoot
         };
-        ContentDialogResult result = await dialog.ShowAsync();
+        ContentDialogResult result = await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog);
         preferences.MarkCredentialsReminderShown();
         preferences.MarkWelcomeCompleted();
         if (result != ContentDialogResult.Primary) return;
@@ -279,7 +319,7 @@ public sealed partial class MainWindow : Window
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = RootGrid.XamlRoot
         };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
         NavigateToTag("settings");
         if (PageFrame.Content is Pages.SettingsPage settingsPage) settingsPage.ExpandCredentials();
     }
@@ -304,10 +344,14 @@ public sealed partial class MainWindow : Window
                 DefaultButton = ContentDialogButton.Primary,
                 XamlRoot = RootGrid.XamlRoot
             };
-            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+            if (await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog) == ContentDialogResult.Primary)
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(result.Url) { UseShellExecute = true });
         }
-        catch (Exception) { /* A transient network failure must not interrupt startup. */ }
+        catch (Exception ex)
+        {
+            DiagnosticLogService.Warn("update_check.failed", ex.Message);
+            /* A transient network failure must not interrupt startup. */
+        }
     }
 
     public async Task UnlockDeveloperToolsAsync()
@@ -327,7 +371,7 @@ public sealed partial class MainWindow : Window
             DefaultButton = ContentDialogButton.None,
             XamlRoot = RootGrid.XamlRoot
         };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
         preferences.UnlockDeveloperTools();
         NavigateToTag("tools");
     }
@@ -373,6 +417,8 @@ public sealed partial class MainWindow : Window
     private void RootNavigation_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
         if (args.SelectedItem is not NavigationViewItem item) return;
+        DiagnosticLogService.Info("navigation.tab.selected",
+            $"tag={item.Tag?.ToString() ?? "unknown"} title={item.Content?.ToString() ?? "unknown"}");
         Type? page = item.Tag?.ToString() switch
         {
             "overview" => typeof(Pages.OverviewPage),
@@ -411,6 +457,7 @@ public sealed partial class MainWindow : Window
 
     private void RootNavigation_PaneOpening(NavigationView sender, object args)
     {
+        DiagnosticLogService.Info("navigation.pane.opened");
         _paneClosingTimer?.Stop();
         EtsWindowPreviewService.Shared.SetNavigationPaneOverlayOpen(
             sender.DisplayMode != NavigationViewDisplayMode.Expanded);
@@ -418,6 +465,7 @@ public sealed partial class MainWindow : Window
 
     private void RootNavigation_PaneClosing(NavigationView sender, object args)
     {
+        DiagnosticLogService.Info("navigation.pane.closing");
         _paneClosingTimer?.Stop();
         _paneClosingTimer ??= DispatcherQueue.CreateTimer();
         _paneClosingTimer.Interval = TimeSpan.FromMilliseconds(350);

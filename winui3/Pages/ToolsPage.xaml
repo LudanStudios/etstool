@@ -95,7 +95,7 @@
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="18">
                         <StackPanel Spacing="4">
                             <TextBlock Text="详细级别日志" FontSize="16" FontWeight="SemiBold" />
-                            <TextBlock Text="记录听力匹配和设置重载的诊断细节。日志可能包含试卷编号与运行状态。"
+                            <TextBlock Text="开启后增加 INFO 操作轨迹，记录窗口、导航、按钮、设置及任务状态；默认始终记录 WARN、ERROR、FATAL。不会记录凭据内容。"
                                        FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                         </StackPanel>
                         <ToggleSwitch x:Name="VerboseLoggingToggle" Grid.Column="1" OnContent="开" OffContent="关"
@@ -328,7 +328,7 @@
                             <TextBlock Text="日志与诊断" FontSize="17" FontWeight="SemiBold" />
                         </StackPanel>
                         <TextBlock x:Name="LogSummaryText" FontSize="13" Opacity="0.72" TextWrapping="Wrap" />
-                        <TextBlock Text="导出会把数据目录中的日志、配置和当前环境信息打包为 ZIP。"
+                        <TextBlock Text="导出会打包后台日志、ETS Tool 诊断日志、配置和当前环境信息。"
                                    FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button Click="ExportLogs_Click" Style="{StaticResource AccentButtonStyle}">
@@ -340,7 +340,13 @@
                             <Button Click="OpenData_Click">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Folder" />
-                                    <TextBlock Text="打开日志目录" />
+                                    <TextBlock Text="打开后台日志目录" />
+                                </StackPanel>
+                            </Button>
+                            <Button Click="OpenDiagnosticLogs_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="Folder" />
+                                    <TextBlock Text="打开诊断日志目录" />
                                 </StackPanel>
                             </Button>
                         </StackPanel>

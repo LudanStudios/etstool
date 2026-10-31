@@ -28,6 +28,22 @@ public sealed partial class EtsPreviewPage : Page
         Loaded += (_, _) => LocalizationService.Current.Apply(EndEtsFlyout.Content as DependencyObject);
     }
 
+    private void Page_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        // Keep the preview usable when the assistant is narrowed to a small window.
+        bool compact = e.NewSize.Width < 620 || e.NewSize.Height < 560;
+        PageTitleText.FontSize = compact ? 24 : 30;
+        PageTitleIcon.Width = compact ? 21 : 25;
+        PageTitleIcon.Height = compact ? 21 : 25;
+        PageDescriptionText.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+        ResponsiveContent.RowSpacing = compact ? 8 : 14;
+        ConnectionStatus.TextWrapping = compact ? TextWrapping.NoWrap : TextWrapping.Wrap;
+        ConnectionStatus.TextTrimming = compact ? TextTrimming.CharacterEllipsis : TextTrimming.None;
+        ConnectionStatus.MaxWidth = compact
+            ? Math.Min(210, Math.Max(100, e.NewSize.Width * 0.28))
+            : double.PositiveInfinity;
+    }
+
     private void Page_Loaded(object sender, RoutedEventArgs e)
     {
         _preview.SetPreviewPageActive(true, PreviewViewport);
@@ -128,6 +144,7 @@ public sealed partial class EtsPreviewPage : Page
         }
         catch (Exception ex)
         {
+            DiagnosticLogService.Error("ets_preview.ets_start.failed", ex);
             ConnectionRing.IsActive = false;
             PreviewPlaceholder.Visibility = Visibility.Visible;
             ConnectionStatus.Text = ex.Message;
@@ -141,12 +158,14 @@ public sealed partial class EtsPreviewPage : Page
 
     private void EndEtsFlyout_Opened(object sender, object e)
     {
+        DiagnosticLogService.Info("ets_preview.terminate_confirmation.opened");
         _suppressPreviewRestore = false;
         _preview.HidePreviewWindow();
     }
 
     private void EndEtsFlyout_Closed(object sender, object e)
     {
+        DiagnosticLogService.Info("ets_preview.terminate_confirmation.closed");
         if (!_suppressPreviewRestore && IsLoaded)
             _preview.UpdateBounds(PreviewViewport);
     }
@@ -176,6 +195,7 @@ public sealed partial class EtsPreviewPage : Page
         }
         catch (Exception ex)
         {
+            DiagnosticLogService.Error("ets_preview.terminate.failed", ex);
             ConnectionStatus.Text = ex.Message;
         }
     }
@@ -183,6 +203,7 @@ public sealed partial class EtsPreviewPage : Page
     private void TryFindRunningEts(bool automatic)
     {
         if (_connecting || (automatic && DateTime.UtcNow < _nextSearchAt)) return;
+        if (!automatic) DiagnosticLogService.Info("ets_preview.connection.search_requested");
         _connecting = true;
         _nextSearchAt = DateTime.UtcNow.AddSeconds(2);
         ConnectButton.IsEnabled = false;
@@ -200,17 +221,21 @@ public sealed partial class EtsPreviewPage : Page
             else
             {
                 PreviewPlaceholder.Visibility = Visibility.Visible;
-                ConnectionStatus.Text = LocalizationService.Current.Translate(
-                    "未检测到运行中的 ETS；此页会自动查找，不会自动启动。请先手动启动 ETS。");
+                ConnectionStatus.Text = _preview.IsWaitingForStableWindow
+                    ? LocalizationService.Current.Translate("ETS 正在初始化；窗口稳定后会自动连接预览。")
+                    : LocalizationService.Current.Translate(
+                        "未检测到运行中的 ETS；此页会自动查找，不会自动启动。请先手动启动 ETS。");
             }
         }
         catch (Win32Exception ex) when (ex.NativeErrorCode == 5)
         {
+            DiagnosticLogService.Warn("ets_preview.connection.permission_denied", ex.Message);
             PreviewPlaceholder.Visibility = Visibility.Visible;
             ConnectionStatus.Text = $"{ex.Message} 助手已以管理员权限运行，请确认 ETS 主窗口处于当前桌面会话。";
         }
         catch (Exception ex)
         {
+            DiagnosticLogService.Error("ets_preview.connection.failed", ex);
             ConnectionStatus.Text = ex.Message;
             PreviewPlaceholder.Visibility = Visibility.Visible;
         }

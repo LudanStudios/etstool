@@ -17,6 +17,7 @@ public sealed class AppPreferencesService
     {
         _path = Path.Combine(AssistantService.Current.DataRoot, "ui_preferences.json");
         Load();
+        DiagnosticLogService.SetVerboseEnabled(VerboseLoggingEnabled);
     }
 
     public string Theme { get; private set; } = "System";
@@ -73,7 +74,9 @@ public sealed class AppPreferencesService
     {
         if (VerboseLoggingEnabled == enabled) return;
         VerboseLoggingEnabled = enabled;
+        DiagnosticLogService.SetVerboseEnabled(enabled);
         Save();
+        DiagnosticLogService.Info("settings.verbose_logging.enabled", "source=developer_tools");
         AssistantService.Current.SyncListenerSettings();
     }
 

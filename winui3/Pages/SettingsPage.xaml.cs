@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -14,6 +15,7 @@ public sealed partial class SettingsPage : Page
     private readonly AssistantService _service = AssistantService.Current;
     private bool _loading;
     private bool _virtualCableBusy;
+    private bool _csvPickerActive;
 
     public SettingsPage()
     {
@@ -96,7 +98,7 @@ public sealed partial class SettingsPage : Page
                 DefaultButton = ContentDialogButton.Primary,
                 XamlRoot = XamlRoot
             };
-            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+            if (await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
 
             InfoBarPresenter.Show(CableInfoBar, $"正在{action}",
                 "官方设置程序会请求管理员权限。请在程序窗口中完成对应操作后关闭它。",
@@ -150,7 +152,7 @@ public sealed partial class SettingsPage : Page
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = XamlRoot
         };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
 
         try
         {
@@ -248,20 +250,22 @@ public sealed partial class SettingsPage : Page
 
     private async void ImportCsv_Click(object sender, RoutedEventArgs e)
     {
+        if (_csvPickerActive) return;
+        _csvPickerActive = true;
         try
         {
-            var picker = new FileOpenPicker
-            {
-                SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
-                ViewMode = PickerViewMode.List
-            };
-            picker.FileTypeFilter.Add(".csv");
             MainWindow window = MainWindow.Current ?? throw new InvalidOperationException("窗口尚未准备好。");
-            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(window));
-            var file = await picker.PickSingleFileAsync();
-            if (file is null) return;
+            DiagnosticLogService.Info("settings.credentials.csv_picker.opened");
+            string? csvPath = NativeCsvFilePicker.PickCsv(WindowNative.GetWindowHandle(window));
+            if (csvPath is null)
+            {
+                DiagnosticLogService.Info("settings.credentials.csv_picker.cancelled");
+                return;
+            }
+            string csvName = Path.GetFileName(csvPath);
+            DiagnosticLogService.Info("settings.credentials.csv_picker.selected", $"file={csvName}");
 
-            CredentialCsvPreview preview = CredentialCsvImporter.Parse(file.Path);
+            CredentialCsvPreview preview = CredentialCsvImporter.Parse(csvPath);
             if (!preview.HasAny)
             {
                 string errors = string.Join(Environment.NewLine, preview.Errors.Take(5));
@@ -306,7 +310,7 @@ public sealed partial class SettingsPage : Page
                 DefaultButton = ContentDialogButton.Primary,
                 XamlRoot = XamlRoot
             };
-            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+            if (await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
 
             CredentialImportResult result = CredentialCsvImporter.Apply(preview);
             ApiKeyBox.Password = string.Empty;
@@ -317,7 +321,7 @@ public sealed partial class SettingsPage : Page
             if (result.DeepSeekSaved) imported.Add("DeepSeek");
             if (result.AliyunSaved) imported.Add("阿里云 TTS");
             CsvImportStatusText.Text = imported.Count > 0
-                ? $"已导入并加密：{string.Join("、", imported)}（来源 {file.Name}）"
+                ? $"已导入并加密：{string.Join("、", imported)}（来源 {csvName}）"
                 : "没有保存任何凭据。";
 
             InfoBarSeverity severity = !result.SavedAny
@@ -331,8 +335,14 @@ public sealed partial class SettingsPage : Page
         }
         catch (Exception ex)
         {
-            CsvImportStatusText.Text = "导入失败。";
-            InfoBarPresenter.Show(CsvImportInfoBar, "CSV 导入失败", ex.Message, InfoBarSeverity.Error);
+            string detail = string.IsNullOrWhiteSpace(ex.Message) ? ex.GetType().Name : ex.Message;
+            CsvImportStatusText.Text = $"导入失败：{detail}";
+            DiagnosticLogService.Error("settings.credentials.csv_import.failed", ex);
+            InfoBarPresenter.Show(CsvImportInfoBar, "CSV 导入失败", detail, InfoBarSeverity.Error);
+        }
+        finally
+        {
+            _csvPickerActive = false;
         }
     }
 
@@ -367,7 +377,7 @@ public sealed partial class SettingsPage : Page
             var dialog = new ContentDialog { Title = "应用 ETS 安装目录？",
                 Content = validation.ExecutablePath, PrimaryButtonText = "应用", CloseButtonText = "取消",
                 DefaultButton = ContentDialogButton.Primary, XamlRoot = XamlRoot };
-            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+            if (await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
             string warnings = _service.ApplyEtsDirectory(validation.DirectoryPath);
             EtsPathText.Text = _service.EtsExe ?? "未找到 ETS 安装目录。";
             InfoBarPresenter.Show(SaveInfoBar, warnings.Length == 0 ? "ETS 目录已更新" : "目录已更新，但有提醒",
@@ -397,6 +407,99 @@ public sealed partial class SettingsPage : Page
         catch (Exception ex)
         {
             InfoBarPresenter.Show(SaveInfoBar, "保存失败", ex.Message, InfoBarSeverity.Error);
+        }
+    }
+}
+
+/// <summary>
+/// Uses the desktop common file dialog because this app runs elevated. The WinRT
+/// FileOpenPicker broker cannot reliably activate with an elevated owner window.
+/// </summary>
+internal static class NativeCsvFilePicker
+{
+    private const int OfnNoChangeDir = 0x00000008;
+    private const int OfnPathMustExist = 0x00000800;
+    private const int OfnFileMustExist = 0x00001000;
+    private const int OfnExplorer = 0x00080000;
+    private const int OfnHideReadOnly = 0x00000004;
+    private const int FileNameBufferSize = 32768;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct OpenFileName
+    {
+        public int StructSize;
+        public nint Owner;
+        public nint Instance;
+        public nint Filter;
+        public nint CustomFilter;
+        public int MaxCustomFilter;
+        public int FilterIndex;
+        public nint File;
+        public int MaxFile;
+        public nint FileTitle;
+        public int MaxFileTitle;
+        public nint InitialDirectory;
+        public nint Title;
+        public int Flags;
+        public ushort FileOffset;
+        public ushort FileExtension;
+        public nint DefaultExtension;
+        public nint CustomData;
+        public nint Hook;
+        public nint TemplateName;
+        public nint Reserved;
+        public int ReservedValue;
+        public int FlagsEx;
+    }
+
+    [DllImport("comdlg32.dll", CharSet = CharSet.Unicode, EntryPoint = "GetOpenFileNameW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetOpenFileName(ref OpenFileName fileName);
+
+    [DllImport("comdlg32.dll", EntryPoint = "CommDlgExtendedError")]
+    private static extern uint CommDlgExtendedError();
+
+    public static string? PickCsv(nint owner)
+    {
+        if (owner == 0) throw new InvalidOperationException("无法获取 ETS Tool 窗口句柄，不能显示文件选择器。");
+
+        nint filter = Marshal.StringToCoTaskMemUni("CSV 文件 (*.csv)\0*.csv\0所有文件 (*.*)\0*.*\0\0");
+        nint title = Marshal.StringToCoTaskMemUni("选择 CSV 文件");
+        nint extension = Marshal.StringToCoTaskMemUni("csv");
+        char[] fileBuffer = new char[FileNameBufferSize];
+        GCHandle fileBufferHandle = GCHandle.Alloc(fileBuffer, GCHandleType.Pinned);
+        try
+        {
+            var dialog = new OpenFileName
+            {
+                StructSize = Marshal.SizeOf<OpenFileName>(),
+                Owner = owner,
+                Filter = filter,
+                FilterIndex = 1,
+                File = fileBufferHandle.AddrOfPinnedObject(),
+                MaxFile = FileNameBufferSize,
+                Title = title,
+                DefaultExtension = extension,
+                Flags = OfnExplorer | OfnFileMustExist | OfnPathMustExist | OfnNoChangeDir | OfnHideReadOnly
+            };
+
+            if (GetOpenFileName(ref dialog))
+            {
+                int terminator = Array.IndexOf(fileBuffer, '\0');
+                return new string(fileBuffer, 0, terminator < 0 ? fileBuffer.Length : terminator);
+            }
+
+            uint error = CommDlgExtendedError();
+            if (error == 0) return null; // User cancelled.
+            throw new Win32Exception(unchecked((int)error),
+                $"Windows 无法打开 CSV 文件选择器（错误 0x{error:X8}）。");
+        }
+        finally
+        {
+            if (fileBufferHandle.IsAllocated) fileBufferHandle.Free();
+            Marshal.FreeCoTaskMem(filter);
+            Marshal.FreeCoTaskMem(title);
+            Marshal.FreeCoTaskMem(extension);
         }
     }
 }

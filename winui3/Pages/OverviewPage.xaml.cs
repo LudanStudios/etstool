@@ -141,7 +141,7 @@ public sealed partial class OverviewPage : Page
                 DefaultButton = ContentDialogButton.Primary,
                 XamlRoot = XamlRoot
             };
-            if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+            if (await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(confirm) != ContentDialogResult.Primary) return;
 
             string warnings = _service.ApplyEtsDirectory(validation.DirectoryPath);
             RefreshStatus();
@@ -280,7 +280,7 @@ public sealed partial class OverviewPage : Page
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = XamlRoot
         };
-        if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+        if (await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(confirm) != ContentDialogResult.Primary) return;
 
         ManualResetButton.IsEnabled = false;
         try
@@ -320,7 +320,7 @@ public sealed partial class OverviewPage : Page
             DefaultButton = ContentDialogButton.None,
             XamlRoot = XamlRoot
         };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
         try
         {
             int ended = _service.EndEtsProcesses();
@@ -346,7 +346,7 @@ public sealed partial class OverviewPage : Page
         {
             Title = title, Content = message, CloseButtonText = closeText, XamlRoot = XamlRoot
         };
-        await dialog.ShowAsync();
+        await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog);
     }
 
     private async Task ShowErrorAsync(string message)
@@ -355,6 +355,6 @@ public sealed partial class OverviewPage : Page
         {
             Title = "无法完成操作", Content = message, CloseButtonText = "知道了", XamlRoot = XamlRoot
         };
-        await dialog.ShowAsync();
+        await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog);
     }
 }

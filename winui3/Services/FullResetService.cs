@@ -38,6 +38,7 @@ public sealed class FullResetService
 
     public async Task<FullResetResult> RunAsync()
     {
+        DiagnosticLogService.Info("developer_tools.full_reset.started");
         var steps = new List<string>();
         var notes = new List<string>();
 
@@ -54,6 +55,8 @@ public sealed class FullResetService
 
         int removedLogs = RemoveLogs();
         steps.Add(removedLogs > 0 ? $"已删除 {removedLogs} 个助手日志" : "没有助手日志需要删除");
+        int diagnosticLogCount = DiagnosticLogService.GetLogFiles().Count;
+        DiagnosticLogService.ClearLogs();
 
         try
         {
@@ -68,14 +71,17 @@ public sealed class FullResetService
                 : "检测到虚拟声卡：" + string.Join("、", devices.Distinct()) +
                   "。助手不会自动卸载音频驱动，需要时请在设备管理器或“应用和功能”里移除。");
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            DiagnosticLogService.Warn("developer_tools.full_reset.audio_device_scan.failed", ex.Message);
             notes.Add("无法枚举音频设备；如有虚拟声卡，请手动在设备管理器中检查。");
         }
 
         if (_assistant.IsEtsRunning)
             notes.Add("ETS 仍在运行；关闭 ETS 后，假麦克风参数才会真正失效。");
         notes.Add("试卷包、答题历史和答案记录已保留。");
+        DiagnosticLogService.Info("developer_tools.full_reset.completed",
+            $"stoppedProcesses={stopped} removedLogs={removedLogs + diagnosticLogCount}");
         return new FullResetResult(steps, notes);
     }
 
@@ -93,7 +99,10 @@ public sealed class FullResetService
                     stopped++;
                 }
                 catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
-                { }
+                {
+                    DiagnosticLogService.Warn("developer_tools.full_reset.process_stop.failed",
+                        $"process={name} pid={SafeProcessId(process)} detail={ex.Message}");
+                }
                 finally { process.Dispose(); }
             }
         }
@@ -111,6 +120,7 @@ public sealed class FullResetService
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException)
         {
+            DiagnosticLogService.Warn("developer_tools.full_reset.autostart_remove.failed", ex.Message);
             return "无法移除登录启动项（权限不足）";
         }
     }
@@ -126,7 +136,8 @@ public sealed class FullResetService
             {
                 if (File.Exists(path)) { File.Delete(path); removed++; }
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            { DiagnosticLogService.Warn("developer_tools.full_reset.shortcut_remove.failed", ex.Message); }
         }
 
         string startup = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
@@ -135,7 +146,8 @@ public sealed class FullResetService
         {
             if (File.Exists(startupLink)) { File.Delete(startupLink); removed++; }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { DiagnosticLogService.Warn("developer_tools.full_reset.shortcut_remove.failed", ex.Message); }
 
         return removed > 0 ? $"已删除 {removed} 个快捷方式" : "没有需要删除的快捷方式";
     }
@@ -144,7 +156,8 @@ public sealed class FullResetService
     {
         ApiKeyStore.Clear();
         try { AliyunTtsCredentialStore.Clear(); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { DiagnosticLogService.Warn("developer_tools.full_reset.credential_remove.failed", ex.Message); }
         return "已清除 DeepSeek API Key 和阿里云 TTS 凭证";
     }
 
@@ -159,6 +172,7 @@ public sealed class FullResetService
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            DiagnosticLogService.Warn("developer_tools.full_reset.settings_reset.failed", ex.Message);
             return "答题设置未能完全重置：" + ex.Message;
         }
     }
@@ -182,7 +196,8 @@ public sealed class FullResetService
                     if (DeleteFile(file)) removed++;
             }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { DiagnosticLogService.Warn("developer_tools.full_reset.temporary_file_remove.failed", ex.Message); }
         if (DeleteFile(Path.Combine(_appRoot, "temp", "speaking_session.json"))) removed++;
         return removed;
     }
@@ -198,7 +213,8 @@ public sealed class FullResetService
             foreach (string file in Directory.EnumerateFiles(_dataRoot, "ets_answer_listener.log.old-*"))
                 if (DeleteFile(file)) removed++;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { DiagnosticLogService.Warn("developer_tools.full_reset.log_remove.failed", ex.Message); }
         return removed;
     }
 
@@ -212,6 +228,7 @@ public sealed class FullResetService
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            DiagnosticLogService.Warn("developer_tools.full_reset.file_remove.failed", ex.Message);
             return false;
         }
     }
@@ -221,4 +238,10 @@ public sealed class FullResetService
         name.Contains("VoiceMeeter", StringComparison.OrdinalIgnoreCase) ||
         name.Contains("Virtual Audio", StringComparison.OrdinalIgnoreCase) ||
         name.Contains("VB-Audio", StringComparison.OrdinalIgnoreCase);
+
+    private static int SafeProcessId(Process process)
+    {
+        try { return process.Id; }
+        catch (InvalidOperationException) { return 0; }
+    }
 }

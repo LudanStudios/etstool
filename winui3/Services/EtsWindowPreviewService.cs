@@ -2,7 +2,9 @@ using System.Diagnostics;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using ETSAssistant.WinUI3.Pages;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using WinRT.Interop;
@@ -41,9 +43,6 @@ public sealed class EtsWindowPreviewService : IDisposable
     private const uint SwpFrameChanged = 0x0020;
     private const uint SwpShowWindow = 0x0040;
     private const uint RdwInvalidate = 0x0001;
-    private const uint RdwErase = 0x0004;
-    private const uint RdwAllChildren = 0x0080;
-    private const uint RdwUpdateNow = 0x0100;
     private const uint RdwFrame = 0x0400;
     private const uint EventSystemForeground = 0x0003;
     private const uint EventObjectLocationChange = 0x800B;
@@ -54,8 +53,9 @@ public sealed class EtsWindowPreviewService : IDisposable
     private const int SwRestore = 9;
     private const int SwHide = 0;
     private const int SwShowNoActivate = 4;
+    private static readonly TimeSpan StableWindowRequiredDuration = TimeSpan.FromSeconds(3);
     private const uint AwBlend = 0x00080000;
-    private const uint PreviewFadeDurationMs = 200;
+    private const uint PreviewFadeDurationMs = 240;
     // Keep the native region on the same origin and radius as the XAML preview frame.
     private const double PreviewCornerRadiusDip = 12;
 
@@ -76,12 +76,20 @@ public sealed class EtsWindowPreviewService : IDisposable
     private OriginalWindowState? _originalState;
     private bool _disposed;
     private PixelBounds? _lastBounds;
+    private int _locationCorrectionQueued;
+    private nint _candidateWindow;
+    private uint _candidateProcessId;
+    private PixelBounds? _candidateBounds;
+    private DateTime _candidateStableSinceUtc;
 
     public bool HasEmbeddedWindow => _embeddedWindow != 0;
     public bool IsEmbeddedWindowAlive => _embeddedWindow != 0 && IsWindow(_embeddedWindow);
+    public bool IsWaitingForStableWindow { get; private set; }
 
     public void SetNavigationPaneOverlayOpen(bool isOpen)
     {
+        if (_navigationPaneOverlayOpen != isOpen)
+            DiagnosticLogService.Info("ets_preview.navigation_overlay.changed", $"isOpen={isOpen}");
         _navigationPaneOverlayOpen = isOpen;
         if (isOpen)
         {
@@ -95,6 +103,8 @@ public sealed class EtsWindowPreviewService : IDisposable
 
     public void SetPreviewPageActive(bool active, FrameworkElement? viewport = null)
     {
+        if (_previewPageActive != active)
+            DiagnosticLogService.Info(active ? "ets_preview.page.entered" : "ets_preview.page.left");
         _previewPageActive = active;
         if (!active)
         {
@@ -129,11 +139,54 @@ public sealed class EtsWindowPreviewService : IDisposable
 
         // Search only. ETS must be started manually by the user.
         nint target = FindEtsWindow(_assistant.EtsExe);
-        if (target == 0) return false;
+        if (target == 0)
+        {
+            ResetCandidateWindow();
+            return false;
+        }
+
+        if (!IsWindowVisible(target) || IsIconic(target) || !GetWindowRect(target, out NativeRect candidateRect))
+        {
+            ResetCandidateWindow(waiting: true);
+            return false;
+        }
+
+        GetWindowThreadProcessId(target, out uint candidateProcessId);
+        var candidateBounds = new PixelBounds(candidateRect.Left, candidateRect.Top,
+            candidateRect.Right - candidateRect.Left, candidateRect.Bottom - candidateRect.Top);
+        if (_candidateWindow != target || _candidateProcessId != candidateProcessId ||
+            _candidateBounds != candidateBounds)
+        {
+            _candidateWindow = target;
+            _candidateProcessId = candidateProcessId;
+            _candidateBounds = candidateBounds;
+            _candidateStableSinceUtc = DateTime.UtcNow;
+            IsWaitingForStableWindow = true;
+            return false;
+        }
+
+        if (DateTime.UtcNow - _candidateStableSinceUtc < StableWindowRequiredDuration)
+        {
+            IsWaitingForStableWindow = true;
+            return false;
+        }
+
+        ResetCandidateWindow();
         cancellationToken.ThrowIfCancellationRequested();
         AttachWindow(target);
         UpdateBounds(viewport);
+        GetWindowThreadProcessId(target, out uint processId);
+        DiagnosticLogService.Info("ets_preview.window.attached", $"pid={processId}");
         return true;
+    }
+
+    private void ResetCandidateWindow(bool waiting = false)
+    {
+        _candidateWindow = 0;
+        _candidateProcessId = 0;
+        _candidateBounds = null;
+        _candidateStableSinceUtc = DateTime.MinValue;
+        IsWaitingForStableWindow = waiting;
     }
 
     public void UpdateBounds(FrameworkElement viewport)
@@ -219,12 +272,16 @@ public sealed class EtsWindowPreviewService : IDisposable
     /// </summary>
     public void HidePreviewWindow()
     {
-        if (_embeddedWindow != 0 && IsWindow(_embeddedWindow))
+        if (_embeddedWindow != 0 && IsWindow(_embeddedWindow) && IsWindowVisible(_embeddedWindow))
+        {
             ShowWindow(_embeddedWindow, SwHide);
+            DiagnosticLogService.Info("ets_preview.window.hidden");
+        }
     }
 
     public void DetachClosedWindow()
     {
+        DiagnosticLogService.Warn("ets_preview.window.closed_unexpectedly");
         StopEmbeddedWindowPositionTracking();
         _embeddedWindow = 0;
         _originalState = null;
@@ -316,7 +373,8 @@ public sealed class EtsWindowPreviewService : IDisposable
         _embeddedWindow = target;
         try
         {
-            ShowWindow(target, SwRestore);
+            // The candidate window was observed as visible and non-minimized; hide it before
+            // changing owner/style so the page transition never exposes an intermediate frame.
             ShowWindow(target, SwHide);
 
             EnsureBorderlessPreviewStyle(target, clearVisibleStyle: true);
@@ -326,13 +384,14 @@ public sealed class EtsWindowPreviewService : IDisposable
             SetWindowPosChecked(target, 0, bounds.X, bounds.Y, bounds.Width, bounds.Height,
                 SwpNoActivate | SwpFrameChanged);
             ApplyPreviewCornerMask(target, bounds.Width, bounds.Height);
-            RedrawWindow(target, 0, 0,
-                RdwInvalidate | RdwErase | RdwAllChildren | RdwUpdateNow | RdwFrame);
+            // Defer repainting instead of synchronously sending paint messages into ETS.
+            RedrawWindow(target, 0, 0, RdwInvalidate | RdwFrame);
             FadeInPreviewWindow(target);
             EnsureEmbeddedWindowPositionTracking(target);
         }
-        catch
+        catch (Exception ex)
         {
+            DiagnosticLogService.Error("ets_preview.window.attach_failed", ex);
             RestoreEmbeddedWindow();
             throw;
         }
@@ -358,50 +417,45 @@ public sealed class EtsWindowPreviewService : IDisposable
     private void EmbeddedWindowLocationChanged(nint hook, uint eventType, nint window, int objectId,
         int childId, uint eventThread, uint eventTime)
     {
-        if (_disposed || !_previewPageActive || window == _mainWindow || window != _embeddedWindow ||
-            objectId != ObjIdWindow || childId != ChildIdSelf)
-            return;
-
-        if (_navigationPaneOverlayOpen || !IsWindow(_mainWindow) ||
-            !IsWindowVisible(_mainWindow) || IsIconic(_mainWindow))
-        {
-            HidePreviewWindow();
-            return;
-        }
-
-        if (_lastBounds is not PixelBounds bounds || IsForegroundWindowOccludingPreview(bounds))
-        {
-            HidePreviewWindow();
-            return;
-        }
-
         try
         {
-            bool wasVisible = IsWindowVisible(window);
-            bool frameStyleChanged = EnsureBorderlessPreviewStyle(window);
-            bool windowBoundsMatch = GetWindowRect(window, out NativeRect current) &&
-                current.Left == bounds.X && current.Top == bounds.Y &&
-                current.Right - current.Left == bounds.Width &&
-                current.Bottom - current.Top == bounds.Height;
-            bool clientBoundsMatch = GetClientRect(window, out NativeRect client) &&
-                client.Right - client.Left == bounds.Width && client.Bottom - client.Top == bounds.Height;
-            if (!frameStyleChanged && windowBoundsMatch && clientBoundsMatch)
+            if (_disposed || !_previewPageActive || window != _embeddedWindow ||
+                objectId != ObjIdWindow || childId != ChildIdSelf)
                 return;
 
-            // ETS can report a custom title bar as draggable even after the native caption is removed.
-            // Immediately restore the viewport bounds so mouse drags cannot move the embedded window.
-            uint flags = SwpNoActivate | SwpNoZOrder;
-            if (wasVisible) flags |= SwpShowWindow;
-            if (frameStyleChanged || !clientBoundsMatch) flags |= SwpFrameChanged;
-            if (SetWindowPos(window, 0, bounds.X, bounds.Y, bounds.Width, bounds.Height, flags))
+            // Keep the WinEvent callback side-effect free. ETS can raise location events while it is
+            // processing its own window messages; changing its styles or position inline can re-enter
+            // that code. Coalesce the correction and run it on the assistant UI queue after the event.
+            if (Interlocked.Exchange(ref _locationCorrectionQueued, 1) != 0) return;
+
+            DispatcherQueue? dispatcher = MainWindow.Current?.DispatcherQueue;
+            if (dispatcher?.TryEnqueue(() =>
             {
-                ApplyPreviewCornerMask(window, bounds.Width, bounds.Height);
-                if (!wasVisible) FadeInPreviewWindow(window);
+                try
+                {
+                    if (_disposed || !_previewPageActive || !IsEmbeddedWindowAlive) return;
+                    FrameworkElement? viewport = _previewViewport;
+                    if (viewport is not null) UpdateBounds(viewport);
+                }
+                catch (Exception ex)
+                {
+                    // The ETS window or preview viewport can disappear while this correction is queued.
+                    Debug.WriteLine($"ETS preview location correction was skipped: {ex}");
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref _locationCorrectionQueued, 0);
+                }
+            }) != true)
+            {
+                Interlocked.Exchange(ref _locationCorrectionQueued, 0);
             }
         }
-        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or COMException or Win32Exception)
+        catch (Exception ex)
         {
-            // Ignore location events racing with ETS shutdown.
+            // Never let a transient native/window teardown error escape a WinEvent callback.
+            Debug.WriteLine($"ETS preview location event was skipped: {ex}");
+            Interlocked.Exchange(ref _locationCorrectionQueued, 0);
         }
     }
 
@@ -539,7 +593,9 @@ public sealed class EtsWindowPreviewService : IDisposable
         catch (Exception ex) when (ex is COMException or ArgumentException)
         {
             // Best effort restoration when ETS is concurrently closing.
+            DiagnosticLogService.Warn("ets_preview.window.restore_incomplete", ex.Message);
         }
+        DiagnosticLogService.Info("ets_preview.window.restored");
     }
 
     private static nint FindEtsWindow(string etsExe)

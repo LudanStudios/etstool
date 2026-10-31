@@ -160,7 +160,7 @@ public static class PdfAnalysisDocumentService
             {
                 if (args.Key == Windows.System.VirtualKey.Escape) dialog.Hide();
             };
-            await dialog.ShowAsync();
+            await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog);
         }
         finally { PreviewGate.Release(); }
     }

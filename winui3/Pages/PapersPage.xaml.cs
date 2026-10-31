@@ -127,7 +127,7 @@ public sealed partial class PapersPage : Page
             DefaultButton = ContentDialogButton.None,
             XamlRoot = XamlRoot
         };
-        if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+        if (await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(confirm) != ContentDialogResult.Primary) return;
 
         string targetPath;
         try
@@ -194,7 +194,7 @@ public sealed partial class PapersPage : Page
                 DefaultButton = ContentDialogButton.Primary,
                 XamlRoot = XamlRoot
             };
-            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+            if (await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
 
             var package = new DataPackage { RequestedOperation = DataPackageOperation.Copy };
             package.SetText(text);
@@ -229,7 +229,7 @@ public sealed partial class PapersPage : Page
                 confirm.Foreground = new SolidColorBrush(Color.FromArgb(255, 255, 255, 255));
             }
         };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
         await DeletePaperAsync(paper);
     }
 

@@ -18,6 +18,17 @@ public static class InfoBarPresenter
 
     public static void Show(InfoBar infoBar, string title, string message, InfoBarSeverity severity)
     {
+        string eventName = severity switch
+        {
+            InfoBarSeverity.Error => "ui.operation.failed",
+            InfoBarSeverity.Warning => "ui.operation.warning",
+            _ => "ui.operation.completed"
+        };
+        string detail = $"title=\"{title}\" message=\"{message}\"";
+        if (severity == InfoBarSeverity.Error) DiagnosticLogService.Error(eventName, detail);
+        else if (severity == InfoBarSeverity.Warning) DiagnosticLogService.Warn(eventName, detail);
+        else DiagnosticLogService.Info(eventName, detail);
+
         PendingUpdate pending = PendingUpdates.GetValue(infoBar, static _ => new PendingUpdate());
         long version = Interlocked.Increment(ref pending.Version);
 

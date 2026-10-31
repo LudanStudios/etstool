@@ -24,7 +24,7 @@ public sealed partial class GuidePage : Page
             {
                 Title = "无法打开说明", Content = ex.Message, CloseButtonText = "知道了", XamlRoot = XamlRoot
             };
-            await dialog.ShowAsync();
+            await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog);
         }
     }
 }

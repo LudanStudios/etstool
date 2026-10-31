@@ -71,7 +71,7 @@ public sealed partial class PreferencesPage : Page
                     DefaultButton = ContentDialogButton.Primary,
                     XamlRoot = XamlRoot
                 };
-                if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+                if (await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog) == ContentDialogResult.Primary)
                     Process.Start(new ProcessStartInfo(result.Url) { UseShellExecute = true });
                 InfoBarPresenter.Show(UpdateInfoBar, "发现更新", result.Message, InfoBarSeverity.Informational);
             }
@@ -98,7 +98,7 @@ public sealed partial class PreferencesPage : Page
         if (!internalTestMode) return;
 
         Version? version = typeof(PreferencesPage).Assembly.GetName().Version;
-        string versionText = version is null ? "1.2.2" : $"{version.Major}.{version.Minor}.{version.Build}";
+        string versionText = version is null ? "1.2.3" : $"{version.Major}.{version.Minor}.{version.Build}";
         string format = LocalizationService.Current.Translate("当前版本：{0} 内部测试版本，无法配置更新。");
         InternalTestNoUpdatesText.Text = string.Format(format, versionText);
     }
