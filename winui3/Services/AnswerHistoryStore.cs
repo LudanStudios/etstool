@@ -30,9 +30,14 @@ public sealed record AnswerRecord
     [JsonPropertyName("verified")] public bool Verified { get; init; }
     [JsonPropertyName("source")] public string Source { get; init; } = "";
     [JsonIgnore] public bool Matches => SelectedAnswer == CorrectAnswer;
-    [JsonIgnore] public string Title => string.IsNullOrWhiteSpace(Prompt) ? $"题目 {QuestionId}" : Prompt;
-    [JsonIgnore] public string LocationText => $"试卷 {PackId} · {QuestionType} · {Timestamp.ToLocalTime():MM-dd HH:mm}";
-    [JsonIgnore] public string AnswerSummary => $"已选 {SelectedAnswer} · 本地答案 {CorrectAnswer} · {(Matches ? "一致" : "待复习")}";
+    [JsonIgnore] public string Title => string.IsNullOrWhiteSpace(Prompt)
+        ? LocalizationService.Current.Format("history.question_title", ("questionId", QuestionId)) : Prompt;
+    [JsonIgnore] public string TypeDisplay => AnswerHistoryStore.DisplayQuestionType(QuestionType);
+    [JsonIgnore] public string LocationText => LocalizationService.Current.Format("history.location_text",
+        ("paperId", PackId), ("type", TypeDisplay), ("time", Timestamp.ToLocalTime().ToString("MM-dd HH:mm")));
+    [JsonIgnore] public string AnswerSummary => LocalizationService.Current.Format("history.answer_summary",
+        ("selected", SelectedAnswer), ("correct", CorrectAnswer),
+        ("match", LocalizationService.Current.Translate(Matches ? "history.matched" : "history.review")));
     [JsonIgnore] public string OptionsText => string.Join(Environment.NewLine, (Options ?? new()).Select(o => $"{o.Letter}. {o.Text}"));
 }
 
@@ -40,7 +45,8 @@ public sealed record HistorySnapshot(IReadOnlyList<AnswerRecord> Records, int Sk
 public sealed record AnalysisBucket(string Label, int Total, int Matched)
 {
     public double Rate => Total == 0 ? 0 : Matched * 100.0 / Total;
-    public string Description => Total == 0 ? "暂无记录" : $"{Total} 题 · {Rate:0.#}% 一致";
+    public string Description => Total == 0 ? LocalizationService.Current.Translate("history.no_records") :
+        LocalizationService.Current.Format("history.description", ("total", Total), ("rate", Rate.ToString("0.#", CultureInfo.CurrentCulture)));
 }
 
 public sealed class AnswerHistoryStore
@@ -86,7 +92,7 @@ public sealed class AnswerHistoryStore
     }
 
     public static IReadOnlyList<AnalysisBucket> ByType(IEnumerable<AnswerRecord> records) => records
-        .GroupBy(r => string.IsNullOrWhiteSpace(r.QuestionType) ? "选择题" : r.QuestionType)
+        .GroupBy(r => DisplayQuestionType(r.QuestionType))
         .Select(g => new AnalysisBucket(g.Key, g.Count(), g.Count(r => r.Matches)))
         .OrderByDescending(g => g.Total).ToList();
 
@@ -105,17 +111,30 @@ public sealed class AnswerHistoryStore
     public static string ExportCsv(IEnumerable<AnswerRecord> records, IReadOnlyDictionary<string, string>? labels = null)
     {
         var csv = new StringBuilder();
-        csv.AppendLine("时间,答题批次,试卷编号,试卷名称,题目编号,题型,题目,已选答案,本地答案,是否一致,题目材料,选项,本地解析");
+        csv.AppendLine(L("history.csv_header"));
         foreach (var row in records.OrderBy(r => r.Timestamp))
         {
-            string title = labels is not null && labels.TryGetValue(row.PackId, out string? label) ? label : $"试卷 {row.PackId}";
+            string title = labels is not null && labels.TryGetValue(row.PackId, out string? label) ? label :
+                F("dynamic.paper_title", ("paperId", row.PackId));
             string[] values = { row.Timestamp.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
-                row.SessionId, row.PackId, title, row.QuestionId, row.QuestionType, row.Title,
-                row.SelectedAnswer, row.CorrectAnswer, row.Matches ? "是" : "否", row.Passage, row.OptionsText, row.Explanation };
+                row.SessionId, row.PackId, title, row.QuestionId, row.TypeDisplay, row.Title,
+                row.SelectedAnswer, row.CorrectAnswer, L(row.Matches ? "history.yes" : "history.no"), row.Passage, row.OptionsText, row.Explanation };
             csv.AppendLine(string.Join(",", values.Select(CsvCell)));
         }
         return csv.ToString();
     }
+
+    internal static string DisplayQuestionType(string? type) => type switch
+    {
+        "听力选择" => L("history.listening_choice"),
+        "阅读选择" => L("history.reading_choice"),
+        "选择题" or null or "" => L("history.choice"),
+        _ => type
+    };
+
+    private static string L(string key) => LocalizationService.Current.Translate(key);
+    private static string F(string key, params (string Name, object? Value)[] values) =>
+        LocalizationService.Current.Format(key, values);
 
     private static string CsvCell(string? value)
     {

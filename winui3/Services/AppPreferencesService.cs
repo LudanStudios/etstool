@@ -47,7 +47,10 @@ public sealed class AppPreferencesService
 
     public void SetLanguage(string language)
     {
-        language = language == "en-US" ? "en-US" : "zh-CN";
+        LocalizationLanguage? locale = LocalizationService.GetAvailableLanguages()
+            .FirstOrDefault(item => item.Code.Equals(language, StringComparison.OrdinalIgnoreCase));
+        if (locale is null) return;
+        language = locale.Code;
         if (language == Language) return;
         Language = language;
         Save();
@@ -146,7 +149,12 @@ public sealed class AppPreferencesService
                 Theme = theme.GetString() is "Light" or "Dark" ? theme.GetString()! : "System";
             if (document.RootElement.TryGetProperty("language", out JsonElement language) &&
                 language.ValueKind == JsonValueKind.String)
-                Language = language.GetString() == "en-US" ? "en-US" : "zh-CN";
+            {
+                string? savedLanguage = language.GetString();
+                LocalizationLanguage? locale = LocalizationService.GetAvailableLanguages()
+                    .FirstOrDefault(item => item.Code.Equals(savedLanguage, StringComparison.OrdinalIgnoreCase));
+                if (locale is not null) Language = locale.Code;
+            }
             if (document.RootElement.TryGetProperty("speaking_mode", out JsonElement speakingMode) &&
                 speakingMode.ValueKind == JsonValueKind.String)
                 SpeakingMode = speakingMode.GetString() == "flexible" ? "flexible" : "standard";

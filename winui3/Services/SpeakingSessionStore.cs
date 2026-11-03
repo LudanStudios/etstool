@@ -5,12 +5,18 @@ namespace ETSAssistant.WinUI3.Services;
 
 public sealed record SpeakingSessionItem(int Number, string Type, string Prompt, string Answer, string WavPath)
 {
-    [JsonIgnore] public string Display => $"{Number}. [{Type}] {Prompt}";
+    [JsonIgnore] public string Display => LocalizationService.Current.Format("speaking.question_display",
+        ("number", Number), ("kind", LocalizationService.Current.Translate(Type)), ("prompt", Prompt));
     [JsonIgnore] public string WavName => Path.GetFileName(WavPath);
 }
 
 public sealed record SpeakingSession(string PackId, string Mode, DateTimeOffset CreatedAt,
-    IReadOnlyList<SpeakingSessionItem> Items);
+    IReadOnlyList<SpeakingSessionItem> Items)
+{
+    // Increment when generated speaking-answer instructions change so flexible
+    // mode does not silently reuse audio prepared under stale prompt rules.
+    public int PromptVersion { get; init; }
+}
 
 /// <summary>
 /// Persists the pre-generated TTS list for a whole speaking paper. The file

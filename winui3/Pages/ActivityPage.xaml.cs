@@ -42,7 +42,7 @@ public sealed partial class ActivityPage : Page
         RunningItems.ItemsSource = running;
         CompletedItems.ItemsSource = completed;
         EmptyText.Visibility = running.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-        string runningText = LocalizationService.Current.Translate("正在进行");
+        string runningText = LocalizationService.Current.Translate("activity.progress");
         RunningHeader.Text = running.Length == 0 ? runningText : $"{runningText} ({running.Length})";
         CompletedHeader.Visibility = completed.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         CompletedItems.Visibility = completed.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
@@ -54,7 +54,7 @@ public sealed partial class ActivityPage : Page
             string.IsNullOrWhiteSpace(activity.OutputPath))
             return;
         try { await PdfAnalysisDocumentService.ShowPreviewAsync(XamlRoot, activity.OutputPath, activity.Title); }
-        catch (Exception ex) { ShowError("无法预览 PDF", ex.Message); }
+        catch (Exception ex) { ShowError(LocalizationService.Current.Translate("activity.cannot_preview_pdf"), ex.Message); }
     }
 
     private void OpenPdf_Click(object sender, RoutedEventArgs e)
@@ -63,7 +63,7 @@ public sealed partial class ActivityPage : Page
             string.IsNullOrWhiteSpace(activity.OutputPath))
             return;
         try { PdfAnalysisDocumentService.OpenWithDefaultProgram(activity.OutputPath); }
-        catch (Exception ex) { ShowError("无法打开 PDF", ex.Message); }
+        catch (Exception ex) { ShowError(LocalizationService.Current.Translate("activity.cannot_open_pdf"), ex.Message); }
     }
 
     private void ShowError(string title, string message) =>

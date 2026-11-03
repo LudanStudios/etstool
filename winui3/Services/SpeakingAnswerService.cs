@@ -6,7 +6,8 @@ namespace ETSAssistant.WinUI3.Services;
 
 public sealed record SpeakingQuestion(int Number, string Type, string Prompt, string StandardAnswer, string SourceText)
 {
-    public string Display => $"{Number}. [{Type}] {Prompt}";
+    public string Display => LocalizationService.Current.Format("speaking.question_display",
+        ("number", Number), ("kind", LocalizationService.Current.Translate(Type)), ("prompt", Prompt));
 
     /// <summary>
     /// Text actually sent to the model. For read-aloud tasks the sentence or
@@ -15,16 +16,17 @@ public sealed record SpeakingQuestion(int Number, string Type, string Prompt, st
     /// </summary>
     public string RequestText => Type switch
     {
-        "朗读" => SourceText.Length > 0 ? $"{Prompt}:\n{SourceText}" : Prompt,
-        "看图说话" => SourceText.Length > 0 ? $"{Prompt}\n\nKey points:\n{SourceText}" : Prompt,
-        "口语问答" => SourceText.Length > 0 ? $"{Prompt}\n\nSource passage:\n{SourceText}" : Prompt,
+        "speaking.kind_read_aloud" => SourceText.Length > 0 ? $"{Prompt}:\n{SourceText}" : Prompt,
+        "speaking.kind_picture_description" => SourceText.Length > 0 ? $"{Prompt}\n\nKey points:\n{SourceText}" : Prompt,
+        "speaking.kind_question_answer" => SourceText.Length > 0 ? $"{Prompt}\n\nSource passage:\n{SourceText}" : Prompt,
         _ => Prompt
     };
 }
 
 public sealed record SpeakingPaper(string PackId, string Title, IReadOnlyList<SpeakingQuestion> Questions)
 {
-    public string Display => $"{Title} · {Questions.Count} 道口语题";
+    public string Display => LocalizationService.Current.Format("speaking.paper_display",
+        ("title", Title), ("count", Questions.Count));
 }
 
 /// <summary>
@@ -52,7 +54,8 @@ public sealed class SpeakingAnswerService
                 if (!Regex.IsMatch(id, @"\A[0-9]+\z")) continue;
                 IReadOnlyList<SpeakingQuestion> questions = Load(id);
                 if (questions.Count == 0) continue;
-                papers.Add(new SpeakingPaper(id, labels.GetValueOrDefault(id, $"试卷 {id}"), questions));
+                papers.Add(new SpeakingPaper(id, labels.GetValueOrDefault(id,
+                    LocalizationService.Current.Format("dynamic.paper_title", ("paperId", id))), questions));
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -128,7 +131,7 @@ public sealed class SpeakingAnswerService
                     {
                         string text = Clean(Text(info, "value"));
                         if (text.Length == 0) break;
-                        result.Add(new SpeakingQuestion(++number, "朗读", "Read the sentence aloud", text, text));
+                        result.Add(new SpeakingQuestion(++number, "speaking.kind_read_aloud", "Read the sentence aloud", text, text));
                         break;
                     }
                     case "collector.read":
@@ -137,16 +140,16 @@ public sealed class SpeakingAnswerService
                         string answer = Clean(Text(info, "ai"));
                         if (answer.Length == 0) answer = text;
                         if (text.Length == 0 && answer.Length == 0) break;
-                        result.Add(new SpeakingQuestion(++number, "朗读", "Read the passage aloud", answer, text));
+                        result.Add(new SpeakingQuestion(++number, "speaking.kind_read_aloud", "Read the passage aloud", answer, text));
                         break;
                     }
                     case "collector.picture":
                     {
                         string prompt = Clean(Text(info, "topic"));
-                        if (prompt.Length == 0) prompt = "Describe the picture";
+                        if (prompt.Length == 0) prompt = LocalizationService.Current.Translate("speaking.default_picture_prompt");
                         string answer = FirstStandard(info);
                         if (answer.Length == 0) break;
-                        result.Add(new SpeakingQuestion(++number, "看图说话", prompt, answer, Clean(Text(info, "keypoint"))));
+                        result.Add(new SpeakingQuestion(++number, "speaking.kind_picture_description", prompt, answer, Clean(Text(info, "keypoint"))));
                         break;
                     }
                     case "collector.dialogue":
@@ -160,7 +163,7 @@ public sealed class SpeakingAnswerService
                             string prompt = Clean(Text(question, "ask"));
                             string answer = FirstStandard(question);
                             if (prompt.Length == 0 && answer.Length == 0) continue;
-                            result.Add(new SpeakingQuestion(++number, "口语问答", prompt, answer, source));
+                            result.Add(new SpeakingQuestion(++number, "speaking.kind_question_answer", prompt, answer, source));
                         }
                         break;
                     }

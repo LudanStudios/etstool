@@ -7,50 +7,50 @@
             <Grid ColumnDefinitions="28,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="5">
                 <SymbolIcon Symbol="Setting" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
                             Width="28" Height="28" VerticalAlignment="Center" />
-                <TextBlock Grid.Column="1" Text="答题设置" FontSize="30" FontWeight="SemiBold" />
-                <TextBlock Grid.Row="1" Grid.Column="1" Text="调整答题行为、监听器和口语流程。" FontSize="15" Opacity="0.72" />
+                <TextBlock Grid.Column="1" Text="common.answer_settings" FontSize="30" FontWeight="SemiBold" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="settings.configure_answer_behavior_listener_speaking" FontSize="15" Opacity="0.72" />
             </Grid>
             <Border Padding="24" CornerRadius="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                 <StackPanel Spacing="18">
                     <StackPanel Spacing="4">
                         <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Text="目标正确率" FontSize="16" FontWeight="SemiBold" />
+                            <TextBlock Text="settings.target_accuracy" FontSize="16" FontWeight="SemiBold" />
                             <TextBlock x:Name="AccuracyText" Grid.Column="1" Text="100%" FontSize="16"
                                        FontWeight="SemiBold" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
                         </Grid>
-                        <TextBlock Text="每题按此概率选择试卷包中的正确答案。" Opacity="0.7" />
+                        <TextBlock Text="settings.assistant_selects_correct_answer_this" Opacity="0.7" />
                         <Slider x:Name="AccuracySlider" Minimum="0" Maximum="1" StepFrequency="0.01"
                                 ValueChanged="AccuracySlider_ValueChanged" />
                     </StackPanel>
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="18">
                         <StackPanel Spacing="7">
-                            <TextBlock Text="跳题间隔（秒）" FontWeight="SemiBold" />
+                            <TextBlock Text="settings.skip_interval_seconds" FontWeight="SemiBold" />
                             <NumberBox x:Name="SkipBox" Minimum="0" Maximum="60" SmallChange="0.5"
                                        SpinButtonPlacementMode="Inline" Value="0" />
-                            <TextBlock Text="设置“下一步/跳过”按钮重试的最短间隔。" FontSize="12" Opacity="0.68" />
+                            <TextBlock Text="settings.set_minimum_retry_interval_next" FontSize="12" Opacity="0.68" />
                         </StackPanel>
                         <StackPanel Grid.Column="1" Spacing="7">
-                            <TextBlock Text="口语模式" FontWeight="SemiBold" />
+                            <TextBlock Text="settings.speaking_mode" FontWeight="SemiBold" />
                             <ComboBox x:Name="SpeakingModeBox" HorizontalAlignment="Stretch"
                                       SelectionChanged="SpeakingModeBox_SelectionChanged">
-                                <ComboBoxItem Content="标答模式（提取试卷推荐答案，供 TTS 使用）" Tag="standard" />
-                                <ComboBoxItem Content="生成模式（使用 DeepSeek 生成回答）" Tag="flexible" />
+                                <ComboBoxItem Content="settings.answer_key_mode_use_paper" Tag="standard" />
+                                <ComboBoxItem Content="settings.generated_mode_use_deepseek_generate" Tag="flexible" />
                             </ComboBox>
-                            <TextBlock Text="生成模式需要填写个人 DeepSeek API Key。"
+                            <TextBlock Text="settings.generated_mode_requires_personal_deepseek"
                                        FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                         </StackPanel>
                     </Grid>
                     <Rectangle Height="1" Fill="{ThemeResource CardStrokeColorDefaultBrush}" />
                     <StackPanel Spacing="3">
-                        <CheckBox x:Name="AutostartCheck" Content="登录 Windows 时在后台启动监听器" />
-                        <TextBlock Text="开启后会等待 ETS 启动；ETS 打开时自动显示助手窗口。" FontSize="12" Opacity="0.68" />
+                        <CheckBox x:Name="AutostartCheck" Content="settings.start_listener_background_when_sign" />
+                        <TextBlock Text="settings.wait_ets_start_show_assistant" FontSize="12" Opacity="0.68" />
                     </StackPanel>
                     <StackPanel Spacing="3">
                         <CheckBox x:Name="EtsProgramIntegrationCheck" IsChecked="False"
                                   Click="EtsProgramIntegration_Click">
                             <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                <TextBlock Text="集成 ETS 主程序" FontSize="14" FontWeight="SemiBold"
+                                <TextBlock Text="settings.integrate_ets_main_app" FontSize="14" FontWeight="SemiBold"
                                            VerticalAlignment="Center" />
                                 <Border Style="{StaticResource BetaBadgeStyle}">
                                     <TextBlock Text="BETA" FontSize="10" FontWeight="SemiBold"
@@ -59,13 +59,13 @@
                                 </Border>
                             </StackPanel>
                         </CheckBox>
-                        <TextBlock Text="开启后显示“程序预览”标签，并将 ETS 主窗口嵌入助手；关闭后恢复独立窗口。"
+                        <TextBlock Text="settings.show_program_preview_embed_ets"
                                    FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                     </StackPanel>
                     <InfoBar x:Name="SaveInfoBar" IsOpen="False" />
                     <Button Click="Save_Click" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Left">
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                            <SymbolIcon Symbol="Save" /><TextBlock Text="保存设置" />
+                            <SymbolIcon Symbol="Save" /><TextBlock Text="settings.save_settings" />
                         </StackPanel>
                     </Button>
                 </StackPanel>
@@ -75,27 +75,27 @@
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                 <StackPanel Spacing="14">
                     <StackPanel Spacing="5">
-                        <TextBlock Text="VB-CABLE 虚拟声卡" FontSize="17" FontWeight="SemiBold" />
-                        <TextBlock x:Name="CableStatusText" Text="正在检测虚拟声卡…" FontSize="12" Opacity="0.72"
+                        <TextBlock Text="settings.vb_cable_virtual_audio_device" FontSize="17" FontWeight="SemiBold" />
+                        <TextBlock x:Name="CableStatusText" Text="settings.checking_virtual_audio_device" FontSize="12" Opacity="0.72"
                                    TextWrapping="Wrap" />
-                        <TextBlock Text="在这里管理驱动。安装和卸载需要管理员权限；卸载完成后 Windows 通常需要重启。卸载驱动不会卸载 ETS Assistant。"
+                        <TextBlock Text="settings.manage_driver_here_installing_uninstalling"
                                    FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <Button x:Name="InstallVirtualCableButton" Click="InstallVirtualCable_Click"
                                 Style="{StaticResource AccentButtonStyle}">
                             <StackPanel Orientation="Horizontal" Spacing="7">
-                                <SymbolIcon Symbol="Download" /><TextBlock Text="安装驱动" />
+                                <SymbolIcon Symbol="Download" /><TextBlock Text="settings.install_driver" />
                             </StackPanel>
                         </Button>
                         <Button x:Name="UninstallVirtualCableButton" Click="UninstallVirtualCable_Click">
                             <StackPanel Orientation="Horizontal" Spacing="7">
-                                <SymbolIcon Symbol="Delete" /><TextBlock Text="卸载驱动" />
+                                <SymbolIcon Symbol="Delete" /><TextBlock Text="settings.uninstall_driver" />
                             </StackPanel>
                         </Button>
                         <Button x:Name="RefreshVirtualCableButton" Click="RefreshVirtualCable_Click">
                             <StackPanel Orientation="Horizontal" Spacing="7">
-                                <SymbolIcon Symbol="Refresh" /><TextBlock Text="刷新状态" />
+                                <SymbolIcon Symbol="Refresh" /><TextBlock Text="common.refresh_status" />
                             </StackPanel>
                         </Button>
                     </StackPanel>
@@ -107,23 +107,23 @@
                           MinHeight="88" CornerRadius="16" Padding="24">
                     <Expander.Header>
                         <StackPanel Spacing="5" Margin="8,0,0,0" HorizontalAlignment="Stretch">
-                            <TextBlock Text="服务凭据（按需填写）" FontSize="17" FontWeight="SemiBold"
+                            <TextBlock Text="settings.service_credentials_needed" FontSize="17" FontWeight="SemiBold"
                                        HorizontalAlignment="Left" />
-                            <TextBlock Text="个人凭据保存在本机。DeepSeek 功能需要 API Key，TTS 语音合成需要阿里云 RAM 凭据与 AppID。"
+                            <TextBlock Text="settings.personal_credentials_stored_locally_deepseek"
                                        FontSize="12" Opacity="0.68" TextWrapping="Wrap" HorizontalAlignment="Left" />
                         </StackPanel>
                     </Expander.Header>
-                    <StackPanel Spacing="20" HorizontalAlignment="Stretch">
+                    <StackPanel Spacing="20" HorizontalAlignment="Stretch" Loaded="CredentialsContent_Loaded">
                     <Border Padding="24" CornerRadius="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                             BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1"
                             HorizontalAlignment="Stretch">
                         <StackPanel Spacing="12" HorizontalAlignment="Stretch">
-                            <TextBlock Text="ETS 安装目录" FontWeight="SemiBold" HorizontalAlignment="Left" />
+                            <TextBlock Text="settings.ets_installation_folder" FontWeight="SemiBold" HorizontalAlignment="Left" />
                             <TextBlock x:Name="EtsPathText" TextWrapping="Wrap" Opacity="0.72"
                                        HorizontalAlignment="Left" />
                             <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Left">
-                                <Button Click="ChooseEtsFolder_Click"><StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE8B7;" FontSize="16"/><TextBlock Text="选择安装目录"/></StackPanel></Button>
-                                <Button Click="Rescan_Click"><StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE72C;" FontSize="16"/><TextBlock Text="重新扫描"/></StackPanel></Button>
+                                <Button Click="ChooseEtsFolder_Click"><StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE8B7;" FontSize="16"/><TextBlock Text="settings.choose_installation_folder"/></StackPanel></Button>
+                                <Button Click="Rescan_Click"><StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE72C;" FontSize="16"/><TextBlock Text="settings.rescan"/></StackPanel></Button>
                             </StackPanel>
                         </StackPanel>
                     </Border>
@@ -132,14 +132,14 @@
                             HorizontalAlignment="Stretch">
                         <StackPanel Spacing="14" HorizontalAlignment="Stretch">
                             <TextBlock Text="DeepSeek API Key" FontWeight="SemiBold" HorizontalAlignment="Left" />
-                            <TextBlock Text="用于口语生成和试卷解析。使用 Windows DPAPI 加密保存在本机。"
+                            <TextBlock Text="settings.used_speaking_generation_paper_analysis"
                                        FontSize="12" Opacity="0.68" TextWrapping="Wrap" HorizontalAlignment="Left" />
-                            <PasswordBox x:Name="ApiKeyBox" PlaceholderText="粘贴 DeepSeek API Key（sk-…）"
+                            <PasswordBox x:Name="ApiKeyBox" PlaceholderText="settings.paste_deepseek_api_key_sk"
                                          PasswordRevealMode="Peek" MinHeight="44" HorizontalAlignment="Stretch" />
                             <TextBlock x:Name="ApiKeyStatusText" FontSize="12" Opacity="0.7" HorizontalAlignment="Left" />
                             <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Left">
-                                <Button Click="SaveApiKey_Click" Style="{StaticResource AccentButtonStyle}"><StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE74E;" FontSize="16"/><TextBlock Text="保存 Key"/></StackPanel></Button>
-                                <Button Click="ClearApiKey_Click"><StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE74D;" FontSize="16"/><TextBlock Text="清除 Key"/></StackPanel></Button>
+                                <Button Click="SaveApiKey_Click" Style="{StaticResource AccentButtonStyle}"><StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE74E;" FontSize="16"/><TextBlock Text="settings.save_key"/></StackPanel></Button>
+                                <Button Click="ClearApiKey_Click"><StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE74D;" FontSize="16"/><TextBlock Text="settings.clear_key"/></StackPanel></Button>
                             </StackPanel>
                             <InfoBar x:Name="ApiKeyInfoBar" IsOpen="False" />
                         </StackPanel>
@@ -148,8 +148,8 @@
                             BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1"
                             HorizontalAlignment="Stretch">
                         <StackPanel Spacing="14" HorizontalAlignment="Stretch">
-                            <TextBlock Text="阿里云 TTS（RAM 凭据）" FontWeight="SemiBold" HorizontalAlignment="Left" />
-                            <TextBlock Text="使用个人 RAM 凭据和 TTS AppID 调用阿里云语音合成；使用 Windows DPAPI 加密保存在本机。"
+                            <TextBlock Text="settings.alibaba_cloud_tts_ram_credentials" FontWeight="SemiBold" HorizontalAlignment="Left" />
+                            <TextBlock Text="settings.use_personal_ram_credentials_tts"
                                        FontSize="12" Opacity="0.68" TextWrapping="Wrap" HorizontalAlignment="Left" />
                             <TextBox x:Name="AliyunRamNameBox" Header="RAM Name / AccessKey ID" MinHeight="44" HorizontalAlignment="Stretch" />
                             <PasswordBox x:Name="AliyunRamKeyBox" Header="RAM Key / AccessKey Secret"
@@ -158,8 +158,8 @@
                                          PasswordRevealMode="Peek" MinHeight="44" HorizontalAlignment="Stretch" />
                             <TextBlock x:Name="AliyunStatusText" FontSize="12" Opacity="0.7" HorizontalAlignment="Left" />
                             <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Left">
-                                <Button Click="SaveAliyun_Click" Style="{StaticResource AccentButtonStyle}"><StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE74E;" FontSize="16"/><TextBlock Text="保存阿里云凭据"/></StackPanel></Button>
-                                <Button Click="ClearAliyun_Click"><StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE74D;" FontSize="16"/><TextBlock Text="清除阿里云凭据"/></StackPanel></Button>
+                                <Button Click="SaveAliyun_Click" Style="{StaticResource AccentButtonStyle}"><StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE74E;" FontSize="16"/><TextBlock Text="settings.save_alibaba_cloud_credentials"/></StackPanel></Button>
+                                <Button Click="ClearAliyun_Click"><StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE74D;" FontSize="16"/><TextBlock Text="settings.clear_alibaba_cloud_credentials"/></StackPanel></Button>
                             </StackPanel>
                             <InfoBar x:Name="AliyunInfoBar" IsOpen="False" />
                         </StackPanel>
@@ -168,17 +168,17 @@
                             BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1"
                             HorizontalAlignment="Stretch">
                         <StackPanel Spacing="14" HorizontalAlignment="Stretch">
-                            <TextBlock Text="CSV 批量凭据导入" FontWeight="SemiBold" HorizontalAlignment="Left" />
-                            <TextBlock Text="可一次导入 DeepSeek 和阿里云 TTS 凭据。保存时使用 Windows DPAPI 加密。"
+                            <TextBlock Text="settings.import_credentials_csv" FontWeight="SemiBold" HorizontalAlignment="Left" />
+                            <TextBlock Text="settings.import_deepseek_alibaba_cloud_tts"
                                        FontSize="12" Opacity="0.68" TextWrapping="Wrap" HorizontalAlignment="Left" />
                             <Border Background="{ThemeResource ControlFillColorDefaultBrush}" CornerRadius="8" Padding="14"
                                     HorizontalAlignment="Stretch">
                                 <TextBlock FontFamily="Consolas" FontSize="12" TextWrapping="Wrap"
                                            Text="type,api_key,access_key_id,access_key_secret,app_key&#x0a;deepseek,sk-xxxx,,,&#x0a;aliyun,,LTAIxxxx,secret,appkey" />
                             </Border>
-                            <TextBlock Text="也支持无表头格式：deepseek,sk-xxxx 或 aliyun,LTAIxxxx,secret,appkey"
+                            <TextBlock Text="settings.headerless_form_also_supported_deepseek"
                                        FontSize="12" Opacity="0.6" TextWrapping="Wrap" HorizontalAlignment="Left" />
-                            <Button Click="ImportCsv_Click" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Left"><StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE8B5;" FontSize="16"/><TextBlock Text="选择 CSV 并导入"/></StackPanel></Button>
+                            <Button Click="ImportCsv_Click" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Left"><StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE8B5;" FontSize="16"/><TextBlock Text="settings.choose_csv_import"/></StackPanel></Button>
                             <TextBlock x:Name="CsvImportStatusText" FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
                             <InfoBar x:Name="CsvImportInfoBar" IsOpen="False" />
                         </StackPanel>

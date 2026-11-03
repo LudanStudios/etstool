@@ -53,6 +53,7 @@ public static class DiagnosticLogService
 
     public static async Task<ContentDialogResult> ShowDialogAsync(ContentDialog dialog, string eventName = "ui.dialog")
     {
+        LocalizationService.Current.Apply(dialog);
         string rawTitle = dialog.Title?.ToString() ?? string.Empty;
         string title = string.IsNullOrWhiteSpace(rawTitle) ? "untitled" : Clean(rawTitle, 100);
         Info($"{eventName}.opened", $"title=\"{title}\"");

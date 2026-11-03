@@ -36,7 +36,7 @@ public sealed class PacketCaptureService
 
     public string CapturePath { get; }
     public bool IsEnabled { get; private set; }
-    public string Status { get; private set; } = "未启用";
+    public string Status { get; private set; } = "common.disabled";
     public event Action? StatusChanged;
 
     public void Enable()
@@ -44,7 +44,7 @@ public sealed class PacketCaptureService
         if (IsEnabled) return;
         IsEnabled = true;
         _cts = new CancellationTokenSource();
-        SetStatus("正在连接 10086…");
+        SetStatus("tools.capture_connecting");
         _ = Task.Run(() => RunAsync(_cts.Token));
     }
 
@@ -55,7 +55,7 @@ public sealed class PacketCaptureService
         _cts?.Cancel();
         _cts = null;
         try { _socket?.Abort(); } catch (Exception) { }
-        SetStatus("未启用");
+        SetStatus("common.disabled");
     }
 
     private async Task RunAsync(CancellationToken cancellationToken)
@@ -67,7 +67,7 @@ public sealed class PacketCaptureService
                 string? target = await FindTargetAsync(cancellationToken);
                 if (target is null)
                 {
-                    SetStatus("等待 ETS 调试端口…");
+                    SetStatus("tools.capture_waiting_for_ets");
                     await Task.Delay(2000, cancellationToken);
                     continue;
                 }
@@ -82,19 +82,19 @@ public sealed class PacketCaptureService
                     maxResourceBufferSize = 50_000_000,
                     maxPostDataSize = 1_000_000
                 }, cancellationToken);
-                SetStatus("抓包中，等待提交…");
+                SetStatus("tools.capture_waiting_for_submission");
 
                 Task monitor = MonitorAsync(cancellationToken);
                 await Task.WhenAny(receive, monitor);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
-            catch (Exception) { SetStatus("抓包连接中断，正在重试…"); }
+            catch (Exception) { SetStatus("tools.capture_connection_retrying"); }
 
             _socket = null;
             if (cancellationToken.IsCancellationRequested) break;
             await Task.Delay(2000, cancellationToken);
         }
-        SetStatus("未启用");
+        SetStatus("common.disabled");
     }
 
     private static async Task<string?> FindTargetAsync(CancellationToken cancellationToken)
@@ -128,14 +128,14 @@ public sealed class PacketCaptureService
             if (!submitted || !_armed) continue;
 
             _armed = false;
-            SetStatus("检测到提交，3 秒后写入抓包…");
+            SetStatus("tools.capture_submission_detected");
             await Task.Delay(3000, cancellationToken);
             int count = await DumpAsync(cancellationToken);
-            SetStatus($"已抓取 {count} 个数据包");
+            SetStatus(LocalizationService.Current.Format("tools.capture_packets_saved", ("count", count)));
             while (!cancellationToken.IsCancellationRequested && await IsSubmittedAsync(cancellationToken))
                 await Task.Delay(2000, cancellationToken);
             _armed = true;
-            SetStatus("抓包中，等待提交…");
+            SetStatus("tools.capture_waiting_for_submission");
         }
     }
 
@@ -339,7 +339,7 @@ public sealed class PacketCaptureService
 
     private async Task<JsonElement> SendCommandAsync(string method, object parameters, CancellationToken cancellationToken)
     {
-        ClientWebSocket socket = _socket ?? throw new InvalidOperationException("抓包连接尚未建立。");
+        ClientWebSocket socket = _socket ?? throw new InvalidOperationException(LocalizationService.Current.Translate("tools.capture_connection_not_established"));
         int id = Interlocked.Increment(ref _nextId);
         var completion = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pending[id] = completion;

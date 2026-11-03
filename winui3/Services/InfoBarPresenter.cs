@@ -18,6 +18,9 @@ public static class InfoBarPresenter
 
     public static void Show(InfoBar infoBar, string title, string message, InfoBarSeverity severity)
     {
+        LocalizationService localization = LocalizationService.Current;
+        string localizedTitle = localization.Translate(title);
+        string localizedMessage = localization.Translate(message);
         string eventName = severity switch
         {
             InfoBarSeverity.Error => "ui.operation.failed",
@@ -37,8 +40,8 @@ public static class InfoBarPresenter
             if (Volatile.Read(ref pending.Version) != version) return;
 
             infoBar.IsOpen = false;
-            infoBar.Title = title;
-            infoBar.Message = message;
+            infoBar.Title = localizedTitle;
+            infoBar.Message = localizedMessage;
             infoBar.Severity = severity;
             infoBar.IsOpen = true;
         }

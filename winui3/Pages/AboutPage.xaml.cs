@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using ETSAssistant.WinUI3.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -15,13 +16,13 @@ public sealed partial class AboutPage : Page
         Assembly assembly = typeof(AboutPage).Assembly;
         Version? version = assembly.GetName().Version;
         VersionText.Text = version is null
-            ? "1.2.4"
+            ? "1.2.5"
             : $"{version.Major}.{version.Minor}.{version.Build}";
 
         string location = assembly.Location;
         ReleaseText.Text = File.Exists(location)
             ? File.GetLastWriteTime(location).ToString("yyyy-MM-dd HH:mm")
-            : "未知";
+            : LocalizationService.Current.Translate("common.unknown");
     }
 
     private void OpenProject_Click(object sender, RoutedEventArgs e) =>

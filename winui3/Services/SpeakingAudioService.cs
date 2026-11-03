@@ -27,7 +27,7 @@ public sealed class SpeakingAudioService
     /// <summary>Converts any WAV to 16-bit PCM 48 kHz stereo, the format Chromium's fake capture expects.</summary>
     public async Task<string> PrepareAsync(string sourceWav)
     {
-        if (!File.Exists(sourceWav)) throw new FileNotFoundException("找不到 WAV 文件。", sourceWav);
+        if (!File.Exists(sourceWav)) throw new FileNotFoundException(LocalizationService.Current.Translate("speaking_audio.source_wav_missing"), sourceWav);
         Directory.CreateDirectory(Path.GetDirectoryName(InputPath)!);
         string temporary = InputPath + ".tmp.wav";
         try
@@ -47,11 +47,12 @@ public sealed class SpeakingAudioService
                     start.ArgumentList.Add(argument);
 
                 using Process process = Process.Start(start)
-                    ?? throw new InvalidOperationException("无法启动 ffmpeg。");
+                    ?? throw new InvalidOperationException(LocalizationService.Current.Translate("speaking_audio.ffmpeg_start_failed"));
                 Task<string> error = process.StandardError.ReadToEndAsync();
                 await process.WaitForExitAsync();
                 if (process.ExitCode != 0)
-                    throw new InvalidOperationException("WAV 转换失败：" + Shorten(await error));
+                    throw new InvalidOperationException(LocalizationService.Current.Format("speaking_audio.wav_conversion_failed",
+                        ("detail", Shorten(await error))));
             }
             else
             {

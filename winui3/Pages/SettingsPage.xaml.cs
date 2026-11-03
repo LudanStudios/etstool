@@ -16,11 +16,20 @@ public sealed partial class SettingsPage : Page
     private bool _loading;
     private bool _virtualCableBusy;
     private bool _csvPickerActive;
+    private static string T(string key) => LocalizationService.Current.Translate(key);
+    private static string F(string key, params (string Name, object? Value)[] values) =>
+        LocalizationService.Current.Format(key, values);
 
     public SettingsPage()
     {
         InitializeComponent();
         LoadValues();
+    }
+
+    private void CredentialsContent_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is DependencyObject content)
+            LocalizationService.Current.Apply(content);
     }
 
     private void LoadValues()
@@ -30,7 +39,7 @@ public sealed partial class SettingsPage : Page
         AccuracyText.Text = $"{Math.Round(settings.Accuracy * 100):0}%";
         SkipBox.Value = settings.SkipInterval;
         AutostartCheck.IsChecked = settings.StartAtLogin;
-        EtsPathText.Text = _service.EtsExe ?? "未找到 ETS 安装目录。";
+        EtsPathText.Text = _service.EtsExe ?? T("settings.ets_path_not_found");
         _loading = true;
         SpeakingModeBox.SelectedIndex = AppPreferencesService.Current.SpeakingMode == "flexible" ? 1 : 0;
         EtsProgramIntegrationCheck.IsChecked = AppPreferencesService.Current.IntegrateEtsMainProgramEnabled;
@@ -49,14 +58,14 @@ public sealed partial class SettingsPage : Page
             var cable = new VirtualCableService();
             await cable.RefreshAsync();
             CableStatusText.Text = cable.IsReady
-                ? $"状态：已就绪（{cable.Current!.Name} → {cable.Capture!.Name}）"
+                ? F("settings.cable_ready", ("input", cable.Current!.Name), ("output", cable.Capture!.Name))
                 : cable.IsAvailable
-                    ? $"状态：已检测到播放端 {cable.Current!.Name}，但没有检测到 CABLE Output。"
-                    : "状态：未检测到 VB-CABLE 虚拟声卡。";
+                    ? F("settings.cable_capture_missing", ("input", cable.Current!.Name))
+                    : T("settings.cable_not_detected");
         }
         catch (Exception ex)
         {
-            CableStatusText.Text = "状态检测失败：" + ex.Message;
+            CableStatusText.Text = F("settings.cable_check_failed", ("detail", ex.Message));
         }
     }
 
@@ -81,34 +90,32 @@ public sealed partial class SettingsPage : Page
         {
             if (!VirtualCableSetupService.HasInstaller(_service.AppRoot))
             {
-                InfoBarPresenter.Show(CableInfoBar, "找不到 VB-CABLE 驱动包",
-                    $"请检查应用目录中的文件：{VirtualCableSetupService.PackagePath(_service.AppRoot)}",
+                InfoBarPresenter.Show(CableInfoBar, T("settings.driver_package_not_found"),
+                    F("settings.check_app_file", ("path", VirtualCableSetupService.PackagePath(_service.AppRoot))),
                     InfoBarSeverity.Error);
                 return;
             }
 
-            string action = uninstall ? "卸载" : "安装";
+            string action = T(uninstall ? "settings.action_uninstall" : "settings.action_install");
             var dialog = new ContentDialog
             {
-                Title = uninstall ? "卸载 VB-CABLE 驱动" : "安装 VB-CABLE 驱动",
-                Content = uninstall
-                    ? "接下来会打开 VB-CABLE 官方设置程序。请在窗口中点击“Remove Driver”移除驱动。卸载完成后会询问是否立即重启。"
-                    : "接下来会打开 VB-CABLE 官方设置程序。请在窗口中点击“Install Driver”安装驱动，并允许管理员权限。安装完成后建议重启电脑。",
-                PrimaryButtonText = uninstall ? "打开卸载程序" : "打开安装程序",
-                CloseButtonText = "取消",
+                Title = T(uninstall ? "settings.uninstall_driver_title" : "settings.install_driver_title"),
+                Content = T(uninstall ? "settings.uninstall_driver_instructions" : "settings.install_driver_instructions"),
+                PrimaryButtonText = T(uninstall ? "settings.open_uninstaller" : "settings.open_installer"),
+                CloseButtonText = T("settings.cancel"),
                 DefaultButton = ContentDialogButton.Primary,
                 XamlRoot = XamlRoot
             };
             if (await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
 
-            InfoBarPresenter.Show(CableInfoBar, $"正在{action}",
-                "官方设置程序会请求管理员权限。请在程序窗口中完成对应操作后关闭它。",
+            InfoBarPresenter.Show(CableInfoBar, F("settings.setup_running", ("action", action)),
+                T("settings.setup_admin_instructions"),
                 InfoBarSeverity.Informational);
             int exitCode = await VirtualCableSetupService.RunSetupAsync(_service.AppRoot);
             if (exitCode != 0)
             {
-                InfoBarPresenter.Show(CableInfoBar, $"{action}程序已退出",
-                    $"VB-CABLE 设置程序退出代码：{exitCode}。", InfoBarSeverity.Warning);
+                InfoBarPresenter.Show(CableInfoBar, F("settings.setup_exited", ("action", action)),
+                    F("settings.setup_exit_code", ("code", exitCode)), InfoBarSeverity.Warning);
                 return;
             }
 
@@ -119,19 +126,19 @@ public sealed partial class SettingsPage : Page
             }
             else
             {
-                InfoBarPresenter.Show(CableInfoBar, "VB-CABLE 设置程序已关闭",
-                    "如果已完成安装但设备尚未出现，请重启 Windows 后再刷新状态。",
+                InfoBarPresenter.Show(CableInfoBar, T("settings.setup_closed"),
+                    T("settings.restart_after_driver_change"),
                     InfoBarSeverity.Success);
             }
         }
         catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
         {
-            InfoBarPresenter.Show(CableInfoBar, "操作已取消",
-                "没有批准管理员权限，驱动没有更改。", InfoBarSeverity.Warning);
+            InfoBarPresenter.Show(CableInfoBar, T("settings.operation_cancelled"),
+                T("settings.admin_permission_not_granted"), InfoBarSeverity.Warning);
         }
         catch (Exception ex)
         {
-            InfoBarPresenter.Show(CableInfoBar, "VB-CABLE 操作失败", ex.Message, InfoBarSeverity.Error);
+            InfoBarPresenter.Show(CableInfoBar, T("settings.driver_operation_failed"), ex.Message, InfoBarSeverity.Error);
         }
         finally
         {
@@ -146,10 +153,10 @@ public sealed partial class SettingsPage : Page
     {
         var dialog = new ContentDialog
         {
-            Title = "是否立即重启？",
-            Content = "如果你刚才在 VB-CABLE 官方程序中选择了“Remove Driver”，重启 Windows 可完成驱动卸载。请先保存其他应用中的工作。",
-            PrimaryButtonText = "立即重启",
-            CloseButtonText = "稍后重启",
+            Title = T("settings.restart_question"),
+            Content = T("settings.restart_driver_removal_warning"),
+            PrimaryButtonText = T("settings.restart_now"),
+            CloseButtonText = T("settings.restart_later"),
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = XamlRoot
         };
@@ -164,7 +171,7 @@ public sealed partial class SettingsPage : Page
         }
         catch (Exception ex)
         {
-            InfoBarPresenter.Show(CableInfoBar, "无法启动重启", ex.Message, InfoBarSeverity.Error);
+            InfoBarPresenter.Show(CableInfoBar, T("settings.restart_failed"), ex.Message, InfoBarSeverity.Error);
         }
     }
 
@@ -182,20 +189,20 @@ public sealed partial class SettingsPage : Page
     }
 
     private void UpdateApiKeyStatus() =>
-        ApiKeyStatusText.Text = ApiKeyStore.HasKey ? "状态：已保存（本机加密）" : "状态：未配置";
+        ApiKeyStatusText.Text = T(ApiKeyStore.HasKey ? "settings.status_saved_encrypted_locally" : "settings.status_not_configured");
 
     private void UpdateAliyunStatus() =>
         AliyunStatusText.Text = AliyunTtsCredentialStore.HasCredentials
-            ? "状态：RAM 凭据和 TTS AppID 已保存在本机加密文件中。"
-            : "状态：未配置；语音合成需要填写个人凭据。";
+            ? T("settings.status_aliyun_saved")
+            : T("settings.status_aliyun_missing");
 
     private void SaveApiKey_Click(object sender, RoutedEventArgs e)
     {
         string key = ApiKeyBox.Password.Trim();
         if (key.Length == 0)
         {
-            InfoBarPresenter.Show(ApiKeyInfoBar, "尚未填写 API Key",
-                "请先粘贴 DeepSeek API Key，再点击保存。", InfoBarSeverity.Warning);
+            InfoBarPresenter.Show(ApiKeyInfoBar, T("settings.api_key_required_title"),
+                T("settings.api_key_required_message"), InfoBarSeverity.Warning);
             return;
         }
 
@@ -204,13 +211,13 @@ public sealed partial class SettingsPage : Page
             ApiKeyStore.Save(key);
             ApiKeyBox.Password = string.Empty;
             UpdateApiKeyStatus();
-            InfoBarPresenter.Show(ApiKeyInfoBar, "密钥已保存",
-                "已使用 Windows DPAPI 加密保存到本机，测试工具页可以直接测试口语题。",
+            InfoBarPresenter.Show(ApiKeyInfoBar, T("settings.credential_saved_title"),
+                T("settings.credential_saved_message"),
                 InfoBarSeverity.Success);
         }
         catch (Exception ex)
         {
-            InfoBarPresenter.Show(ApiKeyInfoBar, "保存失败", ex.Message, InfoBarSeverity.Error);
+            InfoBarPresenter.Show(ApiKeyInfoBar, T("settings.credential_save_failed"), ex.Message, InfoBarSeverity.Error);
         }
     }
 
@@ -219,7 +226,7 @@ public sealed partial class SettingsPage : Page
         ApiKeyStore.Clear();
         ApiKeyBox.Password = string.Empty;
         UpdateApiKeyStatus();
-        InfoBarPresenter.Show(ApiKeyInfoBar, "密钥已清除", "本机保存的 DeepSeek API Key 已删除。",
+        InfoBarPresenter.Show(ApiKeyInfoBar, T("settings.credential_cleared_title"), T("settings.deepseek_key_deleted"),
             InfoBarSeverity.Informational);
     }
 
@@ -233,11 +240,11 @@ public sealed partial class SettingsPage : Page
             AliyunRamKeyBox.Password = string.Empty;
             AliyunAppIdBox.Password = string.Empty;
             UpdateAliyunStatus();
-            InfoBarPresenter.Show(AliyunInfoBar, "阿里云凭据已保存",
-                "凭据已使用 Windows DPAPI 加密保存在本机。",
+            InfoBarPresenter.Show(AliyunInfoBar, T("settings.aliyun_credential_saved_title"),
+                T("settings.credentials_saved_encrypted"),
                 InfoBarSeverity.Success);
         }
-        catch (Exception ex) { InfoBarPresenter.Show(AliyunInfoBar, "保存失败", ex.Message, InfoBarSeverity.Error); }
+        catch (Exception ex) { InfoBarPresenter.Show(AliyunInfoBar, T("settings.credential_save_failed"), ex.Message, InfoBarSeverity.Error); }
     }
 
     private void ClearAliyun_Click(object sender, RoutedEventArgs e)
@@ -249,10 +256,10 @@ public sealed partial class SettingsPage : Page
             AliyunRamKeyBox.Password = string.Empty;
             AliyunAppIdBox.Password = string.Empty;
             UpdateAliyunStatus();
-            InfoBarPresenter.Show(AliyunInfoBar, "阿里云凭据已清除", "本机保存的阿里云 TTS 凭据已删除。",
+            InfoBarPresenter.Show(AliyunInfoBar, T("settings.aliyun_credential_cleared_title"), T("settings.aliyun_credentials_deleted"),
                 InfoBarSeverity.Informational);
         }
-        catch (Exception ex) { InfoBarPresenter.Show(AliyunInfoBar, "清除失败", ex.Message, InfoBarSeverity.Error); }
+        catch (Exception ex) { InfoBarPresenter.Show(AliyunInfoBar, T("settings.credentials_clear_failed"), ex.Message, InfoBarSeverity.Error); }
     }
 
     private async void ImportCsv_Click(object sender, RoutedEventArgs e)
@@ -261,7 +268,7 @@ public sealed partial class SettingsPage : Page
         _csvPickerActive = true;
         try
         {
-            MainWindow window = MainWindow.Current ?? throw new InvalidOperationException("窗口尚未准备好。");
+            MainWindow window = MainWindow.Current ?? throw new InvalidOperationException(T("settings.window_not_ready"));
             DiagnosticLogService.Info("settings.credentials.csv_picker.opened");
             string? csvPath = NativeCsvFilePicker.PickCsv(WindowNative.GetWindowHandle(window));
             if (csvPath is null)
@@ -276,21 +283,21 @@ public sealed partial class SettingsPage : Page
             if (!preview.HasAny)
             {
                 string errors = string.Join(Environment.NewLine, preview.Errors.Take(5));
-                CsvImportStatusText.Text = "未导入任何凭据。";
-                InfoBarPresenter.Show(CsvImportInfoBar, "CSV 中没有有效凭据", errors,
+                CsvImportStatusText.Text = T("settings.no_credentials_imported");
+                InfoBarPresenter.Show(CsvImportInfoBar, T("settings.csv_no_valid_credentials"), errors,
                     InfoBarSeverity.Error);
                 return;
             }
 
             var summary = new StackPanel { Spacing = 6 };
-            summary.Children.Add(new TextBlock { Text = "将导入并覆盖同类型凭据：", TextWrapping = TextWrapping.Wrap });
+            summary.Children.Add(new TextBlock { Text = T("settings.csv_import_overwrite_warning"), TextWrapping = TextWrapping.Wrap });
             if (preview.HasDeepSeek)
-                summary.Children.Add(new TextBlock { Text = "• DeepSeek API Key：1 项" });
+                summary.Children.Add(new TextBlock { Text = T("settings.csv_deepseek_item") });
             if (preview.HasAliyun)
-                summary.Children.Add(new TextBlock { Text = "• 阿里云 TTS：AccessKey ID / Secret / AppKey 各 1 项" });
+                summary.Children.Add(new TextBlock { Text = T("settings.csv_aliyun_item") });
             summary.Children.Add(new TextBlock
             {
-                Text = "导入后使用 Windows DPAPI 加密保存，不提供导出。",
+                Text = T("settings.csv_encryption_note"),
                 FontSize = 12,
                 Opacity = 0.65,
                 TextWrapping = TextWrapping.Wrap
@@ -299,7 +306,7 @@ public sealed partial class SettingsPage : Page
             {
                 summary.Children.Add(new TextBlock
                 {
-                    Text = "CSV 中有 " + preview.Errors.Count + " 行被跳过：" + Environment.NewLine +
+                    Text = F("settings.csv_skipped_rows", ("count", preview.Errors.Count)) + Environment.NewLine +
                            string.Join(Environment.NewLine, preview.Errors.Take(3)),
                     FontSize = 12,
                     Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(
@@ -310,10 +317,10 @@ public sealed partial class SettingsPage : Page
 
             var dialog = new ContentDialog
             {
-                Title = "导入 CSV 凭据",
+                Title = T("settings.csv_import_title"),
                 Content = summary,
-                PrimaryButtonText = "导入并加密",
-                CloseButtonText = "取消",
+                PrimaryButtonText = T("settings.csv_import_encrypt"),
+                CloseButtonText = T("common.cancel"),
                 DefaultButton = ContentDialogButton.Primary,
                 XamlRoot = XamlRoot
             };
@@ -326,26 +333,26 @@ public sealed partial class SettingsPage : Page
 
             var imported = new List<string>();
             if (result.DeepSeekSaved) imported.Add("DeepSeek");
-            if (result.AliyunSaved) imported.Add("阿里云 TTS");
+            if (result.AliyunSaved) imported.Add(T("settings.csv_aliyun_service"));
             CsvImportStatusText.Text = imported.Count > 0
-                ? $"已导入并加密：{string.Join("、", imported)}（来源 {csvName}）"
-                : "没有保存任何凭据。";
+                ? F("settings.csv_imported_from", ("items", string.Join(", ", imported)), ("file", csvName))
+                : T("settings.csv_credentials_none_saved");
 
             InfoBarSeverity severity = !result.SavedAny
                 ? InfoBarSeverity.Error
                 : result.Errors.Count > 0 ? InfoBarSeverity.Warning : InfoBarSeverity.Success;
             string message = result.Errors.Count > 0
                 ? string.Join(Environment.NewLine, result.Errors.Take(5))
-                : "凭据已使用 Windows DPAPI 加密保存。程序不提供导出。";
+                : T("settings.csv_saved_no_export");
             InfoBarPresenter.Show(CsvImportInfoBar,
-                result.SavedAny ? "凭据导入完成" : "凭据导入失败", message, severity);
+                T(result.SavedAny ? "settings.csv_import_complete" : "settings.csv_import_failed"), message, severity);
         }
         catch (Exception ex)
         {
             string detail = string.IsNullOrWhiteSpace(ex.Message) ? ex.GetType().Name : ex.Message;
-            CsvImportStatusText.Text = $"导入失败：{detail}";
+            CsvImportStatusText.Text = F("settings.csv_import_error_detail", ("detail", detail));
             DiagnosticLogService.Error("settings.credentials.csv_import.failed", ex);
-            InfoBarPresenter.Show(CsvImportInfoBar, "CSV 导入失败", detail, InfoBarSeverity.Error);
+            InfoBarPresenter.Show(CsvImportInfoBar, T("settings.csv_failed"), detail, InfoBarSeverity.Error);
         }
         finally
         {
@@ -361,7 +368,7 @@ public sealed partial class SettingsPage : Page
     private void Rescan_Click(object sender, RoutedEventArgs e)
     {
         _service.RefreshEts();
-        EtsPathText.Text = _service.EtsExe ?? "未找到 ETS 安装目录。";
+        EtsPathText.Text = _service.EtsExe ?? T("settings.ets_path_not_found");
     }
 
     private async void ChooseEtsFolder_Click(object sender, RoutedEventArgs e)
@@ -369,29 +376,29 @@ public sealed partial class SettingsPage : Page
         try
         {
             var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.ComputerFolder,
-                CommitButtonText = "选择此文件夹" };
+                CommitButtonText = T("settings.choose_this_folder") };
             picker.FileTypeFilter.Add("*");
-            MainWindow window = MainWindow.Current ?? throw new InvalidOperationException("窗口尚未准备好。");
+            MainWindow window = MainWindow.Current ?? throw new InvalidOperationException(T("settings.window_not_ready"));
             InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(window));
             var folder = await picker.PickSingleFolderAsync();
             if (folder is null) return;
             EtsDirectoryValidation validation = _service.ValidateEtsDirectory(folder.Path);
             if (!validation.IsValid)
             {
-                InfoBarPresenter.Show(SaveInfoBar, "目录校验失败", validation.Message, InfoBarSeverity.Error);
+                InfoBarPresenter.Show(SaveInfoBar, T("settings.directory_validation_failed"), validation.Message, InfoBarSeverity.Error);
                 return;
             }
-            var dialog = new ContentDialog { Title = "应用 ETS 安装目录？",
-                Content = validation.ExecutablePath, PrimaryButtonText = "应用", CloseButtonText = "取消",
+            var dialog = new ContentDialog { Title = T("settings.apply_ets_directory_question"),
+                Content = validation.ExecutablePath, PrimaryButtonText = T("settings.apply"), CloseButtonText = T("common.cancel"),
                 DefaultButton = ContentDialogButton.Primary, XamlRoot = XamlRoot };
             if (await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
             string warnings = _service.ApplyEtsDirectory(validation.DirectoryPath);
-            EtsPathText.Text = _service.EtsExe ?? "未找到 ETS 安装目录。";
-            InfoBarPresenter.Show(SaveInfoBar, warnings.Length == 0 ? "ETS 目录已更新" : "目录已更新，但有提醒",
+            EtsPathText.Text = _service.EtsExe ?? T("settings.ets_path_not_found");
+            InfoBarPresenter.Show(SaveInfoBar, T(warnings.Length == 0 ? "settings.ets_directory_updated" : "settings.directory_updated_warning"),
                 warnings.Length == 0 ? validation.ExecutablePath ?? validation.DirectoryPath : warnings,
                 warnings.Length == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
         }
-        catch (Exception ex) { InfoBarPresenter.Show(SaveInfoBar, "选择失败", ex.Message, InfoBarSeverity.Error); }
+        catch (Exception ex) { InfoBarPresenter.Show(SaveInfoBar, T("settings.select_folder_failed"), ex.Message, InfoBarSeverity.Error); }
     }
 
     private void Save_Click(object sender, RoutedEventArgs e)
@@ -399,7 +406,7 @@ public sealed partial class SettingsPage : Page
         try
         {
             if (!double.IsFinite(SkipBox.Value) || SkipBox.Value < 0 || SkipBox.Value > 60)
-                throw new ArgumentOutOfRangeException(nameof(SkipBox), "跳题间隔必须在 0 到 60 秒之间。");
+                throw new ArgumentOutOfRangeException(nameof(SkipBox), T("settings.skip_interval_validation"));
             var settings = new AssistantSettings(AccuracySlider.Value,
                 Guid.NewGuid().ToString("N"), SkipBox.Value,
                 AutostartCheck.IsChecked == true,
@@ -407,13 +414,13 @@ public sealed partial class SettingsPage : Page
             _service.SaveSettings(settings);
             string warning = _service.TryInstallAutostart(settings.StartAtLogin);
             if (settings.StartAtLogin) _service.EnsureListener();
-            InfoBarPresenter.Show(SaveInfoBar, warning.Length == 0 ? "已保存" : "设置已保存，登录启动项未更新",
-                warning.Length == 0 ? "配置和 Windows 登录启动项已更新。" : warning,
+            InfoBarPresenter.Show(SaveInfoBar, T(warning.Length == 0 ? "settings.saved" : "settings.saved_autostart_warning"),
+                warning.Length == 0 ? T("settings.saved_autostart_detail") : warning,
                 warning.Length == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
         }
         catch (Exception ex)
         {
-            InfoBarPresenter.Show(SaveInfoBar, "保存失败", ex.Message, InfoBarSeverity.Error);
+            InfoBarPresenter.Show(SaveInfoBar, T("settings.settings_save_failed"), ex.Message, InfoBarSeverity.Error);
         }
     }
 }
@@ -468,10 +475,12 @@ internal static class NativeCsvFilePicker
 
     public static string? PickCsv(nint owner)
     {
-        if (owner == 0) throw new InvalidOperationException("无法获取 ETS Tool 窗口句柄，不能显示文件选择器。");
+        LocalizationService localization = LocalizationService.Current;
+        if (owner == 0) throw new InvalidOperationException(localization.Translate("settings.window_handle_unavailable"));
 
-        nint filter = Marshal.StringToCoTaskMemUni("CSV 文件 (*.csv)\0*.csv\0所有文件 (*.*)\0*.*\0\0");
-        nint title = Marshal.StringToCoTaskMemUni("选择 CSV 文件");
+        nint filter = Marshal.StringToCoTaskMemUni(
+            $"{localization.Translate("settings.csv_file_type")}\0*.csv\0{localization.Translate("settings.all_file_type")}\0*.*\0\0");
+        nint title = Marshal.StringToCoTaskMemUni(localization.Translate("settings.choose_csv_file"));
         nint extension = Marshal.StringToCoTaskMemUni("csv");
         char[] fileBuffer = new char[FileNameBufferSize];
         GCHandle fileBufferHandle = GCHandle.Alloc(fileBuffer, GCHandleType.Pinned);
@@ -498,8 +507,8 @@ internal static class NativeCsvFilePicker
 
             uint error = CommDlgExtendedError();
             if (error == 0) return null; // User cancelled.
-            throw new Win32Exception(unchecked((int)error),
-                $"Windows 无法打开 CSV 文件选择器（错误 0x{error:X8}）。");
+            throw new Win32Exception(unchecked((int)error), localization.Format("settings.csv_picker_failed",
+                ("code", error.ToString("X8"))));
         }
         finally
         {

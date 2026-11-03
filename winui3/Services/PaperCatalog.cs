@@ -12,8 +12,12 @@ public sealed record PaperEntry(string PackId, string Title, string FolderPath, 
 {
     public bool IsConverted => MarkdownPath is not null || PdfPath is not null;
     public Visibility DetailedAnalysisVisibility => Visibility.Visible;
-    public string Summary => $"编号 {PackId} · {UnitCount} 个内容单元 · {ChoiceCount} 道选择题";
-    public string ConversionText => PdfPath is not null ? "Markdown / PDF" : MarkdownPath is not null ? "Markdown" : "未转换";
+    public string Summary => LocalizationService.Current.Format("papers.entry_summary",
+        ("paperId", PackId), ("units", UnitCount), ("choices", ChoiceCount));
+    public string ConversionText => LocalizationService.Current.Translate(PdfPath is not null
+        ? "papers.conversion_markdown_pdf" : MarkdownPath is not null ? "papers.conversion_markdown" : "papers.not_converted");
+    public string LastUsedLabel => LocalizationService.Current.Translate("papers.last_used");
+    public string CreatedLabel => LocalizationService.Current.Translate("papers.created");
     public string UpdatedText => Updated.ToString("yyyy-MM-dd HH:mm");
     public string CreatedText => Created.ToString("yyyy-MM-dd HH:mm");
     public string LastUsedText => LastUsed.ToString("yyyy-MM-dd HH:mm");
@@ -71,9 +75,9 @@ public sealed class PaperCatalog
                     units++;
                     string kind = structure switch
                     {
-                        "collector.choose" => "选择题", "collector.word" => "词汇",
-                        "collector.read" => "朗读", "collector.dialogue" => "情景对话",
-                        "collector.picture" => "图片描述", _ => "其他内容"
+                        "collector.choose" => "papers.kind_choice", "collector.word" => "papers.kind_vocabulary",
+                        "collector.read" => "papers.kind_read_aloud", "collector.dialogue" => "papers.kind_dialogue",
+                        "collector.picture" => "papers.kind_picture_description", _ => "papers.kind_other"
                     };
                     int count = 1;
                     if (structure == "collector.choose" && node.TryGetProperty("info", out var info) &&
@@ -101,10 +105,13 @@ public sealed class PaperCatalog
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
             }
             string? md = FindOutput(folder, ".md"), pdf = FindOutput(folder, ".pdf");
-            string summary = types.Count == 0 ? "尚无可读取的题目内容" : string.Join(" · ", types.Select(p => $"{p.Key} {p.Value}"));
+            string summary = types.Count == 0
+                ? LocalizationService.Current.Translate("papers.no_readable_content")
+                : string.Join(" · ", types.Select(p => LocalizationService.Current.Format("papers.content_type_count",
+                    ("kind", LocalizationService.Current.Translate(p.Key)), ("count", p.Value))));
             DateTime created = Directory.GetCreationTime(folder);
             DateTime used = lastUsed.TryGetValue(id, out DateTime recorded) && recorded > updated ? recorded : updated;
-            result.Add(new(id, labels.GetValueOrDefault(id, $"试卷 {id}"), folder, units, choices,
+            result.Add(new(id, labels.GetValueOrDefault(id, LocalizationService.Current.Format("dynamic.paper_title", ("paperId", id))), folder, units, choices,
                 bytes, updated, created, used, summary, md, pdf, unreadable));
         }
         return result.OrderByDescending(p => p.Updated).ThenBy(p => p.PackId, StringComparer.Ordinal).ToList();
@@ -117,7 +124,7 @@ public sealed class PaperCatalog
     {
         ValidatePack(packId);
         title = title.Trim();
-        if (title.Length is < 1 or > 80) throw new ArgumentException("名称需要包含 1 到 80 个字符。");
+        if (title.Length is < 1 or > 80) throw new ArgumentException(LocalizationService.Current.Translate("papers.title_length_invalid"));
         var labels = ReadLabels();
         labels[packId] = title;
         Directory.CreateDirectory(Path.GetDirectoryName(LabelsPath)!);
@@ -134,15 +141,15 @@ public sealed class PaperCatalog
     {
         source = Path.GetFullPath(source).TrimEnd(Path.DirectorySeparatorChar);
         string id = Path.GetFileName(source);
-        if (!Directory.Exists(source) || !IsPackId(id)) throw new ArgumentException("请选择以数字编号命名的完整试卷文件夹。");
+        if (!Directory.Exists(source) || !IsPackId(id)) throw new ArgumentException(LocalizationService.Current.Translate("papers.import_select_numbered_folder"));
         if (Root.StartsWith(source + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(source, Root, StringComparison.OrdinalIgnoreCase))
-            throw new ArgumentException("请选择一份试卷文件夹，而不是整个数据目录。");
+            throw new ArgumentException(LocalizationService.Current.Translate("papers.import_select_pack_folder"));
         if (!Directory.EnumerateDirectories(source, "template_*").Any() ||
             !Directory.EnumerateDirectories(source, "content_*").Any())
-            throw new InvalidDataException("试卷需要包含 template_ 和 content_ 子文件夹。");
+            throw new InvalidDataException(LocalizationService.Current.Translate("papers.import_pack_structure_invalid"));
         string target = Path.Combine(Root, id);
-        if (Directory.Exists(target) || File.Exists(target)) throw new IOException($"编号 {id} 的试卷已存在，请勿重复导入。");
+        if (Directory.Exists(target) || File.Exists(target)) throw new IOException(LocalizationService.Current.Format("papers.import_duplicate", ("paperId", id)));
         string staging = Path.Combine(Root, "_assistant", "imports", Guid.NewGuid().ToString("N"));
         try
         {
@@ -163,7 +170,7 @@ public sealed class PaperCatalog
     public async Task ConvertAsync(string packId, string enginePath)
     {
         string path = ValidatePack(packId);
-        if (!File.Exists(enginePath)) throw new FileNotFoundException("找不到转换组件，请重新生成完整程序。", enginePath);
+        if (!File.Exists(enginePath)) throw new FileNotFoundException(LocalizationService.Current.Translate("papers.converter_missing"), enginePath);
         var start = new ProcessStartInfo(enginePath)
         {
             UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Path.GetDirectoryName(enginePath)!,
@@ -173,7 +180,7 @@ public sealed class PaperCatalog
         start.ArgumentList.Add("--convert-pack");
         start.ArgumentList.Add(path);
         start.Environment["PYTHONIOENCODING"] = "utf-8";
-        using Process process = Process.Start(start) ?? throw new InvalidOperationException("无法启动试卷转换。");
+        using Process process = Process.Start(start) ?? throw new InvalidOperationException(LocalizationService.Current.Translate("papers.converter_start_failed"));
         Task<string> stdout = process.StandardOutput.ReadToEndAsync(), stderr = process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync();
         string output = await stdout, error = await stderr;
@@ -181,16 +188,16 @@ public sealed class PaperCatalog
         {
             string detail = string.IsNullOrWhiteSpace(error) ? output : error;
             if (detail.Length > 1200) detail = detail[^1200..];
-            throw new InvalidOperationException("转换未能全部完成。" + Environment.NewLine + detail.Trim());
+            throw new InvalidOperationException(LocalizationService.Current.Format("papers.conversion_failed", ("detail", detail.Trim())));
         }
     }
 
     private string ValidatePack(string packId)
     {
-        if (!IsPackId(packId)) throw new ArgumentException("无效的试卷编号。");
+        if (!IsPackId(packId)) throw new ArgumentException(LocalizationService.Current.Translate("papers.invalid_paper_id"));
         string path = Path.GetFullPath(Path.Combine(Root, packId));
         if (!string.Equals(Path.GetDirectoryName(path), Root, StringComparison.OrdinalIgnoreCase) ||
-            !Directory.Exists(path) || IsLink(path)) throw new InvalidOperationException("试卷目录不存在或不是受管理的本机目录。");
+            !Directory.Exists(path) || IsLink(path)) throw new InvalidOperationException(LocalizationService.Current.Translate("papers.directory_not_managed"));
         return path;
     }
 
@@ -198,21 +205,21 @@ public sealed class PaperCatalog
     private static bool IsLink(string path) => (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
     private static void EnsureNoLinks(string folder)
     {
-        if (IsLink(folder)) throw new InvalidOperationException("试卷含有链接目录，无法安全执行此操作。");
+        if (IsLink(folder)) throw new InvalidOperationException(LocalizationService.Current.Translate("papers.link_directory_unsafe"));
         foreach (string item in Directory.EnumerateFileSystemEntries(folder))
         {
-            if (IsLink(item)) throw new InvalidOperationException("试卷含有链接文件，无法安全执行此操作。");
+            if (IsLink(item)) throw new InvalidOperationException(LocalizationService.Current.Translate("papers.link_file_unsafe"));
             if (Directory.Exists(item)) EnsureNoLinks(item);
         }
     }
 
     private static void CopyFolder(string source, string target)
     {
-        if (IsLink(source)) throw new InvalidOperationException("暂不支持导入包含链接目录的试卷。");
+        if (IsLink(source)) throw new InvalidOperationException(LocalizationService.Current.Translate("papers.import_link_directory_unsupported"));
         Directory.CreateDirectory(target);
         foreach (string item in Directory.EnumerateFileSystemEntries(source))
         {
-            if (IsLink(item)) throw new InvalidOperationException("暂不支持导入包含链接文件的试卷。");
+            if (IsLink(item)) throw new InvalidOperationException(LocalizationService.Current.Translate("papers.import_link_file_unsupported"));
             string destination = Path.Combine(target, Path.GetFileName(item));
             if (Directory.Exists(item)) CopyFolder(item, destination);
             else File.Copy(item, destination, false);

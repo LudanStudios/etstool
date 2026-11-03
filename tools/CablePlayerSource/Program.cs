@@ -29,14 +29,14 @@ internal static class Program
         }
         else
         {
-            Console.Error.WriteLine("usage: CablePlayer [--speed <1.0-1.5>] <wav>");
+            Console.Error.WriteLine("usage: CablePlayer [--speed <1.0-1.8>] <wav>");
             return 2;
         }
 
         try
         {
-            if (!double.IsFinite(speed) || speed < 1.0 || speed > 1.5)
-                throw new ArgumentOutOfRangeException(nameof(speed), "Playback speed must be between 1.0 and 1.5.");
+            if (!double.IsFinite(speed) || speed < 1.0 || speed > 1.8)
+                throw new ArgumentOutOfRangeException(nameof(speed), "Playback speed must be between 1.0 and 1.8.");
             Play(wavPath, speed);
             return 0;
         }

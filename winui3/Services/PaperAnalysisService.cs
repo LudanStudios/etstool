@@ -14,16 +14,17 @@ public sealed class PaperAnalysisService
     {
         string apiKey = ApiKeyStore.Load();
         if (string.IsNullOrWhiteSpace(apiKey))
-            throw new InvalidOperationException("未填写有效的凭据\n无法完成指定操作。");
+            throw new InvalidOperationException(LocalizationService.Current.Translate("common.invalid_credentials_error"));
 
         IReadOnlyList<string> batches = ReadQuestionBatches(paper.FolderPath);
-        if (batches.Count == 0) throw new InvalidDataException("试卷中没有可发送的题干与标准答案。");
+        if (batches.Count == 0) throw new InvalidDataException(LocalizationService.Current.Translate("paper_analysis.no_questions"));
 
         var output = new StringBuilder($"# {paper.Title}：逐题解析\n\n");
         for (int index = 0; index < batches.Count; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            progress?.Report($"正在请求 DeepSeek（第 {index + 1}/{batches.Count} 组）…");
+            progress?.Report(LocalizationService.Current.Format("paper_analysis.request_progress",
+                ("current", index + 1), ("total", batches.Count)));
             string answer = await AskAsync(apiKey, paper.Title, batches[index], cancellationToken);
             if (index > 0) output.AppendLine().AppendLine("---").AppendLine();
             output.Append(answer.Trim()).AppendLine();
@@ -33,7 +34,7 @@ public sealed class PaperAnalysisService
 
     private static IReadOnlyList<string> ReadQuestionBatches(string folder)
     {
-        if (!Directory.Exists(folder)) throw new DirectoryNotFoundException("本机试卷目录不存在。");
+        if (!Directory.Exists(folder)) throw new DirectoryNotFoundException(LocalizationService.Current.Translate("paper_analysis.paper_directory_missing"));
         var items = new List<string>();
         foreach (string contentDirectory in Directory.EnumerateDirectories(folder, "content_*")
                      .OrderBy(Path.GetFileName, StringComparer.Ordinal))
@@ -228,14 +229,15 @@ public sealed class PaperAnalysisService
             }
             catch (JsonException) { }
             if (detail.Length > 500) detail = detail[..500];
-            throw new HttpRequestException($"DeepSeek 返回 HTTP {(int)response.StatusCode}：{detail}");
+            throw new HttpRequestException(LocalizationService.Current.Format("paper_analysis.deepseek_http_error",
+                ("status", (int)response.StatusCode), ("detail", detail)));
         }
         using JsonDocument document = JsonDocument.Parse(body);
         if (!document.RootElement.TryGetProperty("choices", out JsonElement choices) ||
             choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0)
-            throw new InvalidDataException("DeepSeek 没有返回解析内容。");
+            throw new InvalidDataException(LocalizationService.Current.Translate("paper_analysis.no_analysis_returned"));
         string result = choices[0].GetProperty("message").GetProperty("content").GetString()?.Trim() ?? string.Empty;
-        if (result.Length == 0) throw new InvalidDataException("DeepSeek 返回内容为空。");
+        if (result.Length == 0) throw new InvalidDataException(LocalizationService.Current.Translate("paper_analysis.empty_analysis"));
         return result;
     }
 

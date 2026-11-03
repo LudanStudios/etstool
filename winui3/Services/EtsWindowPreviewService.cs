@@ -66,6 +66,7 @@ public sealed class EtsWindowPreviewService : IDisposable
     private readonly AssistantService _assistant = AssistantService.Current;
     private nint _mainWindow;
     private nint _embeddedWindow;
+    private uint _embeddedProcessId;
     private nint _foregroundHook;
     private nint _locationHook;
     private WinEventCallback? _foregroundCallback;
@@ -77,6 +78,7 @@ public sealed class EtsWindowPreviewService : IDisposable
     private bool _disposed;
     private PixelBounds? _lastBounds;
     private int _locationCorrectionQueued;
+    private bool _boundsCorrectionDeferredWhileActive;
     private nint _candidateWindow;
     private uint _candidateProcessId;
     private PixelBounds? _candidateBounds;
@@ -135,7 +137,7 @@ public sealed class EtsWindowPreviewService : IDisposable
         UpdateBounds(viewport);
         _assistant.RefreshEts();
         if (string.IsNullOrWhiteSpace(_assistant.EtsExe))
-            throw new FileNotFoundException("找不到 ETS 安装目录。请先到答题设置中选择 ETS 安装目录。", "Ets.exe");
+            throw new FileNotFoundException(L("preview.ets_install_missing"), "Ets.exe");
 
         // Search only. ETS must be started manually by the user.
         nint target = FindEtsWindow(_assistant.EtsExe);
@@ -253,7 +255,28 @@ public sealed class EtsWindowPreviewService : IDisposable
                 // applied once in AttachWindow. Here we only move/resize when the host layout
                 // actually changed, and refresh the region only after a size change.
                 if (wasVisible && windowBoundsMatch)
+                {
+                    _boundsCorrectionDeferredWhileActive = false;
                     return;
+                }
+
+                // ETS may resize/reposition its window while processing a click (for example,
+                // when changing an activity view). Do not send cross-process SetWindowPos into
+                // its active message loop; the foreground-change hook reapplies the viewport
+                // bounds after ETS yields focus.
+                if (IsEmbeddedProcessForeground())
+                {
+                    if (!_boundsCorrectionDeferredWhileActive)
+                        DiagnosticLogService.Info("ets_preview.bounds_correction.deferred_during_ets_input",
+                            $"pid={_embeddedProcessId}");
+                    _boundsCorrectionDeferredWhileActive = true;
+                    return;
+                }
+
+                if (_boundsCorrectionDeferredWhileActive)
+                    DiagnosticLogService.Info("ets_preview.bounds_correction.resumed_after_ets_input",
+                        $"pid={_embeddedProcessId}");
+                _boundsCorrectionDeferredWhileActive = false;
 
                 // Keep ETS above the assistant without activating or raising it in the Z order.
                 uint flags = SwpNoActivate | SwpNoZOrder;
@@ -286,12 +309,28 @@ public sealed class EtsWindowPreviewService : IDisposable
 
     public void DetachClosedWindow()
     {
-        DiagnosticLogService.Warn("ets_preview.window.closed_unexpectedly");
+        string detail = $"hwnd=0x{_embeddedWindow.ToInt64():X} pid={_embeddedProcessId}";
+        if (_embeddedProcessId != 0)
+        {
+            try
+            {
+                using Process process = Process.GetProcessById(checked((int)_embeddedProcessId));
+                bool exited = process.HasExited;
+                detail += exited ? $" processExited=true exitCode={process.ExitCode}" : " processExited=false";
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or Win32Exception)
+            {
+                detail += $" processState=unavailable error={ex.GetType().Name}";
+            }
+        }
+        DiagnosticLogService.Warn("ets_preview.window.closed_unexpectedly", detail);
         StopEmbeddedWindowPositionTracking();
         _embeddedWindow = 0;
+        _embeddedProcessId = 0;
         _originalState = null;
         _mainWindow = 0;
         _lastBounds = null;
+        _boundsCorrectionDeferredWhileActive = false;
     }
 
     public static void RestoreAll()
@@ -323,10 +362,10 @@ public sealed class EtsWindowPreviewService : IDisposable
             EnsureForegroundTracking();
             return;
         }
-        MainWindow main = MainWindow.Current ?? throw new InvalidOperationException("助手窗口尚未就绪。");
+        MainWindow main = MainWindow.Current ?? throw new InvalidOperationException(L("preview.assistant_window_not_ready"));
         _mainWindow = WindowNative.GetWindowHandle(main);
         if (_mainWindow == 0 || !IsWindow(_mainWindow))
-            throw new InvalidOperationException("助手窗口尚未就绪。");
+            throw new InvalidOperationException(L("preview.assistant_window_not_ready"));
         lock (ActiveLock) ActivePreviews.Add(this);
         EnsureForegroundTracking();
     }
@@ -373,16 +412,27 @@ public sealed class EtsWindowPreviewService : IDisposable
         return window == _mainWindow || window == _embeddedWindow || rootOwner == _mainWindow;
     }
 
+    private bool IsEmbeddedProcessForeground()
+    {
+        if (_embeddedProcessId == 0) return false;
+        nint foreground = GetForegroundWindow();
+        if (foreground == 0) return false;
+        GetWindowThreadProcessId(foreground, out uint processId);
+        return processId == _embeddedProcessId;
+    }
+
     private void AttachWindow(nint target)
     {
         if (_mainWindow == 0 || !IsWindow(target))
-            throw new InvalidOperationException("ETS 窗口已关闭，无法创建预览。");
+            throw new InvalidOperationException(L("preview.ets_window_closed"));
 
         GetWindowThreadProcessId(_mainWindow, out uint assistantProcessId);
         GetWindowThreadProcessId(target, out uint targetProcessId);
         if (target == _mainWindow || assistantProcessId == 0 || targetProcessId == 0 ||
             targetProcessId == assistantProcessId)
-            throw new InvalidOperationException("预览目标不是独立的 ETS 窗口，已保留助手主窗口不变。");
+            throw new InvalidOperationException(L("preview.target_not_independent_ets_window"));
+
+        _embeddedProcessId = targetProcessId;
 
         OriginalWindowState state = CaptureState(target);
         _originalState = state;
@@ -395,7 +445,7 @@ public sealed class EtsWindowPreviewService : IDisposable
 
             EnsureBorderlessPreviewStyle(target, clearVisibleStyle: true);
             SetWindowLongChecked(target, GwlHwndParent, _mainWindow);
-            PixelBounds bounds = _lastBounds ?? throw new InvalidOperationException("预览区域尚未完成布局。");
+            PixelBounds bounds = _lastBounds ?? throw new InvalidOperationException(L("preview.viewport_not_laid_out"));
             // Keep ETS as a top-level owned window and place it over the XAML viewport.
             SetWindowPosChecked(target, 0, bounds.X, bounds.Y, bounds.Width, bounds.Height,
                 SwpNoActivate | SwpFrameChanged);
@@ -418,7 +468,7 @@ public sealed class EtsWindowPreviewService : IDisposable
         if (_locationHook != 0) return;
         GetWindowThreadProcessId(window, out uint processId);
         if (processId == 0)
-            throw new InvalidOperationException("无法获取 ETS 窗口进程，不能锁定预览位置。");
+            throw new InvalidOperationException(L("preview.ets_process_unavailable"));
 
         _locationCallback = EmbeddedWindowLocationChanged;
         _locationHook = SetWinEventHook(EventObjectLocationChange, EventObjectLocationChange, 0,
@@ -427,7 +477,7 @@ public sealed class EtsWindowPreviewService : IDisposable
 
         int error = Marshal.GetLastWin32Error();
         _locationCallback = null;
-        throw new Win32Exception(error, "无法锁定 ETS 预览窗口位置。");
+        throw new Win32Exception(error, L("preview.cannot_lock_window_position"));
     }
 
     private void EmbeddedWindowLocationChanged(nint hook, uint eventType, nint window, int objectId,
@@ -542,13 +592,13 @@ public sealed class EtsWindowPreviewService : IDisposable
         diameter = Math.Min(diameter, Math.Min(width, height));
         nint region = CreateRoundRectRgn(0, 0, width, height, diameter, diameter);
         if (region == 0)
-            throw new Win32Exception(Marshal.GetLastWin32Error(), "无法创建 ETS 预览圆角遮罩。");
+            throw new Win32Exception(Marshal.GetLastWin32Error(), L("preview.corner_mask_create_failed"));
 
         if (SetWindowRgn(window, region, true) == 0)
         {
             int error = Marshal.GetLastWin32Error();
             DeleteObject(region);
-            throw new Win32Exception(error, "无法应用 ETS 预览圆角遮罩。");
+            throw new Win32Exception(error, L("preview.corner_mask_apply_failed"));
         }
         // SetWindowRgn transfers ownership of the region to Windows on success.
     }
@@ -559,14 +609,14 @@ public sealed class EtsWindowPreviewService : IDisposable
         nint previous = SetWindowLongPtrW(window, index, value);
         int error = Marshal.GetLastWin32Error();
         if (previous == 0 && error != 0)
-            throw new Win32Exception(error, "无法修改 ETS 窗口样式。");
+            throw new Win32Exception(error, L("preview.window_style_update_failed"));
     }
 
     private static void SetWindowPosChecked(nint window, nint insertAfter, int x, int y,
         int width, int height, uint flags)
     {
         if (!SetWindowPos(window, insertAfter, x, y, width, height, flags))
-            throw new Win32Exception(Marshal.GetLastWin32Error(), "无法调整 ETS 预览窗口大小。");
+            throw new Win32Exception(Marshal.GetLastWin32Error(), L("preview.window_resize_failed"));
     }
 
     private void RestoreEmbeddedWindow()
@@ -575,6 +625,7 @@ public sealed class EtsWindowPreviewService : IDisposable
         nint window = _embeddedWindow;
         OriginalWindowState? state = _originalState;
         _embeddedWindow = 0;
+        _embeddedProcessId = 0;
         _originalState = null;
         if (window == 0 || state is null) return;
         if (!IsWindow(window))
@@ -672,6 +723,8 @@ public sealed class EtsWindowPreviewService : IDisposable
     {
         return GetWindowTitle(window).Contains("E听说", StringComparison.OrdinalIgnoreCase);
     }
+
+    private static string L(string key) => LocalizationService.Current.Translate(key);
 
     private static string GetWindowTitle(nint window)
     {

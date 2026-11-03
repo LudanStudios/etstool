@@ -5,8 +5,8 @@
     <Grid x:Name="ResponsiveContent" Margin="30,26,30,30" RowDefinitions="Auto,Auto,*" RowSpacing="16">
         <Grid ColumnDefinitions="28,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="5">
             <SymbolIcon Symbol="Repair" VerticalAlignment="Center" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-            <TextBlock Grid.Column="1" Text="开发者工具" FontSize="30" FontWeight="SemiBold" />
-            <TextBlock Grid.Row="1" Grid.Column="1" Text="高级诊断、虚拟麦克风、抓包、日志和重置操作。"
+            <TextBlock Grid.Column="1" Text="common.developer_tools" FontSize="30" FontWeight="SemiBold" />
+            <TextBlock Grid.Row="1" Grid.Column="1" Text="tools.advanced_diagnostics_virtual_microphone_packet"
                        FontSize="15" Opacity="0.72" />
         </Grid>
 
@@ -15,8 +15,8 @@
         <ScrollViewer Grid.Row="2">
             <StackPanel Spacing="16">
                 <StackPanel Spacing="2" Margin="4,8,0,0">
-                    <TextBlock Text="自动听力测试" FontSize="21" FontWeight="SemiBold" />
-                    <TextBlock Text="选择题和听力自动答题相关的调试端口与日志工具。" FontSize="12" Opacity="0.62" TextWrapping="Wrap" />
+                    <TextBlock Text="tools.automatic_listening_test" FontSize="21" FontWeight="SemiBold" />
+                    <TextBlock Text="tools.debug_port_log_tools_automatic" FontSize="12" Opacity="0.62" TextWrapping="Wrap" />
                 </StackPanel>
 
                 <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
@@ -25,40 +25,40 @@
                         <Grid ColumnDefinitions="*,Auto">
                             <StackPanel Orientation="Horizontal" Spacing="9">
                                 <SymbolIcon Symbol="Globe" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                                <TextBlock Text="本地调试端口" FontSize="17" FontWeight="SemiBold" />
+                                <TextBlock Text="tools.local_debugging_port" FontSize="17" FontWeight="SemiBold" />
                             </StackPanel>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                 <Ellipse x:Name="PortDot" Width="9" Height="9" Fill="#94A3B8" />
-                                <TextBlock x:Name="PortStatusText" Text="检查中…" FontSize="13" FontWeight="SemiBold" />
+                                <TextBlock x:Name="PortStatusText" Text="tools.checking" FontSize="13" FontWeight="SemiBold" />
                             </StackPanel>
                         </Grid>
                         <TextBlock Text="http://127.0.0.1:10086/json/list" FontFamily="Consolas" FontSize="14"
                                    IsTextSelectionEnabled="True" />
-                        <TextBlock Text="ETS 需要使用 --remote-debugging-port=10086 启动；端口未开放时请先打开 ETS。"
+                        <TextBlock Text="tools.ets_must_run_remote_debugging"
                                    FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button Click="OpenList_Click">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Globe" />
-                                    <TextBlock Text="查看 /json/list" />
+                                    <TextBlock Text="tools.view_json_list" />
                                 </StackPanel>
                             </Button>
                             <Button Click="OpenVersion_Click">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Globe" />
-                                    <TextBlock Text="查看 /json/version" />
+                                    <TextBlock Text="tools.view_json_version" />
                                 </StackPanel>
                             </Button>
                             <Button Click="CopyPort_Click">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Copy" />
-                                    <TextBlock Text="复制地址" />
+                                    <TextBlock Text="tools.copy_address" />
                                 </StackPanel>
                             </Button>
                             <Button Click="RefreshPort_Click">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Refresh" />
-                                    <TextBlock Text="刷新状态" />
+                                    <TextBlock Text="common.refresh_status" />
                                 </StackPanel>
                             </Button>
                         </StackPanel>
@@ -71,20 +71,20 @@
                         <Grid ColumnDefinitions="*,Auto">
                             <StackPanel Orientation="Horizontal" Spacing="9">
                                 <SymbolIcon Symbol="World" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                                <TextBlock Text="抓包模式" FontSize="17" FontWeight="SemiBold" />
+                                <TextBlock Text="tools.packet_capture" FontSize="17" FontWeight="SemiBold" />
                             </StackPanel>
                             <ToggleSwitch x:Name="CaptureToggle" Grid.Column="1" OnContent="" OffContent=""
                                           Toggled="CaptureToggle_Toggled" />
                         </Grid>
-                        <TextBlock Text="启用后连接 10086 的 DevTools 网络域。每次检测到答题提交完成，会等待 3 秒并把最近的数据包追加到抓包文件；导出日志时会一起打包。"
+                        <TextBlock Text="tools.connects_devtools_network_domain_after"
                                    FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
-                        <TextBlock x:Name="CaptureStatusText" Text="未启用" FontSize="13" FontWeight="SemiBold" />
+                        <TextBlock x:Name="CaptureStatusText" Text="common.disabled" FontSize="13" FontWeight="SemiBold" />
                         <TextBlock x:Name="CapturePathText" FontFamily="Consolas" FontSize="12" Opacity="0.7"
                                    TextWrapping="Wrap" />
                         <Button Click="OpenCapture_Click" HorizontalAlignment="Left">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <SymbolIcon Symbol="Folder" />
-                                <TextBlock Text="打开抓包文件" />
+                                <TextBlock Text="tools.open_capture_file" />
                             </StackPanel>
                         </Button>
                     </StackPanel>
@@ -94,18 +94,18 @@
                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="18">
                         <StackPanel Spacing="4">
-                            <TextBlock Text="详细级别日志" FontSize="16" FontWeight="SemiBold" />
-                            <TextBlock Text="开启后增加 INFO 操作轨迹，记录窗口、导航、按钮、设置及任务状态；默认始终记录 WARN、ERROR、FATAL。不会记录凭据内容。"
+                            <TextBlock Text="tools.verbose_logging" FontSize="16" FontWeight="SemiBold" />
+                            <TextBlock Text="tools.when_enabled_info_traces_record"
                                        FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                         </StackPanel>
-                        <ToggleSwitch x:Name="VerboseLoggingToggle" Grid.Column="1" OnContent="开" OffContent="关"
+                        <ToggleSwitch x:Name="VerboseLoggingToggle" Grid.Column="1" OnContent="common.on" OffContent="common.off"
                                       Toggled="VerboseLoggingToggle_Toggled" VerticalAlignment="Center" />
                     </Grid>
                 </Border>
 
                 <StackPanel Spacing="2" Margin="4,8,0,0">
-                    <TextBlock Text="自动口语测试" FontSize="21" FontWeight="SemiBold" />
-                    <TextBlock Text="口语题分析、DeepSeek 生成、TTS 合成和虚拟声卡播放。" FontSize="12" Opacity="0.62" TextWrapping="Wrap" />
+                    <TextBlock Text="tools.automatic_speaking_test" FontSize="21" FontWeight="SemiBold" />
+                    <TextBlock Text="tools.speaking_question_analysis_deepseek_generation" FontSize="12" Opacity="0.62" TextWrapping="Wrap" />
                 </StackPanel>
 
                 <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
@@ -113,13 +113,13 @@
                     <StackPanel Spacing="12">
                         <StackPanel Orientation="Horizontal" Spacing="9">
                             <SymbolIcon Symbol="Play" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                            <TextBlock Text="自动口语" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <TextBlock Text="tools.automatic_speaking" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
                             <Border Style="{StaticResource BetaBadgeStyle}">
                                 <TextBlock Text="BETA" FontSize="10" FontWeight="SemiBold" Foreground="#FF5B430F"
                                            HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Border>
                         </StackPanel>
-                        <TextBlock Text="自动完成开始、跳过放音、开录、播放 TTS、停止和下一题；练习结束后自动清理 temp 音频。需要 ETS 已打开口语题，且这份试卷已预生成整卷 TTS。"
+                        <TextBlock Text="tools.automatically_starts_practice_skips_prompt"
                                    FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
                             <TextBlock x:Name="SpeakingModeSummaryText" VerticalAlignment="Center"
@@ -127,7 +127,7 @@
                             <Button x:Name="AutoSpeakingButton" Click="AutoSpeaking_Click" Style="{StaticResource AccentButtonStyle}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Play" />
-                                    <TextBlock x:Name="AutoSpeakingButtonText" Text="开始自动口语" />
+                                    <TextBlock x:Name="AutoSpeakingButtonText" Text="common.start_automatic_speaking" />
                                 </StackPanel>
                             </Button>
                         </StackPanel>
@@ -140,29 +140,29 @@
                     <StackPanel Spacing="12">
                         <StackPanel Orientation="Horizontal" Spacing="9">
                             <SymbolIcon Symbol="Audio" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                            <TextBlock Text="语音注入（虚拟麦克风）" FontSize="17" FontWeight="SemiBold" />
+                            <TextBlock Text="tools.voice_injection_virtual_microphone" FontSize="17" FontWeight="SemiBold" />
                         </StackPanel>
-                        <TextBlock Text="把 TTS 生成的 WAV 转成 16-bit / 48 kHz，然后让 ETS 带 Chromium 假麦克风参数启动，ETS 录音时会把这个 WAV 当作麦克风输入。需要先关闭 ETS。"
+                        <TextBlock Text="tools.converts_tts_wav_bit_khz"
                                    FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                         <TextBlock x:Name="AudioStatusText" FontSize="12" Opacity="0.72" TextWrapping="Wrap" />
-                        <CheckBox x:Name="LoopAudioCheck" Content="循环播放 WAV" IsChecked="False" />
+                        <CheckBox x:Name="LoopAudioCheck" Content="tools.loop_wav" IsChecked="False" />
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button Click="PickSpeakingWav_Click" Style="{StaticResource AccentButtonStyle}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="OpenFile" />
-                                    <TextBlock Text="选择 WAV 并准备" />
+                                    <TextBlock Text="tools.choose_wav_prepare" />
                                 </StackPanel>
                             </Button>
                             <Button Click="UseLastTtsWav_Click">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Audio" />
-                                    <TextBlock Text="使用最近 TTS WAV" />
+                                    <TextBlock Text="tools.use_latest_tts_wav" />
                                 </StackPanel>
                             </Button>
                             <Button Click="LaunchEtsWithFakeMic_Click">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Play" />
-                                    <TextBlock Text="用虚拟麦克风启动 ETS" />
+                                    <TextBlock Text="tools.launch_ets_virtual_microphone" />
                                 </StackPanel>
                             </Button>
                         </StackPanel>
@@ -176,61 +176,61 @@
                         <Grid ColumnDefinitions="*,Auto">
                             <StackPanel Orientation="Horizontal" Spacing="9">
                                 <SymbolIcon Symbol="Message" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                                <TextBlock Text="DeepSeek 口语测试" FontSize="17" FontWeight="SemiBold" />
+                                <TextBlock Text="tools.deepseek_speaking_test" FontSize="17" FontWeight="SemiBold" />
                             </StackPanel>
                             <ProgressRing x:Name="DeepSeekProgress" Grid.Column="1" Width="20" Height="20"
                                           IsActive="False" />
                         </Grid>
-                        <TextBlock Text="模型 deepseek-flash。每次请求都会附带题干和 llm_stt.md 附件，返回文本只包含模型输出正文。"
+                        <TextBlock Text="tools.model_deepseek_flash_every_request"
                                    FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                         <TextBlock x:Name="DeepSeekStatusText" FontSize="12" Opacity="0.72" TextWrapping="Wrap" />
                         <Button Click="LoadSpeakingQuestions_Click" HorizontalAlignment="Left">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <SymbolIcon Symbol="OpenFile" />
-                                <TextBlock Text="读取所有试卷口语题" />
+                                <TextBlock Text="tools.load_all_speaking_questions" />
                             </StackPanel>
                         </Button>
                         <ComboBox x:Name="SpeakingPaperBox" HorizontalAlignment="Stretch"
                                   DisplayMemberPath="Display"
-                                  PlaceholderText="选择试卷（读取后可选）"
+                                  PlaceholderText="tools.select_paper_available_after_loading"
                                   SelectionChanged="SpeakingPaperBox_SelectionChanged" />
                         <ComboBox x:Name="SpeakingQuestionBox" HorizontalAlignment="Stretch"
                                   DisplayMemberPath="Display"
-                                  PlaceholderText="选择口语题（读取试卷后可选）"
+                                  PlaceholderText="tools.select_speaking_questions_available_after"
                                   SelectionChanged="SpeakingQuestionBox_SelectionChanged" />
                         <TextBox x:Name="SpeakingStemBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="110"
-                                 PlaceholderText="输入口语题干，例如：朗读下面这段话……" />
+                                 PlaceholderText="tools.enter_speaking_prompt_e_g" />
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button x:Name="AskDeepSeekButton" Click="AskDeepSeek_Click"
                                     Style="{StaticResource AccentButtonStyle}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Send" />
-                                    <TextBlock x:Name="AskDeepSeekText" Text="发送到 DeepSeek" />
+                                    <TextBlock x:Name="AskDeepSeekText" Text="tools.send_deepseek" />
                                 </StackPanel>
                             </Button>
                             <Button Click="ClearSpeaking_Click">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Delete" />
-                                    <TextBlock Text="清空" />
+                                    <TextBlock Text="tools.clear" />
                                 </StackPanel>
                             </Button>
                             <Button Click="CopySpeakingResult_Click">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Copy" />
-                                    <TextBlock Text="复制结果" />
+                                    <TextBlock Text="tools.copy_result" />
                                 </StackPanel>
                             </Button>
                         </StackPanel>
                         <TextBox x:Name="SpeakingResultBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
-                                 MinHeight="150" PlaceholderText="模型返回的文本会显示在这里。" />
-                        <TextBlock Text="阿里云标准 TTS · Betty 美式英文女声 · WAV 16 kHz。超过 300 字符会自动分段合成并拼接。需要在“答题设置”中填写阿里云个人凭据。"
+                                 MinHeight="150" PlaceholderText="tools.model_output_appears_here" />
+                        <TextBlock Text="tools.aliyun_standard_tts_betty_american"
                                    FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button x:Name="AliyunTtsButton" Click="AliyunTts_Click"
                                     Style="{StaticResource AccentButtonStyle}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Play" />
-                                    <TextBlock Text="阿里云 TTS 生成并播放" />
+                                    <TextBlock Text="tools.generate_play_alibaba_cloud_tts" />
                                 </StackPanel>
                             </Button>
                             <ProgressRing x:Name="AliyunTtsProgress" Width="20" Height="20" IsActive="False" />
@@ -245,15 +245,15 @@
                     <StackPanel Spacing="12">
                         <StackPanel Orientation="Horizontal" Spacing="9">
                             <SymbolIcon Symbol="Audio" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                            <TextBlock Text="整卷口语音频（预生成 → 播放）" FontSize="17" FontWeight="SemiBold" />
+                            <TextBlock Text="tools.whole_paper_speaking_audio_generate" FontSize="17" FontWeight="SemiBold" />
                         </StackPanel>
-                        <TextBlock Text="先在上方选择试卷，再按当前口语模式（标答/灵活）为每题生成答案并合成 TTS。全部完成后，录音时把对应 WAV 播放到虚拟声卡 CABLE Input；ETS 麦克风需要选择 CABLE Output。"
+                        <TextBlock Text="tools.select_paper_above_then_generate"
                                    FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                         <TextBlock x:Name="CableStatusText" FontSize="12" Opacity="0.72" TextWrapping="Wrap" />
                         <TextBlock x:Name="DefaultMicStatusText" FontSize="12" Opacity="0.72" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Click="SetVirtualMicDefault_Click" Content="设为默认输入" />
-                            <Button Click="RestoreDefaultMic_Click" Content="恢复原默认输入" />
+                            <Button Click="SetVirtualMicDefault_Click" Content="tools.set_ets_input_only" />
+                            <Button Click="RestoreDefaultMic_Click" Content="tools.restore_ets_input" />
                         </StackPanel>
                         <ProgressBar x:Name="BatchProgress" Minimum="0" Maximum="1" Value="0"
                                      Visibility="Collapsed" />
@@ -262,91 +262,120 @@
                                     Style="{StaticResource AccentButtonStyle}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Save" />
-                                    <TextBlock Text="预生成整卷 TTS" />
+                                    <TextBlock Text="tools.generate_whole_paper_tts" />
                                 </StackPanel>
                             </Button>
                             <Button Click="RefreshCable_Click">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Refresh" />
-                                    <TextBlock Text="刷新虚拟声卡" />
+                                    <TextBlock Text="tools.refresh_virtual_cable" />
                                 </StackPanel>
                             </Button>
                             <Button Click="OpenSoundSettings_Click">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Setting" />
-                                    <TextBlock Text="打开声音设置" />
+                                    <TextBlock Text="tools.open_sound_settings" />
                                 </StackPanel>
                             </Button>
                         </StackPanel>
                         <TextBlock x:Name="BatchStatusText" FontSize="12" Opacity="0.72" TextWrapping="Wrap" />
-                        <TextBlock Text="播放列表" FontSize="14" FontWeight="SemiBold" />
+                        <TextBlock Text="tools.playlist" FontSize="14" FontWeight="SemiBold" />
                         <ComboBox x:Name="SessionItemBox" HorizontalAlignment="Stretch"
                                   DisplayMemberPath="Display" />
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button Click="PlaySessionItem_Click">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Play" />
-                                    <TextBlock Text="播放到虚拟声卡" />
+                                    <TextBlock Text="tools.play_virtual_cable" />
                                 </StackPanel>
                             </Button>
                             <Button Click="PreviewSessionItem_Click">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Audio" />
-                                    <TextBlock Text="本地试听" />
+                                    <TextBlock Text="tools.preview_locally" />
                                 </StackPanel>
                             </Button>
                             <Button Click="PlayNextSessionItem_Click">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Next" />
-                                    <TextBlock Text="下一题到声卡" />
+                                    <TextBlock Text="tools.next_cable" />
                                 </StackPanel>
                             </Button>
                             <Button Click="StopSessionPlayback_Click">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Stop" />
-                                    <TextBlock Text="停止" />
+                                    <TextBlock Text="tools.stop" />
                                 </StackPanel>
                             </Button>
                         </StackPanel>
-                        <TextBlock Text="“播放到虚拟声卡”是静音的，只给 ETS 录音用；要自己听请点“本地试听”。"
+                        <TextBlock Text="tools.play_virtual_cable_silent_only"
                                    FontSize="12" Opacity="0.62" TextWrapping="Wrap" />
                         <TextBlock x:Name="SessionStatusText" FontSize="12" Opacity="0.72" TextWrapping="Wrap" />
                     </StackPanel>
                 </Border>
 
                 <StackPanel Spacing="2" Margin="4,8,0,0">
-                    <TextBlock Text="诊断与维护" FontSize="21" FontWeight="SemiBold" />
-                    <TextBlock Text="运行日志、抓包、程序信息和重置操作。" FontSize="12" Opacity="0.62" TextWrapping="Wrap" />
+                    <TextBlock Text="tools.diagnostics_maintenance" FontSize="21" FontWeight="SemiBold" />
+                    <TextBlock Text="tools.runtime_logs_packet_capture_app" FontSize="12" Opacity="0.62" TextWrapping="Wrap" />
                 </StackPanel>
 
+                <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                    <StackPanel Spacing="12">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                <SymbolIcon Symbol="Document" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                <TextBlock Text="tools.diagnostic_log_viewer" FontSize="17" FontWeight="SemiBold" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Click="RefreshDiagnosticLogs_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="Refresh" />
+                                    <TextBlock Text="common.refresh_now" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                        <TextBlock x:Name="DiagnosticLogViewerStatusText" FontSize="12" Opacity="0.68"
+                                   Text="tools.loading_logs" TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal" Spacing="14">
+                            <CheckBox x:Name="InfoLogFilter" Content="INFO" IsChecked="True" Click="DiagnosticLogFilter_Click" />
+                            <CheckBox x:Name="WarnLogFilter" Content="WARN" IsChecked="True" Click="DiagnosticLogFilter_Click" />
+                            <CheckBox x:Name="ErrorLogFilter" Content="ERROR" IsChecked="True" Click="DiagnosticLogFilter_Click" />
+                            <CheckBox x:Name="FatalLogFilter" Content="FATAL" IsChecked="True" Click="DiagnosticLogFilter_Click" />
+                        </StackPanel>
+                        <TextBox x:Name="DiagnosticLogText" Height="340" FontFamily="Consolas" FontSize="12"
+                                 IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                    </StackPanel>
+                </Border>
 
                 <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                     <StackPanel Spacing="12">
                         <StackPanel Orientation="Horizontal" Spacing="9">
                             <SymbolIcon Symbol="Document" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                            <TextBlock Text="日志与诊断" FontSize="17" FontWeight="SemiBold" />
+                            <TextBlock Text="tools.logs_diagnostics" FontSize="17" FontWeight="SemiBold" />
                         </StackPanel>
                         <TextBlock x:Name="LogSummaryText" FontSize="13" Opacity="0.72" TextWrapping="Wrap" />
-                        <TextBlock Text="导出会打包后台日志、ETS Tool 诊断日志、配置和当前环境信息。"
+                        <TextBlock Text="tools.export_includes_engine_logs_ets"
                                    FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button Click="ExportLogs_Click" Style="{StaticResource AccentButtonStyle}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Save" />
-                                    <TextBlock Text="导出日志 ZIP" />
+                                    <TextBlock Text="tools.export_log_zip" />
                                 </StackPanel>
                             </Button>
                             <Button Click="OpenData_Click">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Folder" />
-                                    <TextBlock Text="打开后台日志目录" />
+                                    <TextBlock Text="tools.open_engine_log_folder" />
                                 </StackPanel>
                             </Button>
                             <Button Click="OpenDiagnosticLogs_Click">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Folder" />
-                                    <TextBlock Text="打开诊断日志目录" />
+                                    <TextBlock Text="tools.open_diagnostic_log_folder" />
                                 </StackPanel>
                             </Button>
                         </StackPanel>
@@ -358,7 +387,7 @@
                     <StackPanel Spacing="12">
                         <StackPanel Orientation="Horizontal" Spacing="9">
                             <SymbolIcon Symbol="ReportHacked" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                            <TextBlock Text="程序信息" FontSize="17" FontWeight="SemiBold" />
+                            <TextBlock Text="tools.app_information" FontSize="17" FontWeight="SemiBold" />
                         </StackPanel>
                         <TextBlock x:Name="EnvironmentText" FontFamily="Consolas" FontSize="12" Opacity="0.76"
                                    TextWrapping="Wrap" IsTextSelectionEnabled="True" />
@@ -366,13 +395,13 @@
                             <Button Click="CopyEnvironment_Click">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Copy" />
-                                    <TextBlock Text="复制环境信息" />
+                                    <TextBlock Text="tools.copy_environment_info" />
                                 </StackPanel>
                             </Button>
                             <Button Click="OpenProgram_Click">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Folder" />
-                                    <TextBlock Text="打开程序目录" />
+                                    <TextBlock Text="tools.open_app_folder" />
                                 </StackPanel>
                             </Button>
                         </StackPanel>
@@ -384,14 +413,14 @@
                     <StackPanel Spacing="12">
                         <StackPanel Orientation="Horizontal" Spacing="9">
                             <SymbolIcon Symbol="Important" Foreground="#EF4444" />
-                            <TextBlock Text="完全重置" FontSize="17" FontWeight="SemiBold" Foreground="#EF4444" />
+                            <TextBlock Text="tools.full_reset" FontSize="17" FontWeight="SemiBold" Foreground="#EF4444" />
                         </StackPanel>
-                        <TextBlock Text="停止后台监听并移除开机启动和快捷方式，清除 DeepSeek/阿里云凭证、界面偏好、虚拟麦克风 WAV 和助手日志。不会删除试卷包、答题历史或答案记录。"
+                        <TextBlock Text="tools.stops_listener_removes_autostart_shortcuts"
                                    FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
                         <Button Click="FullReset_Click" Background="#DC2626" Foreground="White" BorderBrush="#DC2626">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <SymbolIcon Symbol="Delete" Foreground="White" />
-                                <TextBlock Text="完全重置" Foreground="White" />
+                                <TextBlock Text="tools.full_reset" Foreground="White" />
                             </StackPanel>
                         </Button>
                     </StackPanel>

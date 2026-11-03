@@ -22,9 +22,9 @@ public sealed record AnalysisActivity(
     public bool IsFailed => State == AnalysisActivityState.Failed;
     public string StateText => LocalizationService.Current.Translate(State switch
     {
-        AnalysisActivityState.Running => "进行中",
-        AnalysisActivityState.Completed => "已完成",
-        _ => "失败"
+        AnalysisActivityState.Running => "common.running",
+        AnalysisActivityState.Completed => "common.completed",
+        _ => "common.failed"
     });
     public string TimeText => UpdatedAt.ToLocalTime().ToString("HH:mm:ss");
     public Visibility OutputActionsVisibility => string.IsNullOrWhiteSpace(OutputPath)
@@ -56,7 +56,7 @@ public sealed class AnalysisActivityService
     public Guid Start(string title)
     {
         var now = DateTimeOffset.Now;
-        var activity = new AnalysisActivity(Guid.NewGuid(), title, "正在准备请求…",
+        var activity = new AnalysisActivity(Guid.NewGuid(), title, LocalizationService.Current.Translate("activity.preparing_request"),
             AnalysisActivityState.Running, now, now, null);
         lock (_gate) _activities.Add(activity);
         OnChanged();

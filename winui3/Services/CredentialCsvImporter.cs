@@ -35,11 +35,11 @@ public static class CredentialCsvImporter
     public static CredentialCsvPreview Parse(string path)
     {
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-            throw new FileNotFoundException("找不到要导入的 CSV 文件。", path);
+            throw new FileNotFoundException(LocalizationService.Current.Translate("settings.csv_file_not_found"), path);
 
         string text = File.ReadAllText(path, Encoding.UTF8).TrimStart('\uFEFF');
         List<List<string>> rows = ParseCsv(text);
-        if (rows.Count == 0) throw new FormatException("CSV 为空。");
+        if (rows.Count == 0) throw new FormatException(LocalizationService.Current.Translate("settings.csv_empty"));
 
         Columns? header = BuildHeader(rows[0]);
         bool hasHeader = header is not null;
@@ -63,7 +63,7 @@ public static class CredentialCsvImporter
                 string key = Cell(row, keyIndex).Trim();
                 if (key.Length < 8)
                 {
-                    errors.Add($"第 {index + 1} 行：DeepSeek API Key 为空或过短。");
+                    errors.Add(LocalizationService.Current.Format("settings.csv_deepseek_key_invalid", ("row", index + 1)));
                     continue;
                 }
                 deepSeekKey = key;
@@ -78,19 +78,20 @@ public static class CredentialCsvImporter
                 string app = Cell(row, appIndex).Trim();
                 if (id.Length == 0 || secret.Length == 0 || app.Length == 0)
                 {
-                    errors.Add($"第 {index + 1} 行：阿里云凭据需要 AccessKey ID、AccessKey Secret 和 AppKey 三项。");
+                    errors.Add(LocalizationService.Current.Format("settings.csv_aliyun_fields_missing", ("row", index + 1)));
                     continue;
                 }
                 aliyun = new AliyunTtsCredentials(id, secret, app);
             }
             else
             {
-                errors.Add($"第 {index + 1} 行：未知类型“{type}”，只支持 deepseek 或 aliyun。");
+                errors.Add(LocalizationService.Current.Format("settings.csv_unknown_credential_type",
+                    ("row", index + 1), ("type", type)));
             }
         }
 
         if (deepSeekKey is null && aliyun is null && errors.Count == 0)
-            errors.Add("没有找到可导入的凭据行。");
+            errors.Add(LocalizationService.Current.Translate("settings.csv_no_credential_rows"));
 
         return new CredentialCsvPreview
         {
@@ -118,7 +119,7 @@ public static class CredentialCsvImporter
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
                                        System.Security.Cryptography.CryptographicException)
             {
-                errors.Add("DeepSeek 密钥保存失败：" + ex.Message);
+                errors.Add(LocalizationService.Current.Format("settings.csv_deepseek_save_failed", ("detail", ex.Message)));
             }
         }
 
@@ -132,7 +133,7 @@ public static class CredentialCsvImporter
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
                                        ArgumentException or NotSupportedException)
             {
-                errors.Add("阿里云 TTS 凭据保存失败：" + ex.Message);
+                errors.Add(LocalizationService.Current.Format("settings.csv_aliyun_save_failed", ("detail", ex.Message)));
             }
         }
 
@@ -143,7 +144,7 @@ public static class CredentialCsvImporter
 
     private static Columns? BuildHeader(IReadOnlyList<string> row)
     {
-        int type = FindColumn(row, "type", "kind", "类型", "凭据类型");
+        int type = FindColumn(row, "type", "kind", "\u7C7B\u578B", "\u51ED\u636E\u7C7B\u578B");
         if (type < 0) return null;
         return new Columns(
             type,

@@ -11,7 +11,7 @@ public static class AliyunTtsCredentialStore
 {
     private static readonly string ProgramCredentialPath =
         Path.Combine(AppContext.BaseDirectory, "aliyun_tts_credentials.bin");
-    private static string _lastCredentialSource = "尚未读取";
+    private static string _lastCredentialSource = "credentials.source_not_read";
 
     public static bool HasCredentials => Load() is { } credentials &&
         !string.IsNullOrWhiteSpace(credentials.AccessKeyId) &&
@@ -19,11 +19,13 @@ public static class AliyunTtsCredentialStore
         !string.IsNullOrWhiteSpace(credentials.AppKey);
 
     public static string CredentialSourceStatus =>
-        $"凭据读取来源：{_lastCredentialSource}（{ProgramCredentialPath}）";
+        LocalizationService.Current.Format("credentials.source_status",
+            ("source", LocalizationService.Current.Translate(_lastCredentialSource)),
+            ("path", ProgramCredentialPath));
 
     public static string ConfigurationStatus => Load() is null
-        ? "状态：尚未配置阿里云凭据。"
-        : "状态：本机凭据已使用当前 Windows 用户 DPAPI 加密保存在程序目录。";
+        ? LocalizationService.Current.Translate("credentials.aliyun_not_configured")
+        : LocalizationService.Current.Translate("credentials.aliyun_configured_dpapi");
 
     public static void Initialize()
     {
@@ -34,7 +36,7 @@ public static class AliyunTtsCredentialStore
         catch (Exception ex)
         {
             // Credential diagnostics must never prevent the assistant from starting.
-            _lastCredentialSource = $"程序目录读取异常（{ex.GetType().Name}）";
+            _lastCredentialSource = "credentials.source_read_exception";
         }
     }
 
@@ -44,7 +46,7 @@ public static class AliyunTtsCredentialStore
         {
             if (!File.Exists(ProgramCredentialPath))
             {
-                _lastCredentialSource = "程序目录中未找到有效凭据文件";
+                _lastCredentialSource = "credentials.source_file_missing";
                 return null;
             }
 
@@ -59,8 +61,8 @@ public static class AliyunTtsCredentialStore
                     !string.IsNullOrWhiteSpace(credentials.AccessKeySecret) &&
                     !string.IsNullOrWhiteSpace(credentials.AppKey);
                 _lastCredentialSource = valid
-                    ? "程序目录 DPAPI 加密文件"
-                    : "程序目录凭据文件内容无效";
+                    ? "credentials.source_program_dpapi"
+                    : "credentials.source_file_invalid";
                 return valid ? credentials : null;
             }
             finally
@@ -72,7 +74,7 @@ public static class AliyunTtsCredentialStore
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
                                   CryptographicException or JsonException or ArgumentException)
         {
-            _lastCredentialSource = $"程序目录凭据文件无法读取或解密（{ex.GetType().Name}）";
+            _lastCredentialSource = "credentials.source_file_unreadable";
             return null;
         }
     }
@@ -82,7 +84,7 @@ public static class AliyunTtsCredentialStore
         if (string.IsNullOrWhiteSpace(credentials.AccessKeyId) ||
             string.IsNullOrWhiteSpace(credentials.AccessKeySecret) ||
             string.IsNullOrWhiteSpace(credentials.AppKey))
-            throw new ArgumentException("AccessKey ID、AccessKey Secret 和 AppKey 都需要填写。", nameof(credentials));
+            throw new ArgumentException(LocalizationService.Current.Translate("credentials.aliyun_fields_required"), nameof(credentials));
 
         byte[] clear = JsonSerializer.SerializeToUtf8Bytes(credentials);
         byte[]? protectedData = null;
@@ -93,13 +95,13 @@ public static class AliyunTtsCredentialStore
             Directory.CreateDirectory(Path.GetDirectoryName(ProgramCredentialPath)!);
             File.WriteAllBytes(temporaryPath, protectedData);
             File.Move(temporaryPath, ProgramCredentialPath, overwrite: true);
-            _lastCredentialSource = "程序目录 DPAPI 加密文件（刚保存）";
+            _lastCredentialSource = "credentials.source_program_dpapi_saved";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
                                   CryptographicException or ArgumentException or NotSupportedException)
         {
-            throw new IOException(
-                $"无法在程序运行目录保存阿里云凭据：{ProgramCredentialPath}。请检查该目录的写入权限。", ex);
+            throw new IOException(LocalizationService.Current.Format("credentials.aliyun_save_failed_path",
+                ("path", ProgramCredentialPath)), ex);
         }
         finally
         {
@@ -113,7 +115,7 @@ public static class AliyunTtsCredentialStore
     public static void Clear()
     {
         File.Delete(ProgramCredentialPath);
-        _lastCredentialSource = "程序目录凭据文件已清除";
+        _lastCredentialSource = "credentials.source_file_cleared";
     }
 
     private const int CryptProtectUiForbidden = 0x1;

@@ -51,17 +51,19 @@ public sealed class AnswerResetService
                     continue;
                 return status == "applied"
                     ? new AnswerResetResult(AnswerResetStatus.Applied,
-                        "已重置答题进度，助手正在从当前页面重新作答。")
-                    : new AnswerResetResult(AnswerResetStatus.Failed, $"后台没有接受重置请求（{status}）。");
+                        LocalizationService.Current.Translate("answer_reset.applied"))
+                    : new AnswerResetResult(AnswerResetStatus.Failed,
+                        LocalizationService.Current.Format("answer_reset.rejected", ("status", status)));
             }
 
             TryDelete(_requestPath);
             return new AnswerResetResult(AnswerResetStatus.NotResponding,
-                "重置请求已发送，但后台答题进程没有响应。请确认 ETS 正在运行，再试一次。");
+                LocalizationService.Current.Translate("answer_reset.not_responding"));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            return new AnswerResetResult(AnswerResetStatus.Failed, $"无法发送重置请求：{ex.Message}");
+            return new AnswerResetResult(AnswerResetStatus.Failed,
+                LocalizationService.Current.Format("answer_reset.send_failed", ("detail", ex.Message)));
         }
     }
 

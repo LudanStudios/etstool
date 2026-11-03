@@ -20,7 +20,21 @@ public sealed partial class PreferencesPage : Page
             "Dark" => 2,
             _ => 0
         };
-        LanguageBox.SelectedIndex = _preferences.Language == "en-US" ? 1 : 0;
+        IReadOnlyList<LocalizationLanguage> languages = LocalizationService.GetAvailableLanguages();
+        foreach (LocalizationLanguage language in languages)
+            LanguageBox.Items.Add(new ComboBoxItem { Content = language.DisplayName, Tag = language.Code });
+
+        int selectedLanguageIndex = 0;
+        for (int index = 0; index < LanguageBox.Items.Count; index++)
+        {
+            if (LanguageBox.Items[index] is ComboBoxItem { Tag: string code } &&
+                code.Equals(_preferences.Language, StringComparison.OrdinalIgnoreCase))
+            {
+                selectedLanguageIndex = index;
+                break;
+            }
+        }
+        if (LanguageBox.Items.Count > 0) LanguageBox.SelectedIndex = selectedLanguageIndex;
         AutoUpdateToggle.IsOn = _preferences.AutoUpdateEnabled;
         _loading = false;
         LocalizationService.Current.Apply(this);
@@ -41,7 +55,8 @@ public sealed partial class PreferencesPage : Page
     private void LanguageBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading) return;
-        _preferences.SetLanguage(LanguageBox.SelectedIndex == 1 ? "en-US" : "zh-CN");
+        if (LanguageBox.SelectedItem is ComboBoxItem { Tag: string languageCode })
+            _preferences.SetLanguage(languageCode);
     }
 
     private void AutoUpdateToggle_Toggled(object sender, RoutedEventArgs e)
@@ -54,33 +69,34 @@ public sealed partial class PreferencesPage : Page
     {
         if (_preferences.InternalTestNoUpdatesEnabled) return;
         CheckUpdatesButtonEnabled(false);
-        UpdateStatusText.Text = "正在检查 GitHub 代码版本和 Release 版本…";
+        UpdateStatusText.Text = LocalizationService.Current.Translate("preferences.checking_versions");
         try
         {
             UpdateCheckResult result = await new GitHubUpdateService().CheckAsync();
             _preferences.MarkUpdateCheck(result.CheckedAt);
-            UpdateStatusText.Text = $"{result.Message} 检查时间：{result.CheckedAt.ToLocalTime():yyyy-MM-dd HH:mm}";
+            UpdateStatusText.Text = $"{result.Message} " + LocalizationService.Current.Format("preferences.update_status_checked",
+                ("time", result.CheckedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")));
             if (result.UpdateAvailable)
             {
                 var dialog = new ContentDialog
                 {
-                    Title = "发现可用更新",
-                    Content = result.Message + "\n\n现在打开 GitHub 查看提交或下载页面？",
-                    PrimaryButtonText = "打开 GitHub",
-                    CloseButtonText = "稍后",
+                    Title = LocalizationService.Current.Translate("preferences.available_update"),
+                    Content = result.Message + "\n\n" + LocalizationService.Current.Translate("preferences.open_github_question"),
+                    PrimaryButtonText = LocalizationService.Current.Translate("preferences.open_github"),
+                    CloseButtonText = LocalizationService.Current.Translate("common.later"),
                     DefaultButton = ContentDialogButton.Primary,
                     XamlRoot = XamlRoot
                 };
                 if (await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog) == ContentDialogResult.Primary)
                     Process.Start(new ProcessStartInfo(result.Url) { UseShellExecute = true });
-                InfoBarPresenter.Show(UpdateInfoBar, "发现更新", result.Message, InfoBarSeverity.Informational);
+                InfoBarPresenter.Show(UpdateInfoBar, LocalizationService.Current.Translate("preferences.found_update"), result.Message, InfoBarSeverity.Informational);
             }
-            else InfoBarPresenter.Show(UpdateInfoBar, "检查完成", result.Message, InfoBarSeverity.Success);
+            else InfoBarPresenter.Show(UpdateInfoBar, LocalizationService.Current.Translate("preferences.check_completed"), result.Message, InfoBarSeverity.Success);
         }
         catch (Exception ex)
         {
-            UpdateStatusText.Text = "检查失败：" + ex.Message;
-            InfoBarPresenter.Show(UpdateInfoBar, "无法检查更新", ex.Message, InfoBarSeverity.Warning);
+            UpdateStatusText.Text = LocalizationService.Current.Format("preferences.check_failed", ("detail", ex.Message));
+            InfoBarPresenter.Show(UpdateInfoBar, LocalizationService.Current.Translate("preferences.cannot_check_updates"), ex.Message, InfoBarSeverity.Warning);
         }
         finally { CheckUpdatesButtonEnabled(true); }
     }
@@ -98,8 +114,8 @@ public sealed partial class PreferencesPage : Page
         if (!internalTestMode) return;
 
         Version? version = typeof(PreferencesPage).Assembly.GetName().Version;
-        string versionText = version is null ? "1.2.4" : $"{version.Major}.{version.Minor}.{version.Build}";
-        string format = LocalizationService.Current.Translate("当前版本：{0} 内部测试版本，无法配置更新。");
+        string versionText = version is null ? "1.2.5" : $"{version.Major}.{version.Minor}.{version.Build}";
+        string format = LocalizationService.Current.Translate("preferences.current_version_internal_test_build");
         InternalTestNoUpdatesText.Text = string.Format(format, versionText);
     }
 }

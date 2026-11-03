@@ -12,6 +12,7 @@ public sealed record SpeakingPrepOutcome(SpeakingSession? Session, IReadOnlyList
 /// </summary>
 public sealed class SpeakingPrepService
 {
+    private const int CurrentPromptVersion = 2;
     private static readonly SemaphoreSlim Gate = new(1, 1);
     private readonly SpeakingAnswerService _answers;
     private readonly DeepSeekService _deepSeek;
@@ -39,6 +40,7 @@ public sealed class SpeakingPrepService
         SpeakingSession? session = _sessionStore.Load();
         if (session is null || session.PackId != packId) return null;
         if (!string.Equals(session.Mode, mode, StringComparison.Ordinal)) return null;
+        if (mode == "flexible" && session.PromptVersion != CurrentPromptVersion) return null;
         if (session.Items.Count != questions.Count) return null;
         if (!session.Items.Select(item => item.Number).SequenceEqual(questions.Select(question => question.Number)))
             return null;
@@ -55,13 +57,16 @@ public sealed class SpeakingPrepService
 
         string mode = AppPreferencesService.Current.SpeakingMode;
         if (mode == "flexible" && !ApiKeyStore.HasKey)
-            return new SpeakingPrepOutcome(null, new[] { "未填写有效的凭据\n无法完成指定操作。" });
+            return new SpeakingPrepOutcome(null, new[]
+            {
+                LocalizationService.Current.Translate("common.invalid_credentials_error")
+            });
 
         SpeakingSession? reusable = FindReusableSession(packId, mode, questions);
         if (reusable is not null)
         {
             progress?.Report(new SpeakingPrepProgress(reusable.Items.Count, questions.Count,
-                $"已有 {reusable.Items.Count} 条可用音频，无需重新生成"));
+                LocalizationService.Current.Format("speaking.reusable_audio", ("count", reusable.Items.Count))));
             return new SpeakingPrepOutcome(reusable, Array.Empty<string>());
         }
 
@@ -69,7 +74,7 @@ public sealed class SpeakingPrepService
         {
             return new SpeakingPrepOutcome(null, new[]
             {
-                "未填写有效的凭据\n无法完成指定操作。"
+                LocalizationService.Current.Translate("common.invalid_credentials_error")
             });
         }
 
@@ -80,13 +85,18 @@ public sealed class SpeakingPrepService
             var errors = new List<string>();
             int completed = 0;
             progress?.Report(new SpeakingPrepProgress(0, questions.Count,
-                $"准备 {questions.Count} 道口语题 · {(mode == "flexible" ? "生成模式" : "标答模式")}"));
+                LocalizationService.Current.Format("speaking.preparing_questions",
+                    ("count", questions.Count),
+                    ("mode", LocalizationService.Current.Translate(mode == "flexible"
+                        ? "speaking.mode_generated" : "speaking.mode_standard")))));
 
             foreach (SpeakingQuestion question in questions)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 progress?.Report(new SpeakingPrepProgress(completed, questions.Count,
-                    $"正在处理 {question.Number}/{questions.Count}：{question.Type}"));
+                    LocalizationService.Current.Format("speaking.processing_question",
+                        ("current", question.Number), ("total", questions.Count),
+                        ("kind", LocalizedQuestionType(question.Type)))));
 
                 string answer = question.StandardAnswer;
                 if (mode == "flexible")
@@ -96,11 +106,13 @@ public sealed class SpeakingPrepService
                     if (generated.Success && generated.Text.Trim().Length > 0)
                         answer = generated.Text.Trim();
                     else
-                        errors.Add($"第 {question.Number} 题：DeepSeek 生成失败，已改用标答（{generated.Error}）");
+                        errors.Add(LocalizationService.Current.Format("speaking.deepseek_generation_failed",
+                            ("question", question.Number), ("detail", LocalizationService.Current.Translate(generated.Error))));
                 }
                 if (string.IsNullOrWhiteSpace(answer))
                 {
-                    errors.Add($"第 {question.Number} 题：没有可用答案");
+                    errors.Add(LocalizationService.Current.Format("speaking.no_answer_available",
+                        ("question", question.Number)));
                     completed++;
                     continue;
                 }
@@ -109,7 +121,8 @@ public sealed class SpeakingPrepService
                     .ConfigureAwait(false);
                 if (!tts.Success)
                 {
-                    errors.Add($"第 {question.Number} 题：TTS 失败（{tts.Error}）");
+                    errors.Add(LocalizationService.Current.Format("speaking.tts_failed",
+                        ("question", question.Number), ("detail", LocalizationService.Current.Translate(tts.Error))));
                     completed++;
                     continue;
                 }
@@ -118,16 +131,25 @@ public sealed class SpeakingPrepService
                     tts.FilePath));
                 completed++;
                 progress?.Report(new SpeakingPrepProgress(completed, questions.Count,
-                    $"已完成 {completed}/{questions.Count}：{question.Type}"));
+                    LocalizationService.Current.Format("speaking.generated_progress",
+                        ("completed", completed), ("total", questions.Count),
+                        ("kind", LocalizedQuestionType(question.Type)))));
             }
 
             if (items.Count == 0)
-                return new SpeakingPrepOutcome(null, errors.Count > 0 ? errors : new[] { "没有生成任何音频。" });
+                return new SpeakingPrepOutcome(null, errors.Count > 0 ? errors : new[]
+                {
+                    LocalizationService.Current.Translate("speaking.no_audio_generated")
+                });
 
-            var session = new SpeakingSession(packId, mode, DateTimeOffset.Now, items);
+            var session = new SpeakingSession(packId, mode, DateTimeOffset.Now, items)
+            {
+                PromptVersion = CurrentPromptVersion
+            };
             _sessionStore.Save(session);
             progress?.Report(new SpeakingPrepProgress(items.Count, questions.Count,
-                $"完成：{items.Count}/{questions.Count} 条音频"));
+                LocalizationService.Current.Format("speaking.completed_progress",
+                    ("completed", items.Count), ("total", questions.Count))));
             return new SpeakingPrepOutcome(session, errors);
         }
         finally
@@ -135,4 +157,7 @@ public sealed class SpeakingPrepService
             Gate.Release();
         }
     }
+
+    private static string LocalizedQuestionType(string type)
+        => LocalizationService.Current.Translate(type);
 }

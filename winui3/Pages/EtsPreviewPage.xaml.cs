@@ -52,7 +52,7 @@ public sealed partial class EtsPreviewPage : Page
             PreviewPlaceholder.Visibility = Visibility.Visible;
             ConnectionRing.IsActive = false;
             ConnectionStatus.Text = LocalizationService.Current.Translate(
-                "请先在答题设置中启用“集成ETS主程序”。");
+                "preview.enable_integrate_ets_main_app");
             return;
         }
 
@@ -126,7 +126,7 @@ public sealed partial class EtsPreviewPage : Page
 
             _preview.DetachClosedWindow();
             PreviewPlaceholder.Visibility = Visibility.Visible;
-            ConnectionStatus.Text = LocalizationService.Current.Translate("ETS 窗口已关闭；正在自动查找已运行的 ETS。");
+            ConnectionStatus.Text = LocalizationService.Current.Translate("preview.ets_window_closed_searching_automatically");
             ConnectionRing.IsActive = false;
             ConnectButton.IsEnabled = true;
         }
@@ -149,7 +149,7 @@ public sealed partial class EtsPreviewPage : Page
             _nextSearchAt = DateTime.MinValue;
             ConnectionStatus.Text = alreadyEmbedded
                 ? string.Empty
-                : LocalizationService.Current.Translate("ETS 正在启动；程序预览会自动连接。");
+                : LocalizationService.Current.Translate("preview.ets_starting_program_preview_connect");
             ConnectionRing.IsActive = !alreadyEmbedded;
         }
         catch (Exception ex)
@@ -195,12 +195,12 @@ public sealed partial class EtsPreviewPage : Page
                     PreviewPlaceholder.Visibility = Visibility.Visible;
                 }
                 ConnectionRing.IsActive = false;
-                ConnectionStatus.Text = $"{LocalizationService.Current.Translate("已结束")} {ended} " +
-                                        LocalizationService.Current.Translate("个 ETS 进程。");
+                ConnectionStatus.Text = LocalizationService.Current.Format(
+                    "preview.ets_processes", ("count", ended));
             }
             else
             {
-                ConnectionStatus.Text = LocalizationService.Current.Translate("当前没有运行中的 ETS 进程。");
+                ConnectionStatus.Text = LocalizationService.Current.Translate("preview.no_ets_processes_running");
             }
         }
         catch (Exception ex)
@@ -220,7 +220,7 @@ public sealed partial class EtsPreviewPage : Page
         ConnectButton.IsEnabled = false;
         ConnectionRing.IsActive = !automatic;
         if (!automatic)
-            ConnectionStatus.Text = LocalizationService.Current.Translate("正在查找已运行的 ETS 窗口…");
+            ConnectionStatus.Text = LocalizationService.Current.Translate("preview.searching_running_ets_windows");
 
         try
         {
@@ -233,16 +233,17 @@ public sealed partial class EtsPreviewPage : Page
             {
                 PreviewPlaceholder.Visibility = Visibility.Visible;
                 ConnectionStatus.Text = _preview.IsWaitingForStableWindow
-                    ? LocalizationService.Current.Translate("ETS 正在初始化；窗口稳定后会自动连接预览。")
+                    ? LocalizationService.Current.Translate("preview.ets_initializing_preview_connect_automatically")
                     : LocalizationService.Current.Translate(
-                        "未检测到运行中的 ETS；此页会自动查找，不会自动启动。请先手动启动 ETS。");
+                        "preview.no_running_ets_process_was");
             }
         }
         catch (Win32Exception ex) when (ex.NativeErrorCode == 5)
         {
             DiagnosticLogService.Warn("ets_preview.connection.permission_denied", ex.Message);
             PreviewPlaceholder.Visibility = Visibility.Visible;
-            ConnectionStatus.Text = $"{ex.Message} 助手已以管理员权限运行，请确认 ETS 主窗口处于当前桌面会话。";
+            ConnectionStatus.Text = LocalizationService.Current.Format("preview.elevated_session_hint",
+                ("detail", ex.Message));
         }
         catch (Exception ex)
         {

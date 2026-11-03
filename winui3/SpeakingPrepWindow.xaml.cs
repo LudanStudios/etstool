@@ -15,33 +15,34 @@ namespace ETSAssistant.WinUI3;
 
 public sealed class SpeakingPrepItem : INotifyPropertyChanged
 {
-    private string _status = "等待";
+    private string _status = "speaking.status_waiting";
     private string _statusGlyph = "\uE823";
     private Brush _statusBrush = ResolveBrush("TextFillColorTertiaryBrush");
+    private readonly string _kind;
 
     public SpeakingPrepItem(int number, string kind, string prompt)
     {
         Number = number.ToString();
-        Kind = kind;
+        _kind = kind;
         Prompt = prompt;
     }
 
     public string Number { get; }
-    public string Kind { get; }
+    public string Kind => LocalizationService.Current.Translate(_kind);
     public string Prompt { get; }
 
     public string Status
     {
-        get => _status;
+        get => LocalizationService.Current.Translate(_status);
         set
         {
             if (_status == value) return;
             _status = value;
             (_statusGlyph, _statusBrush) = value switch
             {
-                "完成" => ("\uE73E", ResolveBrush("SystemFillColorSuccessBrush")),
-                "生成中" => ("\uE895", ResolveBrush("AccentTextFillColorPrimaryBrush")),
-                "失败" => ("\uEA39", ResolveBrush("SystemFillColorCriticalBrush")),
+                "speaking.status_completed" => ("\uE73E", ResolveBrush("SystemFillColorSuccessBrush")),
+                "speaking.status_generating" => ("\uE895", ResolveBrush("AccentTextFillColorPrimaryBrush")),
+                "speaking.status_failed" => ("\uEA39", ResolveBrush("SystemFillColorCriticalBrush")),
                 _ => ("\uE823", ResolveBrush("TextFillColorTertiaryBrush"))
             };
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Status)));
@@ -73,6 +74,8 @@ public sealed partial class SpeakingPrepWindow : Window
     private readonly ObservableCollection<SpeakingPrepItem> _items = new();
     private readonly SpeakingAutoRunner _autoRunner = new();
     private string _packId = string.Empty;
+    private string _paperTitle = string.Empty;
+    private int _questionCount;
     private CancellationTokenSource? _cancellation;
     private bool _sessionReady;
     private bool _autoStartInProgress;
@@ -91,26 +94,31 @@ public sealed partial class SpeakingPrepWindow : Window
             DiagnosticLogService.Info("speaking_prep.window.opened");
         };
         ActiveWindow = this;
-        Title = "口语题准备";
+        Title = LocalizationService.Current.Translate("speaking.default_title");
         SystemBackdrop = new MicaBackdrop();
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
         QuestionList.ItemsSource = _items;
         ApplyTheme();
         ConfigureWindow();
+        AppPreferencesService.Current.LanguageChanged += ApplyLocalization;
+        RootGrid.Loaded += (_, _) =>
+        {
+            // XAML text keys are attached to the visual tree only after the first layout.
+            // Applying localization in the constructor can run before these descendants exist.
+            LocalizationService.Current.ReloadIfChanged();
+            ApplyLocalization();
+        };
         AppPreferencesService.Current.ThemeChanged += ApplyTheme;
         _autoRunner.Output += line => DispatcherQueue.TryEnqueue(() =>
         {
             StatusText.Text = line;
-            if (line.Contains("中止", StringComparison.Ordinal) ||
-                line.Contains("失败", StringComparison.Ordinal) ||
-                line.Contains("未确认成功", StringComparison.Ordinal))
-                _autoRunnerFailureStatus = line;
+            _autoRunnerFailureStatus = line;
         });
         _autoRunner.Exited += () => DispatcherQueue.TryEnqueue(() =>
         {
-            StartAutoButtonText.Text = "开始自动口语";
-            if (!string.IsNullOrWhiteSpace(_autoRunnerFailureStatus))
+            StartAutoButtonText.Text = LocalizationService.Current.Translate("common.start_automatic_speaking");
+            if (_autoRunner.LastExitCode is > 0 && !string.IsNullOrWhiteSpace(_autoRunnerFailureStatus))
             {
                 StatusText.Text = _autoRunnerFailureStatus;
                 ErrorBar.Severity = InfoBarSeverity.Error;
@@ -118,12 +126,13 @@ public sealed partial class SpeakingPrepWindow : Window
                 ErrorBar.IsOpen = true;
                 return;
             }
-            StatusText.Text = "自动口语已结束。";
+            StatusText.Text = LocalizationService.Current.Translate("speaking.auto_speaking_ended");
         });
         Closed += (_, _) =>
         {
             DiagnosticLogService.Info("speaking_prep.window.closed", $"pack={_packId}");
             AppPreferencesService.Current.ThemeChanged -= ApplyTheme;
+            AppPreferencesService.Current.LanguageChanged -= ApplyLocalization;
             _autoRunner.Stop();
             _cancellation?.Cancel();
             if (ActiveWindow == this) ActiveWindow = null;
@@ -134,8 +143,11 @@ public sealed partial class SpeakingPrepWindow : Window
     {
         DiagnosticLogService.Info("speaking_prep.started", $"pack={packId} questionCount={questions.Count}");
         _packId = packId;
-        Title = $"口语题准备 · {paperTitle}";
-        PackText.Text = $"试卷 {packId} · {questions.Count} 道口语题";
+        _paperTitle = paperTitle;
+        _questionCount = questions.Count;
+        Title = LocalizationService.Current.Format("dynamic.speaking_prep_title", ("paperTitle", paperTitle));
+        PackText.Text = LocalizationService.Current.Format("dynamic.speaking_prep_summary",
+            ("paperId", packId), ("count", questions.Count));
         _items.Clear();
         foreach (SpeakingQuestion question in questions)
             _items.Add(new SpeakingPrepItem(question.Number, question.Type, Trim(question.Prompt)));
@@ -144,13 +156,13 @@ public sealed partial class SpeakingPrepWindow : Window
         OverallProgress.Maximum = Math.Max(1, questions.Count);
         OverallProgress.Value = 0;
         ProgressCountText.Text = $"0/{questions.Count}";
-        StatusText.Text = "开始生成 TTS 音频…";
+        StatusText.Text = LocalizationService.Current.Translate("speaking.tts_generating");
         ErrorBar.IsOpen = false;
         _sessionReady = false;
         StartAutoButton.Visibility = Visibility.Collapsed;
         HeaderStatusText.Visibility = Visibility.Visible;
-        StartAutoButtonText.Text = "开始自动口语";
-        SetHeaderStatus("生成中", "AccentTextFillColorPrimaryBrush");
+        StartAutoButtonText.Text = LocalizationService.Current.Translate("common.start_automatic_speaking");
+        SetHeaderStatus("speaking.status_generating", "AccentTextFillColorPrimaryBrush");
         _ = PrepareAsync();
     }
 
@@ -164,12 +176,12 @@ public sealed partial class SpeakingPrepWindow : Window
             OverallProgress.Maximum = Math.Max(1, update.Total);
             OverallProgress.Value = Math.Min(update.Completed, update.Total);
             ProgressCountText.Text = $"{Math.Min(update.Completed, update.Total)}/{update.Total}";
-            StatusText.Text = update.Message;
+            StatusText.Text = LocalizationService.Current.Translate(update.Message);
             for (int index = 0; index < _items.Count; index++)
             {
                 _items[index].Status = index < update.Completed
-                    ? "完成"
-                    : index == update.Completed ? "生成中" : "等待";
+                    ? "speaking.status_completed"
+                    : index == update.Completed ? "speaking.status_generating" : "speaking.status_waiting";
             }
         });
 
@@ -180,21 +192,21 @@ public sealed partial class SpeakingPrepWindow : Window
             SpeakingPrepOutcome outcome = await service.PrepareAsync(_packId, progress, _cancellation.Token);
             if (outcome.Session is null)
             {
-                if (outcome.Errors.Contains("未填写有效的凭据\n无法完成指定操作。", StringComparer.Ordinal) &&
+                if (outcome.Errors.Contains(LocalizationService.Current.Translate("common.invalid_credentials_error"), StringComparer.Ordinal) &&
                     MainWindow.Current is { } mainWindow)
                 {
                     Close();
                     await mainWindow.PromptForMissingCredentialsAsync();
                     return;
                 }
-                StatusText.Text = "没有生成音频。";
+                StatusText.Text = LocalizationService.Current.Translate("speaking.no_audio_generated");
                 DiagnosticLogService.Warn("speaking_prep.tts_generation.completed_with_errors",
                     $"pack={_packId} errorCount={outcome.Errors.Count}");
                 ProgressCountText.Text = $"0/{_items.Count}";
                 ErrorBar.Severity = InfoBarSeverity.Error;
                 ErrorBar.Message = string.Join(Environment.NewLine, outcome.Errors.Take(3));
                 ErrorBar.IsOpen = true;
-                SetHeaderStatus("失败", "SystemFillColorCriticalBrush");
+                SetHeaderStatus("speaking.status_failed", "SystemFillColorCriticalBrush");
                 return;
             }
 
@@ -205,21 +217,24 @@ public sealed partial class SpeakingPrepWindow : Window
             {
                 DiagnosticLogService.Warn("speaking_prep.tts_generation.completed_with_errors",
                     $"pack={_packId} generated={outcome.Session.Items.Count} errorCount={outcome.Errors.Count}");
-                StatusText.Text = $"部分完成：{outcome.Session.Items.Count}/{_items.Count} 条音频；自动口语未启动。";
+                StatusText.Text = LocalizationService.Current.Format("speaking.partial_complete",
+                    ("generated", outcome.Session.Items.Count), ("total", _items.Count));
                 foreach (SpeakingPrepItem item in _items)
-                    if (item.Status != "完成") item.Status = "失败";
+                    if (item.Status != LocalizationService.Current.Translate("speaking.status_completed"))
+                        item.Status = "speaking.status_failed";
                 ErrorBar.Severity = InfoBarSeverity.Warning;
                 ErrorBar.Message = string.Join(Environment.NewLine, outcome.Errors.Take(2));
                 ErrorBar.IsOpen = true;
-                SetHeaderStatus("部分完成", "SystemFillColorCautionBrush");
+                SetHeaderStatus("speaking.status_partial", "SystemFillColorCautionBrush");
             }
             else
             {
                 DiagnosticLogService.Info("speaking_prep.tts_generation.completed",
                     $"pack={_packId} generated={outcome.Session.Items.Count}");
-                StatusText.Text = $"生成完成：{outcome.Session.Items.Count} 条音频，正在自动启动口语。";
+                StatusText.Text = LocalizationService.Current.Format("speaking.auto_speaking_after_generation",
+                    ("count", outcome.Session.Items.Count));
                 foreach (SpeakingPrepItem item in _items)
-                    item.Status = "完成";
+                    item.Status = "speaking.status_completed";
                 ErrorBar.IsOpen = false;
                 _sessionReady = true;
                 HeaderStatusText.Visibility = Visibility.Collapsed;
@@ -230,23 +245,23 @@ public sealed partial class SpeakingPrepWindow : Window
         catch (OperationCanceledException)
         {
             DiagnosticLogService.Info("speaking_prep.tts_generation.cancelled", $"pack={_packId}");
-            StatusText.Text = "已取消。";
-            SetHeaderStatus("已取消", "TextFillColorSecondaryBrush");
+            StatusText.Text = LocalizationService.Current.Translate("speaking.cancelled");
+            SetHeaderStatus("speaking.status_cancelled", "TextFillColorSecondaryBrush");
         }
         catch (Exception ex)
         {
             DiagnosticLogService.Error("speaking_prep.tts_generation.failed", ex);
-            StatusText.Text = "准备失败。";
+            StatusText.Text = LocalizationService.Current.Translate("speaking.preparation_failed");
             ErrorBar.Severity = InfoBarSeverity.Error;
             ErrorBar.Message = ex.Message;
             ErrorBar.IsOpen = true;
-            SetHeaderStatus("失败", "SystemFillColorCriticalBrush");
+            SetHeaderStatus("speaking.status_failed", "SystemFillColorCriticalBrush");
         }
     }
 
     private void SetHeaderStatus(string text, string brushKey)
     {
-        HeaderStatusText.Text = text;
+        HeaderStatusText.Text = LocalizationService.Current.Translate(text);
         HeaderStatusText.Foreground = SpeakingPrepItem.ResolveBrush(brushKey);
     }
 
@@ -256,8 +271,8 @@ public sealed partial class SpeakingPrepWindow : Window
         {
             DiagnosticLogService.Info("speaking_prep.auto_speaking.stop_requested", $"pack={_packId}");
             _autoRunner.Stop();
-            StartAutoButtonText.Text = "开始自动口语";
-            StatusText.Text = "正在停止自动口语…";
+            StartAutoButtonText.Text = LocalizationService.Current.Translate("common.start_automatic_speaking");
+            StatusText.Text = LocalizationService.Current.Translate("speaking.stopping_auto_speaking");
             return;
         }
         await StartAutoAsync();
@@ -278,11 +293,10 @@ public sealed partial class SpeakingPrepWindow : Window
             if (!cable.IsReady)
             {
                 ErrorBar.Severity = InfoBarSeverity.Warning;
-                ErrorBar.Message = cable.IsAvailable
-                    ? "检测到 CABLE Input，但没有启用录音端 CABLE Output。请打开录音设备启用它，并把 ETS 麦克风设为 CABLE Output。"
-                    : "未安装 VB-CABLE 虚拟声卡。请到“答题设置”安装驱动。";
+                ErrorBar.Message = LocalizationService.Current.Translate(cable.IsAvailable
+                    ? "speaking.cable_output_not_enabled" : "speaking.virtual_cable_not_installed");
                 ErrorBar.IsOpen = true;
-                StatusText.Text = "音频已生成；请到“答题设置”配置虚拟声卡后启动自动口语。";
+                StatusText.Text = LocalizationService.Current.Translate("speaking.configure_virtual_cable_then_start");
                 return;
             }
 
@@ -303,8 +317,8 @@ public sealed partial class SpeakingPrepWindow : Window
                 _sessionReady = false;
                 StartAutoButton.Visibility = Visibility.Collapsed;
                 HeaderStatusText.Visibility = Visibility.Visible;
-                SetHeaderStatus("重新生成音频", "AccentTextFillColorPrimaryBrush");
-                StatusText.Text = "上一轮临时音频已清理，正在重新生成；完成后会自动开始。";
+                SetHeaderStatus("speaking.regenerating_audio", "AccentTextFillColorPrimaryBrush");
+                StatusText.Text = LocalizationService.Current.Translate("speaking.previous_audio_cleared_regenerating");
                 ErrorBar.IsOpen = false;
                 _autoStartInProgress = false;
                 await PrepareAsync();
@@ -321,15 +335,14 @@ public sealed partial class SpeakingPrepWindow : Window
             }
             if (audioInput?.Name.Contains("CABLE Output", StringComparison.OrdinalIgnoreCase) != true)
             {
-                string currentInput = audioInput?.Name ?? "无法读取";
-                string message = $"未能确认 ETS 正在使用虚拟麦克风 CABLE Output（当前 Windows 默认输入：{currentInput}）。"
-                    + $"已取消自动口语，没有推进题目。设置结果：{audioInputResult}。"
-                    + "请确认 ETS 麦克风设为 CABLE Output 或系统默认后重试。";
+                string currentInput = audioInput?.Name ?? LocalizationService.Current.Translate("common.not_available");
+                string message = LocalizationService.Current.Format("speaking.virtual_mic_confirmation_error",
+                    ("device", currentInput), ("result", audioInputResult));
                 DiagnosticLogService.Warn("speaking_prep.auto_speaking.virtual_mic_not_ready", message);
                 ErrorBar.Severity = InfoBarSeverity.Error;
                 ErrorBar.Message = message;
                 ErrorBar.IsOpen = true;
-                StatusText.Text = "虚拟麦克风未就绪；本轮已取消，没有跳题。";
+                StatusText.Text = LocalizationService.Current.Translate("speaking.virtual_mic_not_ready");
                 return;
             }
             DiagnosticLogService.Info("speaking_prep.auto_speaking.virtual_mic_ready",
@@ -340,24 +353,24 @@ public sealed partial class SpeakingPrepWindow : Window
                 ErrorBar.Severity = InfoBarSeverity.Error;
                 ErrorBar.Message = error;
                 ErrorBar.IsOpen = true;
-                if (error.Contains("口语音频已失效", StringComparison.Ordinal) ||
-                    error.Contains("没有可播放的音频", StringComparison.Ordinal))
+                if (_autoRunner.LastStartFailureRequiresRegeneration)
                 {
                     _sessionReady = false;
                     StartAutoButton.Visibility = Visibility.Collapsed;
-                    StatusText.Text = "本轮已取消，未开始录音。请重新打开口语题准备并生成音频。";
+                    StatusText.Text = LocalizationService.Current.Translate("speaking.cancelled_no_recording_started");
                 }
                 else
                 {
-                    StatusText.Text = "音频已生成，但自动口语未能启动。";
+                    StatusText.Text = LocalizationService.Current.Translate("speaking.generated_auto_speaking_not_started");
                 }
                 return;
             }
 
             ErrorBar.IsOpen = false;
             DiagnosticLogService.Info("speaking_prep.auto_speaking.started", $"pack={_packId}");
-            StartAutoButtonText.Text = "停止自动口语";
-            StatusText.Text = $"默认麦克风：{audioInput.Name}；等待 ETS 进入录音阶段…";
+            StartAutoButtonText.Text = LocalizationService.Current.Translate("common.stop_automatic_speaking");
+            StatusText.Text = LocalizationService.Current.Format("speaking.default_mic_waiting_for_ets",
+                ("device", audioInput.Name));
         }
         finally
         {
@@ -373,6 +386,19 @@ public sealed partial class SpeakingPrepWindow : Window
             ? Visibility.Collapsed
             : Visibility.Visible;
         UpdateTitleBarColors();
+    }
+
+    private void ApplyLocalization()
+    {
+        LocalizationService localization = LocalizationService.Current;
+        localization.ReloadIfChanged();
+        localization.Apply(RootGrid);
+        Title = _packId.Length == 0
+            ? localization.Translate("speaking.default_title")
+            : localization.Format("dynamic.speaking_prep_title", ("paperTitle", _paperTitle));
+        if (_packId.Length > 0)
+            PackText.Text = localization.Format("dynamic.speaking_prep_summary",
+                ("paperId", _packId), ("count", _questionCount));
     }
 
     private void UpdateTitleBarColors()

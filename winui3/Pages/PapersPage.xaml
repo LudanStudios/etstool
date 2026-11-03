@@ -5,8 +5,8 @@
     <Grid x:Name="ResponsiveContent" Margin="30,26,30,30" RowDefinitions="Auto,Auto,*" RowSpacing="16">
         <Grid ColumnDefinitions="28,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="5">
             <SymbolIcon Symbol="Folder" VerticalAlignment="Center" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-            <TextBlock Grid.Column="1" Text="试卷管理" FontSize="30" FontWeight="SemiBold" />
-            <TextBlock Grid.Row="1" Grid.Column="1" Text="查看本机试卷，打开目录、提取答案或删除。" FontSize="15" Opacity="0.72" />
+            <TextBlock Grid.Column="1" Text="common.papers" FontSize="30" FontWeight="SemiBold" />
+            <TextBlock Grid.Row="1" Grid.Column="1" Text="papers.browse_local_papers_open_folders" FontSize="15" Opacity="0.72" />
         </Grid>
 
         <InfoBar x:Name="MessageBar" Grid.Row="1" IsOpen="False" />
@@ -15,23 +15,23 @@
                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
             <Grid RowDefinitions="Auto,Auto,*" RowSpacing="10">
                 <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
-                    <TextBlock x:Name="SummaryText" Text="正在读取本机试卷…" FontSize="14"
+                    <TextBlock x:Name="SummaryText" Text="papers.reading_local_papers" FontSize="14"
                                FontWeight="SemiBold" VerticalAlignment="Center" />
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
                         <ProgressRing x:Name="BusyRing" Width="20" Height="20" IsActive="False" />
                         <Button Click="Refresh_Click">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <SymbolIcon Symbol="Refresh" />
-                                <TextBlock Text="刷新" />
+                                <TextBlock Text="papers.refresh" />
                             </StackPanel>
                         </Button>
                     </StackPanel>
                 </Grid>
 
                 <Grid Grid.Row="1" ColumnDefinitions="130,*,Auto" Padding="12,4">
-                    <TextBlock Text="试卷编号" FontSize="12" Opacity="0.62" />
-                    <TextBlock Grid.Column="1" Text="使用 / 创建日期" FontSize="12" Opacity="0.62" />
-                    <TextBlock Grid.Column="2" Text="操作" FontSize="12" Opacity="0.62" HorizontalAlignment="Left" />
+                    <TextBlock Text="papers.paper_id" FontSize="12" Opacity="0.62" />
+                    <TextBlock Grid.Column="1" Text="papers.last_used_created" FontSize="12" Opacity="0.62" />
+                    <TextBlock Grid.Column="2" Text="papers.actions" FontSize="12" Opacity="0.62" HorizontalAlignment="Left" />
                 </Grid>
 
                 <Grid Grid.Row="2">
@@ -49,12 +49,12 @@
                                     <TextBlock Text="{Binding PackId}" FontWeight="SemiBold" VerticalAlignment="Center" />
                                     <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
                                         <StackPanel Orientation="Horizontal" Spacing="4">
-                                            <TextBlock Text="上次使用：" Opacity="0.62" />
+                                            <TextBlock Text="{Binding LastUsedLabel}" Opacity="0.62" />
                                             <TextBlock Text="{Binding LastUsedText}" Opacity="0.76"
                                                        TextTrimming="CharacterEllipsis" />
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" Spacing="4">
-                                            <TextBlock Text="创建：" Opacity="0.62" FontSize="12" />
+                                            <TextBlock Text="{Binding CreatedLabel}" Opacity="0.62" FontSize="12" />
                                             <TextBlock Text="{Binding CreatedText}" Opacity="0.62"
                                                        FontSize="12" TextTrimming="CharacterEllipsis" />
                                         </StackPanel>
@@ -62,37 +62,37 @@
                                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6"
                                                 VerticalAlignment="Center">
                                         <Button Click="OpenFolder_Click" Padding="0" Width="42" Height="38"
-                                                AutomationProperties.Name="在文件资源管理器中打开"
-                                                ToolTipService.ToolTip="在文件资源管理器中打开">
+                                                AutomationProperties.Name="papers.open_file_explorer"
+                                                ToolTipService.ToolTip="papers.open_file_explorer">
                                             <Viewbox Width="20" Height="20">
                                                 <SymbolIcon Symbol="OpenFile" />
                                             </Viewbox>
                                         </Button>
                                         <Button Click="AnalyzeAnswers_Click" Padding="0" Width="42" Height="38"
-                                                AutomationProperties.Name="分析答案并复制"
-                                                ToolTipService.ToolTip="分析答案并复制">
+                                                AutomationProperties.Name="papers.analyze_answers_copy"
+                                                ToolTipService.ToolTip="papers.analyze_answers_copy">
                                             <Viewbox Width="20" Height="20">
                                                 <SymbolIcon Symbol="FourBars" />
                                             </Viewbox>
                                         </Button>
                                         <Button Click="DetailedAnalysis_Click" Padding="0" Width="42" Height="38"
                                                 Visibility="{Binding DetailedAnalysisVisibility}"
-                                                AutomationProperties.Name="DeepSeek 详细解析 Beta"
-                                                ToolTipService.ToolTip="DeepSeek 详细解析（Beta）">
+                                                AutomationProperties.Name="papers.deepseek_detailed_analysis_beta"
+                                                ToolTipService.ToolTip="papers.deepseek_detailed_analysis_beta_2">
                                             <Viewbox Width="20" Height="20"><SymbolIcon Symbol="Message" /></Viewbox>
                                         </Button>
                                         <Button Click="ExtractAnswers_Click" Padding="0" Width="42" Height="38"
-                                                AutomationProperties.Name="提取答案"
-                                                ToolTipService.ToolTip="提取答案">
+                                                AutomationProperties.Name="papers.extract_answers"
+                                                ToolTipService.ToolTip="papers.extract_answers">
                                             <Viewbox Width="20" Height="20">
                                                 <SymbolIcon Symbol="Download" />
                                             </Viewbox>
                                         </Button>
                                         <Button Click="Delete_Click" Padding="0" Width="42" Height="38"
-                                                AutomationProperties.Name="删除"
+                                                AutomationProperties.Name="papers.delete"
                                                 Background="#1AEF4444" BorderBrush="#33EF4444" CornerRadius="6"
                                                 Foreground="#F87171"
-                                                ToolTipService.ToolTip="删除">
+                                                ToolTipService.ToolTip="papers.delete">
                                             <Viewbox Width="20" Height="20">
                                                 <SymbolIcon Symbol="Delete" Foreground="#F87171" />
                                             </Viewbox>
@@ -102,7 +102,7 @@
                             </DataTemplate>
                         </ListView.ItemTemplate>
                     </ListView>
-                    <TextBlock x:Name="EmptyText" Text="还没有本机试卷。打开 ETS 并进入一份试卷后，这里会自动出现记录。"
+                    <TextBlock x:Name="EmptyText" Text="papers.no_local_papers_yet_open"
                                Opacity="0.65" TextWrapping="Wrap" HorizontalAlignment="Center"
                                VerticalAlignment="Center" Visibility="Collapsed" />
                 </Grid>

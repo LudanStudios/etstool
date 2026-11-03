@@ -33,7 +33,7 @@ public sealed class GitHubUpdateService
     private static HttpClient CreateClient()
     {
         var client = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
-        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("ETS-Tool", "1.2.4"));
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("ETS-Tool", "1.2.5"));
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
         return client;
     }
@@ -54,14 +54,14 @@ public sealed class GitHubUpdateService
                 releaseUrl = String(root, "html_url");
             }
             else if (response.StatusCode is not (HttpStatusCode.NotFound or HttpStatusCode.NoContent))
-                throw new HttpRequestException($"GitHub Releases 返回 HTTP {(int)response.StatusCode}。");
+                throw new HttpRequestException(F("update.github_releases_http_error", ("status", (int)response.StatusCode)));
         }
 
         using (HttpResponseMessage response = await _http.GetAsync(
                    $"https://api.github.com/repos/{Repository}/commits?per_page=1", cancellationToken))
         {
             if (!response.IsSuccessStatusCode)
-                throw new HttpRequestException($"GitHub Commits 返回 HTTP {(int)response.StatusCode}。");
+                throw new HttpRequestException(F("update.github_commits_http_error", ("status", (int)response.StatusCode)));
             using JsonDocument doc = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
             if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
             {
@@ -81,10 +81,10 @@ public sealed class GitHubUpdateService
         string url = useRelease ? releaseUrl ?? $"https://github.com/{Repository}/releases" :
             commitUrl ?? $"https://github.com/{Repository}/commits/main";
         string message = !available
-            ? "当前版本已是最新。"
+            ? L("update.current_version_latest")
             : useRelease
-                ? $"发现新版本 {releaseTag}（当前版本 {_current}）。"
-                : $"发现新代码版本 {latestCode}（当前版本 {_current}）。";
+                ? F("update.new_release_found", ("latest", releaseTag), ("current", _current))
+                : F("update.new_code_found", ("latest", latestCode), ("current", _current));
         return new UpdateCheckResult(available, message, url, releaseTag, commitSha, now);
     }
 
@@ -93,11 +93,11 @@ public sealed class GitHubUpdateService
         string url = $"https://raw.githubusercontent.com/{Repository}/{Uri.EscapeDataString(commitSha)}/{ProjectFile}";
         using HttpResponseMessage response = await _http.GetAsync(url, cancellationToken);
         if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"GitHub 项目版本返回 HTTP {(int)response.StatusCode}。");
+            throw new HttpRequestException(F("update.github_version_http_error", ("status", (int)response.StatusCode)));
         string source = await response.Content.ReadAsStringAsync(cancellationToken);
         string? versionText = XDocument.Parse(source).Descendants()
             .FirstOrDefault(element => element.Name.LocalName == "Version")?.Value;
-        return ParseVersion(versionText) ?? throw new InvalidDataException("GitHub 项目版本格式无效。");
+        return ParseVersion(versionText) ?? throw new InvalidDataException(L("update.github_version_invalid"));
     }
 
     private static ProductVersion? ParseVersion(string? value)
@@ -112,6 +112,10 @@ public sealed class GitHubUpdateService
     private static string? String(JsonElement element, string name) =>
         element.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String
             ? value.GetString() : null;
+
+    private static string L(string key) => LocalizationService.Current.Translate(key);
+    private static string F(string key, params (string Name, object? Value)[] values) =>
+        LocalizationService.Current.Format(key, values);
 
     private readonly record struct ProductVersion(int Major, int Minor, int Patch) : IComparable<ProductVersion>
     {

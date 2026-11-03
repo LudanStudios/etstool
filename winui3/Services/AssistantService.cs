@@ -35,6 +35,48 @@ public sealed partial class AssistantService
         IsNamedProcessAtPath("Shell", EtsExe is null ? null : Path.Combine(Path.GetDirectoryName(EtsExe)!, "shell.exe"));
     public bool IsEtsProcessRunning => new[] { "Ets", "ETSShell", "EtsCore" }
         .Any(name => Process.GetProcessesByName(name).Length > 0) || IsEtsShellProcessRunning;
+    public IReadOnlyCollection<int> GetEtsProcessIds()
+    {
+        if (EtsExe is null) return Array.Empty<int>();
+
+        string directory = Path.GetDirectoryName(EtsExe)!;
+        var expectedPaths = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Ets"] = [EtsExe],
+            ["ETSShell"] = [Path.Combine(directory, "ETSShell.exe")],
+            ["EtsCore"] = [Path.Combine(directory, "EtsCore.exe")],
+            ["Shell"] = [Path.Combine(directory, "shell.exe")]
+        };
+        var processIds = new HashSet<int>();
+        foreach ((string name, string[] paths) in expectedPaths)
+        foreach (Process process in Process.GetProcessesByName(name))
+        {
+            using (process)
+            {
+                try
+                {
+                    if (process.HasExited) continue;
+                    string? executablePath = process.MainModule?.FileName;
+                    if (string.IsNullOrWhiteSpace(executablePath) || paths.Any(path =>
+                            string.Equals(Path.GetFullPath(executablePath), Path.GetFullPath(path),
+                                StringComparison.OrdinalIgnoreCase)))
+                        processIds.Add(process.Id);
+                }
+                catch (System.ComponentModel.Win32Exception)
+                {
+                    // ETS may run elevated while ETS Tool does not; the specific executable name is still useful.
+                    processIds.Add(process.Id);
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    processIds.Add(process.Id);
+                }
+                catch (InvalidOperationException) { }
+            }
+        }
+
+        return processIds;
+    }
     public bool IsEtsRunning => IsEtsProcessRunning || IsDebugPortOpen();
     public bool IsAutostartEnabled => !string.IsNullOrWhiteSpace(ReadAutostartValue());
 
@@ -93,14 +135,14 @@ public sealed partial class AssistantService
     public void SaveSettings(AssistantSettings settings)
     {
         if (!double.IsFinite(settings.Accuracy) || settings.Accuracy is < 0 or > 1)
-            throw new ArgumentOutOfRangeException(nameof(settings), "目标正确率必须在 0% 到 100% 之间。");
+            throw new ArgumentOutOfRangeException(nameof(settings), LocalizationService.Current.Translate("assistant.accuracy_out_of_range"));
         if (!double.IsFinite(settings.SkipInterval) || settings.SkipInterval is < 0 or > 60)
-            throw new ArgumentOutOfRangeException(nameof(settings), "跳题间隔必须在 0 到 60 秒之间。");
+            throw new ArgumentOutOfRangeException(nameof(settings), LocalizationService.Current.Translate("assistant.skip_interval_out_of_range"));
         string seed = settings.Seed;
         if (string.IsNullOrWhiteSpace(seed) || seed == "default")
             seed = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
         if (seed.Any(c => c is '\r' or '\n' or '#'))
-            throw new ArgumentException("随机种子不能包含换行符或 # 字符。");
+            throw new ArgumentException(LocalizationService.Current.Translate("assistant.seed_invalid"));
         Directory.CreateDirectory(AppRoot);
         string contents = "# 由 ETS 自动监听助手管理；也可在程序界面中修改。\n" +
             $"accuracy_rate: {settings.Accuracy.ToString("0.00", CultureInfo.InvariantCulture)}\n" +
@@ -140,25 +182,25 @@ public sealed partial class AssistantService
             {
                 if (string.IsNullOrWhiteSpace(current)) return string.Empty;
                 using RegistryKey key = Registry.CurrentUser.OpenSubKey(RunKeyPath, true)
-                    ?? throw new InvalidOperationException("无法打开 Windows 登录启动项。");
+                    ?? throw new InvalidOperationException(LocalizationService.Current.Translate("assistant.autostart_registry_unavailable"));
                 key.DeleteValue(RunValueName, false);
                 return string.Empty;
             }
 
             string ets = EtsExe ?? FindEtsExecutable()
-                ?? throw new FileNotFoundException("找不到 ETS 安装目录。请先重新扫描 ETS。", "Ets.exe");
+                ?? throw new FileNotFoundException(LocalizationService.Current.Translate("assistant.ets_install_missing"), "Ets.exe");
             string command = $"{Quote(EnginePath)} --background-listener --root {Quote(DataRoot)} --config {Quote(ConfigPath)} --ets-exe {Quote(ets)} --debug-port {DebugPort}";
             if (string.Equals(current, command, StringComparison.Ordinal)) return string.Empty;
 
             using RegistryKey writeKey = Registry.CurrentUser.OpenSubKey(RunKeyPath, true)
                 ?? Registry.CurrentUser.CreateSubKey(RunKeyPath, true)
-                ?? throw new InvalidOperationException("无法打开 Windows 登录启动项。");
+                ?? throw new InvalidOperationException(LocalizationService.Current.Translate("assistant.autostart_registry_unavailable"));
             writeKey.SetValue(RunValueName, command, RegistryValueKind.String);
             return string.Empty;
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or SecurityException or IOException)
         {
-            return "Windows 拒绝写入登录启动项（注册表 Run 键），登录后可能不会自动启动监听器；本次操作的其他功能不受影响。";
+            return LocalizationService.Current.Translate("assistant.autostart_write_denied");
         }
     }
 
@@ -171,9 +213,9 @@ public sealed partial class AssistantService
     public void EnsureListener()
     {
         if (!File.Exists(EnginePath))
-            throw new FileNotFoundException("后台组件不存在，请重新生成完整程序文件夹。", EnginePath);
+            throw new FileNotFoundException(LocalizationService.Current.Translate("assistant.engine_missing"), EnginePath);
         if (EtsExe is null) RefreshEts();
-        if (EtsExe is null) throw new FileNotFoundException("找不到 ETS 安装目录。请确认 ETS 已安装，再重新扫描。", "Ets.exe");
+        if (EtsExe is null) throw new FileNotFoundException(LocalizationService.Current.Translate("assistant.ets_install_missing"), "Ets.exe");
         if (IsListenerRunning())
         {
             DiagnosticLogService.Info("listener.start.skipped", "reason=already_running");
@@ -215,7 +257,7 @@ public sealed partial class AssistantService
     public void OpenEts(string extraArguments = "")
     {
         if (EtsExe is null) RefreshEts();
-        if (EtsExe is null) throw new FileNotFoundException("找不到 ETS 安装目录。请确认 ETS 已安装，再重新扫描。", "Ets.exe");
+        if (EtsExe is null) throw new FileNotFoundException(LocalizationService.Current.Translate("assistant.ets_install_missing"), "Ets.exe");
         if (IsEtsRunning)
         {
             DiagnosticLogService.Info("ets.start.skipped", "reason=already_running");
@@ -306,7 +348,7 @@ public sealed partial class AssistantService
         try
         {
             RefreshEts();
-            if (EtsExe is null) throw new FileNotFoundException("找不到 ETS 安装目录。请确认 ETS 已安装，再重新扫描。", "Ets.exe");
+            if (EtsExe is null) throw new FileNotFoundException(LocalizationService.Current.Translate("assistant.ets_install_missing"), "Ets.exe");
             SaveSettings(settings);
 
             var warnings = new List<string>();
@@ -349,10 +391,10 @@ public sealed partial class AssistantService
         string diagnostics = DiagnosticLogService.ReadRecentEntries();
         if (!string.IsNullOrWhiteSpace(diagnostics))
         {
-            output.Add("── ETS Tool 诊断日志 ──");
+            output.Add(LocalizationService.Current.Translate("assistant.diagnostic_logs_header"));
             output.AddRange(diagnostics.Split(Environment.NewLine));
         }
-        return output.Count == 0 ? "尚无运行记录。初始化后，ETS 启动时会显示监听状态。" : string.Join(Environment.NewLine, output.TakeLast(420));
+        return output.Count == 0 ? LocalizationService.Current.Translate("assistant.no_run_logs") : string.Join(Environment.NewLine, output.TakeLast(420));
     }
 
     private string? ReadAutostartValue()
@@ -369,7 +411,7 @@ public sealed partial class AssistantService
         if (!force && File.Exists(path)) return;
 
         Type shellType = Type.GetTypeFromProgID("WScript.Shell")
-            ?? throw new InvalidOperationException("Windows 快捷方式组件不可用。");
+            ?? throw new InvalidOperationException(LocalizationService.Current.Translate("assistant.shortcut_component_unavailable"));
         dynamic shell = Activator.CreateInstance(shellType)!;
         dynamic shortcut = shell.CreateShortcut(path);
         shortcut.TargetPath = target; shortcut.Arguments = arguments;

@@ -94,24 +94,23 @@ public sealed partial class MainWindow : Window
                 DiagnosticLogService.Info("navigation.page.closed", $"page={_currentPageName}");
             DiagnosticLogService.Info("navigation.page.opened", $"page={pageName}");
             _currentPageName = pageName;
-            if (args.Content is DependencyObject page)
-                DispatcherQueue.TryEnqueue(() =>
+            if (args.Content is FrameworkElement page)
+            {
+                RoutedEventHandler onLoaded = null!;
+                onLoaded = (_, _) =>
                 {
-                    LocalizationService.Current.Apply(page);
-                    if (page is Page responsivePage)
-                        ResponsiveLayoutService.Attach(responsivePage);
-                    if (page is FrameworkElement interactivePage)
-                        DiagnosticLogService.TrackInteractiveControls(interactivePage, pageName);
-                });
+                    page.Loaded -= onLoaded;
+                    SchedulePageRefresh(page, pageName);
+                };
+
+                if (page.IsLoaded)
+                    SchedulePageRefresh(page, pageName);
+                else
+                    page.Loaded += onLoaded;
+            }
         };
         preferences.ThemeChanged += ApplyTheme;
         preferences.LanguageChanged += OnLanguageChanged;
-
-        DispatcherQueueTimer localizationTimer = DispatcherQueue.CreateTimer();
-        localizationTimer.Interval = TimeSpan.FromSeconds(1);
-        localizationTimer.Tick += (_, _) => ApplyLocalization();
-        localizationTimer.Start();
-        Closed += (_, _) => localizationTimer.Stop();
 
         RootNavigation.SelectedItem = RootNavigation.MenuItems[0];
         PageFrame.Navigate(typeof(Pages.OverviewPage));
@@ -119,7 +118,7 @@ public sealed partial class MainWindow : Window
         {
             UpdatePaneToggleButtonStyle(RootNavigation.DisplayMode);
             _audioSessionTimer = DispatcherQueue.CreateTimer();
-            _audioSessionTimer.Interval = TimeSpan.FromSeconds(1);
+            _audioSessionTimer.Interval = TimeSpan.FromSeconds(2);
             _audioSessionTimer.Tick += async (_, _) => await SyncAudioSessionWithEtsAsync();
             _audioSessionTimer.Start();
             await SyncAudioSessionWithEtsAsync();
@@ -142,7 +141,7 @@ public sealed partial class MainWindow : Window
         try
         {
             AssistantService assistant = AssistantService.Current;
-            bool etsRunning = assistant.IsEtsProcessRunning;
+            bool etsRunning = assistant.GetEtsProcessIds().Count > 0;
             if (!etsRunning)
             {
                 if (_audioSessionActive)
@@ -152,19 +151,11 @@ public sealed partial class MainWindow : Window
                 return;
             }
 
-            DefaultAudioInputStatus? currentInput = await DefaultAudioInputService.Current.GetStatusAsync();
-            if (currentInput?.IsVirtualCable == true)
-            {
-                _audioSessionActive = true;
-                _lastAudioSessionError = null;
-                return;
-            }
-
             string result = await DefaultAudioInputService.Current.BeginSessionAsync();
-            DefaultAudioInputStatus? input = await DefaultAudioInputService.Current.GetStatusAsync();
-            if (input?.IsVirtualCable != true)
+            if (!DefaultAudioInputService.Current.LastSetVirtualDefaultSucceeded)
             {
-                string detail = $"ETS 正在运行，但默认录音设备未切换到 VB-CABLE。当前：{input?.Name ?? "无法读取"}；{result}";
+                string detail = LocalizationService.Current.Format("main.virtual_mic_sync_failed",
+                    ("device", LocalizationService.Current.Translate("main.ets_process_input")), ("result", result));
                 if (!string.Equals(_lastAudioSessionError, detail, StringComparison.Ordinal))
                 {
                     DiagnosticLogService.Warn("audio_session.sync.virtual_mic_not_active", detail);
@@ -226,7 +217,8 @@ public sealed partial class MainWindow : Window
             // 重新进入同一份试卷后还要继续作答后面的口语题。
             // SpeakingPrepService 会直接复用仍然有效的音频，不会重复调用接口。
             string title = _speakingAnswers.LoadAllPapers()
-                .FirstOrDefault(paper => paper.PackId == packId)?.Title ?? $"试卷 {packId}";
+                .FirstOrDefault(paper => paper.PackId == packId)?.Title ??
+                LocalizationService.Current.Format("dynamic.paper_title", ("paperId", packId));
             ShowSpeakingPrep(packId, title, questions);
         }
         catch (Exception ex)
@@ -267,15 +259,16 @@ public sealed partial class MainWindow : Window
         catch (Exception) { return; }
         if (cable.IsReady) return;
 
-        string message = !cable.IsAvailable
-            ? "未检测到 VB-CABLE 虚拟声卡。需要时请到“答题设置”安装或检查虚拟声卡驱动。"
-            : "检测到 CABLE Input，但没有找到录音端 CABLE Output。请检查录音设备是否启用。";
+        LocalizationService localization = LocalizationService.Current;
+        string message = localization.Translate(!cable.IsAvailable
+            ? "main.virtual_cable_not_detected"
+            : "main.virtual_cable_capture_missing");
         var dialog = new ContentDialog
         {
-            Title = "虚拟声卡未配置",
+            Title = localization.Translate("main.virtual_cable_not_configured"),
             Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap },
-            PrimaryButtonText = "打开录音设备",
-            CloseButtonText = "稍后",
+            PrimaryButtonText = localization.Translate("main.open_recording_devices"),
+            CloseButtonText = localization.Translate("common.later"),
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = RootGrid.XamlRoot
         };
@@ -299,11 +292,12 @@ public sealed partial class MainWindow : Window
         }
 
         var lines = new List<string>();
-        if (!hasDeepSeek) lines.Add("• DeepSeek API Key（口语生成）");
-        if (!hasAliyun) lines.Add("• 阿里云 TTS RAM 凭据与 AppID（语音合成）");
+        LocalizationService localization = LocalizationService.Current;
+        if (!hasDeepSeek) lines.Add(localization.Translate("main.welcome_missing_deepseek"));
+        if (!hasAliyun) lines.Add(localization.Translate("main.welcome_missing_aliyun"));
 
         var content = new StackPanel { Spacing = 8 };
-        content.Children.Add(new TextBlock { Text = "欢迎使用 ETS Tool。以下凭据尚未配置：", TextWrapping = TextWrapping.Wrap });
+        content.Children.Add(new TextBlock { Text = localization.Translate("main.welcome_credentials_intro"), TextWrapping = TextWrapping.Wrap });
         content.Children.Add(new TextBlock
         {
             Text = string.Join(Environment.NewLine, lines),
@@ -311,7 +305,7 @@ public sealed partial class MainWindow : Window
         });
         content.Children.Add(new TextBlock
         {
-            Text = "DeepSeek 口语生成和试卷解析需要 DeepSeek API Key；TTS 语音合成需要阿里云 RAM 凭据与 AppID。凭据保存在本机。",
+            Text = localization.Translate("main.welcome_credentials_description"),
             FontSize = 12,
             Opacity = 0.7,
             TextWrapping = TextWrapping.Wrap
@@ -319,10 +313,10 @@ public sealed partial class MainWindow : Window
 
         var dialog = new ContentDialog
         {
-            Title = "欢迎使用 ETS Tool",
+            Title = localization.Translate("main.welcome_title"),
             Content = content,
-            PrimaryButtonText = "去填写",
-            CloseButtonText = "完成",
+            PrimaryButtonText = localization.Translate("main.go_to_fill"),
+            CloseButtonText = localization.Translate("common.done"),
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = RootGrid.XamlRoot
         };
@@ -338,10 +332,10 @@ public sealed partial class MainWindow : Window
     {
         var dialog = new ContentDialog
         {
-            Title = "未填写有效的凭据",
-            Content = "无法完成指定操作。",
-            PrimaryButtonText = "去填写",
-            CloseButtonText = "完成",
+            Title = LocalizationService.Current.Translate("common.invalid_credentials_title"),
+            Content = LocalizationService.Current.Translate("common.action_could_not_complete"),
+            PrimaryButtonText = LocalizationService.Current.Translate("main.go_to_fill"),
+            CloseButtonText = LocalizationService.Current.Translate("common.done"),
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = RootGrid.XamlRoot
         };
@@ -363,10 +357,10 @@ public sealed partial class MainWindow : Window
             if (!result.UpdateAvailable || RootGrid.XamlRoot is null) return;
             var dialog = new ContentDialog
             {
-                Title = "发现 ETS Tool 更新",
-                Content = result.Message + "\n\n是否打开 GitHub 查看？",
-                PrimaryButtonText = "查看更新",
-                CloseButtonText = "稍后",
+                Title = LocalizationService.Current.Translate("main.update_found_title"),
+                Content = LocalizationService.Current.Format("main.update_check_question", ("message", result.Message)),
+                PrimaryButtonText = LocalizationService.Current.Translate("main.view_update"),
+                CloseButtonText = LocalizationService.Current.Translate("common.later"),
                 DefaultButton = ContentDialogButton.Primary,
                 XamlRoot = RootGrid.XamlRoot
             };
@@ -390,10 +384,10 @@ public sealed partial class MainWindow : Window
         }
         var dialog = new ContentDialog
         {
-            Title = "显示开发者工具？",
-            Content = "开发者工具包含抓包、详细日志、虚拟麦克风操作和完全重置。完全重置会删除本地配置与凭据。确定显示该页面？",
-            PrimaryButtonText = "显示开发者工具",
-            CloseButtonText = "取消",
+            Title = LocalizationService.Current.Translate("main.developer_tools_unlock_title"),
+            Content = LocalizationService.Current.Translate("main.developer_tools_unlock_description"),
+            PrimaryButtonText = LocalizationService.Current.Translate("main.show_developer_tools"),
+            CloseButtonText = LocalizationService.Current.Translate("common.cancel"),
             DefaultButton = ContentDialogButton.None,
             XamlRoot = RootGrid.XamlRoot
         };
@@ -449,15 +443,60 @@ public sealed partial class MainWindow : Window
     private void ApplyLocalization()
     {
         LocalizationService localization = LocalizationService.Current;
+        localization.ReloadIfChanged();
         localization.Apply(Content as DependencyObject);
         foreach (object item in RootNavigation.MenuItems) localization.Apply(item as DependencyObject);
         foreach (object item in RootNavigation.FooterMenuItems) localization.Apply(item as DependencyObject);
+        ApplyNavigationLocalization(localization);
+    }
+
+    private void SchedulePageRefresh(FrameworkElement page, string pageName)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            // Navigation can change again before the queued callback runs. Only refresh
+            // the page that is still visible, after its XAML visual tree has been created.
+            if (!page.IsLoaded || !ReferenceEquals(PageFrame.Content, page)) return;
+
+            LocalizationService localization = LocalizationService.Current;
+            localization.ReloadIfChanged();
+            localization.Apply(page);
+            ApplyNavigationLocalization(localization);
+            if (page is Page responsivePage)
+                ResponsiveLayoutService.Attach(responsivePage);
+            DiagnosticLogService.TrackInteractiveControls(page, pageName);
+        });
+    }
+
+    private void ApplyNavigationLocalization(LocalizationService localization)
+    {
+        static string? GetKey(string? tag) => tag switch
+        {
+            "overview" => "navigation.overview",
+            "etsPreview" => "common.program_preview",
+            "papers" => "common.papers",
+            "settings" => "common.answer_settings",
+            "logs" => "common.logs",
+            "tools" => "common.developer_tools",
+            "guide" => "common.guide",
+            "preferences" => "common.preferences",
+            "about" => "common.about",
+            _ => null
+        };
+
+        foreach (object item in RootNavigation.MenuItems.Concat(RootNavigation.FooterMenuItems))
+        {
+            if (item is NavigationViewItem navigationItem && GetKey(navigationItem.Tag as string) is string key)
+                navigationItem.Content = localization.Translate(key);
+        }
+
+        ActivityNavigationLabel.Text = localization.Translate("common.activity");
     }
 
     private void OnLanguageChanged()
     {
+        LocalizationService.Current.Load(AppPreferencesService.Current.Language);
         ApplyLocalization();
-        if (PageFrame.CurrentSourcePageType is Type page) PageFrame.Navigate(page);
     }
 
     private void RootNavigation_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
@@ -497,7 +536,9 @@ public sealed partial class MainWindow : Window
         int running = AnalysisActivityService.Current.RunningCount;
         ActivityNavigationRing.IsActive = running > 0;
         ToolTipService.SetToolTip(ActivitiesNavigationItem,
-            running == 0 ? "查看当前活动和最近任务" : $"{running} 项活动正在进行");
+            running == 0
+                ? LocalizationService.Current.Translate("activity.navigation_tooltip_idle")
+                : LocalizationService.Current.Format("dynamic.activity_navigation_tooltip_running", ("count", running)));
     }
 
     private void RootNavigation_DisplayModeChanged(NavigationView sender, NavigationViewDisplayModeChangedEventArgs args)

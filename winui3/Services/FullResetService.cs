@@ -43,7 +43,7 @@ public sealed class FullResetService
         var notes = new List<string>();
 
         int stopped = StopAssistantProcesses();
-        steps.Add(stopped > 0 ? $"已停止 {stopped} 个后台进程（监听器/转换器/答题器）" : "后台监听器未在运行");
+        steps.Add(stopped > 0 ? F("reset.stopped_processes", ("count", stopped)) : L("reset.listener_not_running"));
 
         steps.Add(RemoveAutostart());
         steps.Add(RemoveShortcuts());
@@ -51,10 +51,10 @@ public sealed class FullResetService
         steps.Add(ResetSettings());
 
         int removedMicFiles = RemoveVirtualMicrophoneFiles();
-        steps.Add(removedMicFiles > 0 ? $"已删除 {removedMicFiles} 个虚拟麦克风/TTS 临时文件" : "没有虚拟麦克风临时文件");
+        steps.Add(removedMicFiles > 0 ? F("reset.removed_audio_files", ("count", removedMicFiles)) : L("reset.no_audio_files"));
 
         int removedLogs = RemoveLogs();
-        steps.Add(removedLogs > 0 ? $"已删除 {removedLogs} 个助手日志" : "没有助手日志需要删除");
+        steps.Add(removedLogs > 0 ? F("reset.removed_logs", ("count", removedLogs)) : L("reset.no_logs"));
         int diagnosticLogCount = DiagnosticLogService.GetLogFiles().Count;
         DiagnosticLogService.ClearLogs();
 
@@ -67,19 +67,18 @@ public sealed class FullResetService
                 if (IsVirtualAudio(device.Name)) devices.Add(device.Name);
 
             notes.Add(devices.Count == 0
-                ? "没有检测到 CABLE / VoiceMeeter 等第三方虚拟声卡。"
-                : "检测到虚拟声卡：" + string.Join("、", devices.Distinct()) +
-                  "。助手不会自动卸载音频驱动，需要时请在设备管理器或“应用和功能”里移除。");
+                ? L("reset.no_third_party_virtual_audio")
+                : F("reset.virtual_audio_devices_detected", ("devices", string.Join(", ", devices.Distinct()))));
         }
         catch (Exception ex)
         {
             DiagnosticLogService.Warn("developer_tools.full_reset.audio_device_scan.failed", ex.Message);
-            notes.Add("无法枚举音频设备；如有虚拟声卡，请手动在设备管理器中检查。");
+            notes.Add(L("reset.audio_device_enumeration_failed"));
         }
 
         if (_assistant.IsEtsRunning)
-            notes.Add("ETS 仍在运行；关闭 ETS 后，假麦克风参数才会真正失效。");
-        notes.Add("试卷包、答题历史和答案记录已保留。");
+            notes.Add(L("reset.ets_still_running"));
+        notes.Add(L("reset.papers_and_answer_history_kept"));
         DiagnosticLogService.Info("developer_tools.full_reset.completed",
             $"stoppedProcesses={stopped} removedLogs={removedLogs + diagnosticLogCount}");
         return new FullResetResult(steps, notes);
@@ -114,14 +113,14 @@ public sealed class FullResetService
         try
         {
             using RegistryKey? key = Registry.CurrentUser.OpenSubKey(RunKeyPath, true);
-            if (key?.GetValue(RunValueName) is null) return "登录启动项本来就不存在";
+            if (key?.GetValue(RunValueName) is null) return L("reset.autostart_not_present");
             key.DeleteValue(RunValueName, false);
-            return "已移除登录启动项";
+            return L("reset.autostart_removed");
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException)
         {
             DiagnosticLogService.Warn("developer_tools.full_reset.autostart_remove.failed", ex.Message);
-            return "无法移除登录启动项（权限不足）";
+            return L("reset.autostart_remove_denied");
         }
     }
 
@@ -149,7 +148,7 @@ public sealed class FullResetService
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         { DiagnosticLogService.Warn("developer_tools.full_reset.shortcut_remove.failed", ex.Message); }
 
-        return removed > 0 ? $"已删除 {removed} 个快捷方式" : "没有需要删除的快捷方式";
+        return removed > 0 ? F("reset.removed_shortcuts", ("count", removed)) : L("reset.no_shortcuts");
     }
 
     private string RemoveCredentials()
@@ -158,7 +157,7 @@ public sealed class FullResetService
         try { AliyunTtsCredentialStore.Clear(); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         { DiagnosticLogService.Warn("developer_tools.full_reset.credential_remove.failed", ex.Message); }
-        return "已清除 DeepSeek API Key 和阿里云 TTS 凭证";
+        return L("reset.credentials_cleared");
     }
 
     private string ResetSettings()
@@ -168,12 +167,12 @@ public sealed class FullResetService
             _assistant.SaveSettings(new AssistantSettings(1.0, "default", 0, false));
             DeleteFile(Path.Combine(_dataRoot, "ui_preferences.json"));
             DeleteFile(Path.Combine(_dataRoot, "ets_install_dir.txt"));
-            return "答题设置已恢复默认，界面偏好已清除";
+            return L("reset.settings_restored");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             DiagnosticLogService.Warn("developer_tools.full_reset.settings_reset.failed", ex.Message);
-            return "答题设置未能完全重置：" + ex.Message;
+            return F("reset.settings_restore_failed", ("detail", ex.Message));
         }
     }
 
@@ -238,6 +237,10 @@ public sealed class FullResetService
         name.Contains("VoiceMeeter", StringComparison.OrdinalIgnoreCase) ||
         name.Contains("Virtual Audio", StringComparison.OrdinalIgnoreCase) ||
         name.Contains("VB-Audio", StringComparison.OrdinalIgnoreCase);
+
+    private static string L(string key) => LocalizationService.Current.Translate(key);
+    private static string F(string key, params (string Name, object? Value)[] values) =>
+        LocalizationService.Current.Format(key, values);
 
     private static int SafeProcessId(Process process)
     {

@@ -33,7 +33,7 @@ CABLE_PLAYER = next(
     ) if path.is_file()),
     APP_ROOT / "tools" / "CablePlayer" / "CablePlayer.exe",
 )
-PLAYER_SPEED_FACTOR = 1.30
+PLAYER_SPEED_FACTOR = 1.0
 
 
 def find_session(explicit: str | None, data_root: Path) -> Path:
@@ -101,9 +101,15 @@ def wav_duration_seconds(path: str | Path) -> float:
         return 0.0
 
 
-def playback_duration_seconds(path: str | Path) -> float:
-    """The automatic run time-stretches TTS to fit ETS's fixed recording window."""
-    return wav_duration_seconds(path) / PLAYER_SPEED_FACTOR
+def playback_speed_factor(path: str | Path) -> float:
+    """Play generated speech at its natural speed; do not compress by duration."""
+    return PLAYER_SPEED_FACTOR
+
+
+def playback_duration_seconds(path: str | Path, speed_factor: float | None = None) -> float:
+    """Return the expected playback time after the player's time stretching."""
+    speed = speed_factor if speed_factor is not None else playback_speed_factor(path)
+    return wav_duration_seconds(path) / speed
 
 
 def terminate_player(player: subprocess.Popen[str] | None) -> None:
@@ -250,6 +256,7 @@ def _main(argv: list[str] | None = None) -> int:
     index = max(0, args.start_index)
     started_at = 0.0
     expected_playback_end = 0.0
+    current_speed_factor = PLAYER_SPEED_FACTOR
     playback_timeout_at = 0.0
     playback_wait_logged = False
     player_done_logged = False
@@ -317,7 +324,8 @@ def _main(argv: list[str] | None = None) -> int:
                     if player is None and not mock_waiting_for_recording_end and index < len(wavs):
                         started_at = time.monotonic()
                         duration = wav_duration_seconds(wavs[index])
-                        playback_duration = duration / PLAYER_SPEED_FACTOR
+                        current_speed_factor = playback_speed_factor(wavs[index])
+                        playback_duration = duration / current_speed_factor
                         expected_playback_end = started_at + playback_duration + 0.25
                         playback_timeout_at = started_at + max(args.max_question_seconds, playback_duration + 10.0)
                         playback_wait_logged = False
@@ -325,10 +333,10 @@ def _main(argv: list[str] | None = None) -> int:
                         played += 1
                         log(
                             f"[{index + 1}/{len(wavs)}] mock recording, playing {Path(wavs[index]).name} "
-                            f"({duration:.1f}s source, {playback_duration:.1f}s at {PLAYER_SPEED_FACTOR:.2f}x)"
+                            f"({duration:.1f}s source, {playback_duration:.1f}s at {current_speed_factor:.2f}x)"
                         )
                         player = subprocess.Popen(
-                            [args.player, "--speed", f"{PLAYER_SPEED_FACTOR:.2f}", wavs[index]],
+                            [args.player, "--speed", f"{current_speed_factor:.2f}", wavs[index]],
                             stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT,
                             text=True,
@@ -361,8 +369,8 @@ def _main(argv: list[str] | None = None) -> int:
                         terminate_player(player)
                         log(
                             f"[{index + 1}/{len(wavs)}] ETS 录音窗口在音频结束前关闭 "
-                            f"(已播放约 {elapsed:.1f}/{playback_duration_seconds(wavs[index]):.1f}s，"
-                            f"原始音频 {wav_duration_seconds(wavs[index]):.1f}s，{PLAYER_SPEED_FACTOR:.2f}x)；"
+                            f"(已播放约 {elapsed:.1f}/{playback_duration_seconds(wavs[index], current_speed_factor):.1f}s，"
+                            f"原始音频 {wav_duration_seconds(wavs[index]):.1f}s，{current_speed_factor:.2f}x)；"
                             "本轮已中止，未把该题标记为完成。请检查 ETS 录音时长和麦克风设置后重试。"
                         )
                         return 9
@@ -380,7 +388,8 @@ def _main(argv: list[str] | None = None) -> int:
                 if player is None and index < len(wavs):
                     started_at = time.monotonic()
                     duration = wav_duration_seconds(wavs[index])
-                    playback_duration = duration / PLAYER_SPEED_FACTOR
+                    current_speed_factor = playback_speed_factor(wavs[index])
+                    playback_duration = duration / current_speed_factor
                     expected_playback_end = started_at + playback_duration + 0.25
                     playback_timeout_at = started_at + max(args.max_question_seconds, playback_duration + 10.0)
                     playback_wait_logged = False
@@ -388,10 +397,10 @@ def _main(argv: list[str] | None = None) -> int:
                     played += 1
                     log(
                         f"[{index + 1}/{len(wavs)}] recording, playing {Path(wavs[index]).name} "
-                        f"({duration:.1f}s source, {playback_duration:.1f}s at {PLAYER_SPEED_FACTOR:.2f}x)"
+                        f"({duration:.1f}s source, {playback_duration:.1f}s at {current_speed_factor:.2f}x)"
                     )
                     player = subprocess.Popen(
-                        [args.player, "--speed", f"{PLAYER_SPEED_FACTOR:.2f}", wavs[index]],
+                        [args.player, "--speed", f"{current_speed_factor:.2f}", wavs[index]],
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
                         text=True,
@@ -429,8 +438,8 @@ def _main(argv: list[str] | None = None) -> int:
                 terminate_player(player)
                 log(
                     f"[{index + 1}/{len(wavs)}] ETS 录音窗口在音频结束前关闭 "
-                    f"(已播放约 {elapsed:.1f}/{playback_duration_seconds(wavs[index]):.1f}s，"
-                    f"原始音频 {wav_duration_seconds(wavs[index]):.1f}s，{PLAYER_SPEED_FACTOR:.2f}x)；"
+                    f"(已播放约 {elapsed:.1f}/{playback_duration_seconds(wavs[index], current_speed_factor):.1f}s，"
+                    f"原始音频 {wav_duration_seconds(wavs[index]):.1f}s，{current_speed_factor:.2f}x)；"
                     "本轮已中止，未把该题标记为完成。请检查 ETS 录音时长和麦克风设置后重试。"
                 )
                 return 9

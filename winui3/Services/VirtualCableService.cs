@@ -46,9 +46,9 @@ public sealed class VirtualCableService
     public void Play(string wavPath)
     {
         if (Current is null)
-            throw new InvalidOperationException("没有检测到虚拟声卡（CABLE Input / VoiceMeeter Input）。");
+            throw new InvalidOperationException(LocalizationService.Current.Translate("virtual_cable.render_device_missing"));
         if (!File.Exists(wavPath))
-            throw new FileNotFoundException("找不到要播放的 WAV。", wavPath);
+            throw new FileNotFoundException(LocalizationService.Current.Translate("virtual_cable.play_wav_missing"), wavPath);
 
         if (_player is null)
         {
@@ -65,7 +65,7 @@ public sealed class VirtualCableService
     /// <summary>Plays a WAV through the normal speakers so the operator can hear it.</summary>
     public void PlayPreview(string wavPath)
     {
-        if (!File.Exists(wavPath)) throw new FileNotFoundException("找不到要试听的 WAV。", wavPath);
+        if (!File.Exists(wavPath)) throw new FileNotFoundException(LocalizationService.Current.Translate("virtual_cable.preview_wav_missing"), wavPath);
         _previewPlayer ??= new MediaPlayer { AutoPlay = false };
         _previewPlayer.Source = MediaSource.CreateFromUri(new Uri(wavPath));
         _previewPlayer.Play();

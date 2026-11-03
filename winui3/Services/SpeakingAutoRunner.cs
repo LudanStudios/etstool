@@ -11,6 +11,8 @@ public sealed class SpeakingAutoRunner
     private System.Threading.Timer? _logTimer;
     private string? _logPath;
     private int _readLineCount;
+    public bool LastStartFailureRequiresRegeneration { get; private set; }
+    public int? LastExitCode { get; private set; }
 
     public bool IsRunning
     {
@@ -26,24 +28,30 @@ public sealed class SpeakingAutoRunner
     public bool Start(string appRoot, string dataRoot, string sessionPath, out string error)
     {
         error = string.Empty;
+        LastStartFailureRequiresRegeneration = false;
+        LastExitCode = null;
         string engine = Path.Combine(appRoot, "ETS-Assistant-Engine.exe");
         string player = Path.Combine(appRoot, "tools", "CablePlayer", "CablePlayer.exe");
         if (!File.Exists(engine))
         {
-            error = $"缺少后台引擎：{engine}";
+            error = F("speaking_auto.engine_missing", ("path", engine));
             return false;
         }
         if (!File.Exists(player))
         {
-            error = $"缺少音频播放工具：{player}";
+            error = F("speaking_auto.player_missing", ("path", player));
             return false;
         }
         if (!File.Exists(sessionPath))
         {
-            error = $"找不到口语会话：{sessionPath}";
+            error = F("speaking_auto.session_missing", ("path", sessionPath));
             return false;
         }
-        if (!HasUsableAudio(sessionPath, out error)) return false;
+        if (!HasUsableAudio(sessionPath, out error))
+        {
+            LastStartFailureRequiresRegeneration = true;
+            return false;
+        }
 
         string logPath = Path.Combine(dataRoot, "ets_speaking_auto.log");
         int existingLineCount = 0;
@@ -54,7 +62,7 @@ public sealed class SpeakingAutoRunner
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            error = $"无法准备自动口语日志：{ex.Message}";
+            error = F("speaking_auto.log_prepare_failed", ("detail", ex.Message));
             return false;
         }
 
@@ -80,7 +88,7 @@ public sealed class SpeakingAutoRunner
             if (!process.Start())
             {
                 process.Dispose();
-                error = "无法启动自动口语引擎。";
+                error = L("speaking_auto.engine_start_failed");
                 return false;
             }
 
@@ -112,7 +120,7 @@ public sealed class SpeakingAutoRunner
             SpeakingSession? session = JsonSerializer.Deserialize<SpeakingSession>(File.ReadAllText(sessionPath));
             if (session?.Items is not { Count: > 0 })
             {
-                error = "口语会话中没有可播放的音频。已取消自动录音，请重新生成口语音频。";
+                error = L("speaking_auto.session_has_no_audio");
                 return false;
             }
 
@@ -121,7 +129,7 @@ public sealed class SpeakingAutoRunner
                 string path = session.Items[index].WavPath;
                 if (!SpeakingSessionStore.IsUsableWavFile(path))
                 {
-                    error = $"口语音频已失效：第 {index + 1} 题的 WAV 文件不存在或无效。已取消自动录音，没有跳题。请重新打开口语题准备并生成音频后重试。";
+                    error = F("speaking_auto.invalid_question_audio", ("question", index + 1));
                     return false;
                 }
             }
@@ -129,7 +137,7 @@ public sealed class SpeakingAutoRunner
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException)
         {
-            error = $"无法验证口语音频：{ex.Message}。已取消自动录音，没有跳题。";
+            error = F("speaking_auto.audio_validation_failed", ("detail", ex.Message));
             return false;
         }
     }
@@ -167,13 +175,21 @@ public sealed class SpeakingAutoRunner
     private void HandleExited(Process process)
     {
         ReadNewLogLines();
+        int? exitCode = null;
+        try { exitCode = process.ExitCode; }
+        catch (InvalidOperationException) { }
         lock (_sync)
         {
             if (!ReferenceEquals(_process, process)) return;
+            LastExitCode = exitCode;
             _process = null;
             _logTimer?.Dispose();
             _logTimer = null;
         }
         Exited?.Invoke();
     }
+
+    private static string L(string key) => LocalizationService.Current.Translate(key);
+    private static string F(string key, params (string Name, object? Value)[] values) =>
+        LocalizationService.Current.Format(key, values);
 }

@@ -7,8 +7,8 @@
             <Grid ColumnDefinitions="28,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="3">
                 <SymbolIcon Symbol="Contact" VerticalAlignment="Center"
                             Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                <TextBlock Grid.Column="1" Text="关于" FontSize="28" FontWeight="SemiBold" />
-                <TextBlock Grid.Row="1" Grid.Column="1" Text="版本信息与项目链接。" FontSize="14" Opacity="0.72" />
+                <TextBlock Grid.Column="1" Text="common.about" FontSize="28" FontWeight="SemiBold" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="about.version_information_project_links" FontSize="14" Opacity="0.72" />
             </Grid>
 
             <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
@@ -30,12 +30,12 @@
                         <Rectangle Height="1" Fill="{ThemeResource CardStrokeColorDefaultBrush}" />
 
                         <Grid ColumnDefinitions="120,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
-                            <TextBlock Text="版本" Opacity="0.68" />
+                            <TextBlock Text="about.version" Opacity="0.68" />
                             <TextBlock x:Name="VersionText" Grid.Column="1" FontWeight="SemiBold"
                                        IsTapEnabled="True" Tapped="VersionText_Tapped" />
-                            <TextBlock Grid.Row="1" Text="发布时间" Opacity="0.68" />
+                            <TextBlock Grid.Row="1" Text="about.release_date" Opacity="0.68" />
                             <TextBlock x:Name="ReleaseText" Grid.Row="1" Grid.Column="1" />
-                            <TextBlock Grid.Row="2" Text="作者" Opacity="0.68" />
+                            <TextBlock Grid.Row="2" Text="about.author" Opacity="0.68" />
                             <TextBlock Grid.Row="2" Grid.Column="1" Text="@azursmelt" />
                         </Grid>
 
@@ -43,7 +43,7 @@
 
                         <StackPanel Spacing="4">
                             <TextBlock Text="Comments" FontWeight="SemiBold" />
-                            <TextBlock Text="重构 UI，基于 WinUI 3 实现的解决方案，新增大量功能。"
+                            <TextBlock Text="about.rebuilt_ui_winui_solution_added"
                                        Opacity="0.8" TextWrapping="Wrap" />
                         </StackPanel>
 
@@ -51,13 +51,13 @@
 
                         <Grid ColumnDefinitions="*,*" ColumnSpacing="24">
                             <StackPanel Spacing="3">
-                                <TextBlock Text="关注项目" FontWeight="SemiBold" />
+                                <TextBlock Text="about.project" FontWeight="SemiBold" />
                                 <HyperlinkButton Click="OpenProject_Click"
                                                  Content="https://github.com/LudanStudios/etstool"
                                                  Padding="0" />
                             </StackPanel>
                             <StackPanel Grid.Column="1" Spacing="3">
-                                <TextBlock Text="Furry 欢迎扩列~" FontWeight="SemiBold" />
+                                <TextBlock Text="about.furry_says_hi" FontWeight="SemiBold" />
                                 <HyperlinkButton Click="OpenHomepage_Click"
                                                  Content="https://azursmelt.pages.dev" Padding="0" />
                             </StackPanel>

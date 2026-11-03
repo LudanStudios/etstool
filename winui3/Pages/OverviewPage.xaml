@@ -7,12 +7,12 @@
             <Grid ColumnDefinitions="28,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="5">
                 <FontIcon Glyph="&#xE80F;" FontSize="24" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
                           VerticalAlignment="Center" />
-                <TextBlock Grid.Column="1" Text="快速开始" FontSize="30" FontWeight="SemiBold" />
-                <TextBlock Grid.Row="1" Grid.Column="1" Text="查看 ETS、活动与凭据状态，一键完成初始化。"
+                <TextBlock Grid.Column="1" Text="common.quick_start" FontSize="30" FontWeight="SemiBold" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="overview.check_ets_activity_credential_status"
                            FontSize="15" Opacity="0.72" />
             </Grid>
-            <InfoBar x:Name="EtsErrorBar" IsOpen="False" Severity="Error" Title="没有找到 ETS 安装目录"
-                     Message="请到答题设置中的服务凭据区域选择 ETS 安装目录。" />
+            <InfoBar x:Name="EtsErrorBar" IsOpen="False" Severity="Error" Title="overview.ets_installation_folder_not_found"
+                     Message="overview.choose_ets_installation_folder_answer" />
             <InfoBar x:Name="GeneralInfoBar" IsOpen="False" />
 
             <Border Padding="22" CornerRadius="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
@@ -20,33 +20,33 @@
                 <StackPanel Spacing="12">
                         <StackPanel Orientation="Horizontal" Spacing="10">
                             <Ellipse x:Name="StatusDot" Width="10" Height="10" Fill="#22C55E" VerticalAlignment="Center" />
-                            <TextBlock x:Name="StatusText" Text="正在检查…" FontSize="19" FontWeight="SemiBold" />
+                            <TextBlock x:Name="StatusText" Text="overview.checking" FontSize="19" FontWeight="SemiBold" />
                         </StackPanel>
                         <TextBlock x:Name="EtsPathText" TextWrapping="Wrap" Opacity="0.72" />
-                        <TextBlock x:Name="ListenerText" Text="监听器会在 Windows 登录时后台启动。" FontSize="13" Opacity="0.72" />
+                        <TextBlock x:Name="ListenerText" Text="overview.listener_starts_background_when_sign" FontSize="13" Opacity="0.72" />
                         <TextBlock x:Name="CredentialStatusText" FontSize="13" Opacity="0.8" TextWrapping="Wrap" />
                         <Grid x:Name="ActionButtonsGrid" ColumnDefinitions="Auto,Auto,Auto,*"
                               RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="8" Margin="0,6,0,0"
                               SizeChanged="ActionButtonsGrid_SizeChanged">
                             <Button x:Name="ManualResetButton" Click="ManualReset_Click" IsEnabled="False"
                                     Height="36"
-                                    ToolTipService.ToolTip="先在 ETS 中切到第 1 题，再点击手动重置">
-                                <StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE72C;" FontSize="16"/><TextBlock Text="手动重置"/></StackPanel>
+                                    ToolTipService.ToolTip="overview.reset_tooltip">
+                                <StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE72C;" FontSize="16"/><TextBlock Text="overview.manual_reset"/></StackPanel>
                             </Button>
                             <Button Grid.Column="1" Click="EndEts_Click" Height="36">
-                                <StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE71A;" FontSize="16"/><TextBlock Text="结束 ETS 进程"/></StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE71A;" FontSize="16"/><TextBlock Text="common.end_ets_processes"/></StackPanel>
                             </Button>
                             <Button Grid.Column="2" Click="OpenEts_Click" Height="36">
                                 <StackPanel Orientation="Horizontal" Spacing="7">
                                     <FontIcon Glyph="&#xE8A7;" FontSize="16" />
-                                    <TextBlock Text="打开 ETS" />
+                                    <TextBlock Text="overview.open_ets" />
                                 </StackPanel>
                             </Button>
                             <Button x:Name="InitializeButton" Grid.Column="3" Click="InitializeAndOpen_Click" Style="{StaticResource AccentButtonStyle}"
-                                    Height="42" MinWidth="190" HorizontalAlignment="Right" ToolTipService.ToolTip="初始化并启动 ETS">
+                                    Height="42" MinWidth="190" HorizontalAlignment="Right" ToolTipService.ToolTip="overview.initialize_start_ets">
                                 <StackPanel Orientation="Horizontal" Spacing="7">
                                     <FontIcon Glyph="&#xE768;" FontSize="16" />
-                                    <TextBlock Text="初始化并启动" />
+                                    <TextBlock Text="overview.initialize_start" />
                                 </StackPanel>
                             </Button>
                         </Grid>
@@ -59,16 +59,16 @@
                     <Grid ColumnDefinitions="*,Auto">
                         <StackPanel Orientation="Horizontal" Spacing="9">
                             <SymbolIcon Symbol="Document" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                            <TextBlock Text="当前试卷与答案" FontSize="17" FontWeight="SemiBold" />
+                            <TextBlock Text="overview.current_paper_answers" FontSize="17" FontWeight="SemiBold" />
                         </StackPanel>
                         <Border x:Name="PaperStateBadge" Grid.Column="1" Padding="10,4" CornerRadius="8"
                                 Background="#1F94A3B8" VerticalAlignment="Center">
-                            <TextBlock x:Name="PaperStateText" Text="等待检测" FontSize="12" FontWeight="SemiBold" />
+                            <TextBlock x:Name="PaperStateText" Text="overview.waiting" FontSize="12" FontWeight="SemiBold" />
                         </Border>
                     </Grid>
-                    <TextBlock x:Name="PaperTitleText" Text="尚未检测到正在作答的试卷" FontSize="19"
+                    <TextBlock x:Name="PaperTitleText" Text="overview.no_paper_detected_yet" FontSize="19"
                                FontWeight="SemiBold" TextWrapping="Wrap" />
-                    <TextBlock x:Name="PaperMetaText" Text="启动 ETS 并打开试卷后，这里会显示答题进度和本地答案。"
+                    <TextBlock x:Name="PaperMetaText" Text="overview.open_paper_ets_see_progress"
                                FontSize="13" Opacity="0.7" TextWrapping="Wrap" />
                     <StackPanel x:Name="PaperProgressPanel" Spacing="12" Visibility="Collapsed">
                         <Grid ColumnDefinitions="*,Auto">
@@ -95,19 +95,19 @@
                         </ItemsControl>
                         <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,0">
                             <Button x:Name="CopyAnswersButton" Click="CopyAnswers_Click">
-                                <StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE8C8;" FontSize="16"/><TextBlock Text="展示 / 复制答案"/></StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE8C8;" FontSize="16"/><TextBlock Text="overview.view_copy_answers"/></StackPanel>
                             </Button>
                             <Button x:Name="OpenPaperFolderButton" Click="OpenPaperFolder_Click">
-                                <StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE8B7;" FontSize="16"/><TextBlock Text="打开试卷文件夹"/></StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE8B7;" FontSize="16"/><TextBlock Text="overview.open_paper_folder"/></StackPanel>
                             </Button>
                             <Button Click="OpenSettings_Click">
-                                <StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE713;" FontSize="16"/><TextBlock Text="答题配置"/></StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE713;" FontSize="16"/><TextBlock Text="overview.answer_configuration"/></StackPanel>
                             </Button>
                         </StackPanel>
                     </StackPanel>
                     <StackPanel x:Name="EmptyPaperActions" Orientation="Horizontal" Spacing="8">
                         <Button Click="OpenSettings_Click">
-                            <StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE713;" FontSize="16"/><TextBlock Text="答题配置"/></StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE713;" FontSize="16"/><TextBlock Text="overview.answer_configuration"/></StackPanel>
                         </Button>
                     </StackPanel>
                 </StackPanel>
@@ -116,7 +116,7 @@
             <Border Padding="18" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                 <StackPanel Spacing="6">
-                    <TextBlock Text="当前答题配置" FontSize="15" FontWeight="SemiBold" />
+                    <TextBlock Text="overview.current_answer_settings" FontSize="15" FontWeight="SemiBold" />
                     <TextBlock x:Name="AnswerConfigText" TextWrapping="Wrap" Opacity="0.75" />
                     <TextBlock x:Name="DataPathText" TextWrapping="Wrap" Opacity="0.55" FontSize="12" />
                 </StackPanel>

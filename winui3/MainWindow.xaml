@@ -40,25 +40,25 @@
                 </Style>
             </NavigationView.Resources>
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="运行概览" Tag="overview">
+                <NavigationViewItem Content="navigation.overview" Tag="overview">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Home" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem x:Name="EtsPreviewNavigationItem" Content="程序预览" Tag="etsPreview" Visibility="Collapsed">
+                <NavigationViewItem x:Name="EtsPreviewNavigationItem" Content="common.program_preview" Tag="etsPreview" Visibility="Collapsed">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="View" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="试卷管理" Tag="papers">
+                <NavigationViewItem Content="common.papers" Tag="papers">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Folder" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="答题设置" Tag="settings">
+                <NavigationViewItem Content="common.answer_settings" Tag="settings">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Setting" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="运行记录" Tag="logs" Visibility="Collapsed">
+                <NavigationViewItem Content="common.logs" Tag="logs" Visibility="Collapsed">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Document" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="开发者工具" Tag="tools" Visibility="Collapsed">
+                <NavigationViewItem Content="common.developer_tools" Tag="tools" Visibility="Collapsed">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Repair" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="使用说明" Tag="guide">
+                <NavigationViewItem Content="common.guide" Tag="guide">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Help" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
             </NavigationView.MenuItems>
@@ -69,16 +69,16 @@
                     </NavigationViewItem.Icon>
                     <NavigationViewItem.Content>
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                            <TextBlock x:Name="ActivityNavigationLabel" Text="当前活动" VerticalAlignment="Center" />
+                            <TextBlock x:Name="ActivityNavigationLabel" Text="common.activity" VerticalAlignment="Center" />
                             <ProgressRing x:Name="ActivityNavigationRing" Grid.Column="1" Width="16" Height="16"
                                           IsActive="False" IsIndeterminate="True" />
                         </Grid>
                     </NavigationViewItem.Content>
                 </NavigationViewItem>
-                <NavigationViewItem Content="偏好设置" Tag="preferences">
+                <NavigationViewItem Content="common.preferences" Tag="preferences">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Setting" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="关于" Tag="about">
+                <NavigationViewItem Content="common.about" Tag="about">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Contact" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
             </NavigationView.FooterMenuItems>

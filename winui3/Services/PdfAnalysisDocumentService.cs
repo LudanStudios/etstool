@@ -28,7 +28,7 @@ public static class PdfAnalysisDocumentService
         try
         {
             string path = Marshal.PtrToStringUni(pathPointer) ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(path)) throw new IOException("Windows 没有返回下载文件夹路径。");
+            if (string.IsNullOrWhiteSpace(path)) throw new IOException(LocalizationService.Current.Translate("pdf.downloads_folder_path_missing"));
             return path;
         }
         finally { Marshal.FreeCoTaskMem(pathPointer); }
@@ -39,7 +39,7 @@ public static class PdfAnalysisDocumentService
         await RenderGate.WaitAsync();
         try
         {
-            MainWindow window = MainWindow.Current ?? throw new InvalidOperationException("ETS Tool 主窗口已关闭。");
+            MainWindow window = MainWindow.Current ?? throw new InvalidOperationException(LocalizationService.Current.Translate("pdf.main_window_closed"));
             WebView2 renderer = window.AnalysisPdfRenderer;
             await renderer.EnsureCoreWebView2Async();
             string body = MarkdownHtmlRenderer.ToHtml(markdown);
@@ -68,9 +68,9 @@ public static class PdfAnalysisDocumentService
             {
                 renderer.CoreWebView2.NavigateToString(html);
                 if (!await navigation.Task.WaitAsync(TimeSpan.FromSeconds(30)))
-                    throw new InvalidOperationException("PDF 排版页面加载失败。");
+                    throw new InvalidOperationException(LocalizationService.Current.Translate("pdf.layout_load_failed"));
                 bool success = await renderer.CoreWebView2.PrintToPdfAsync(path, null);
-                if (!success || !File.Exists(path)) throw new IOException("WebView2 未能生成 PDF 文件。");
+                if (!success || !File.Exists(path)) throw new IOException(LocalizationService.Current.Translate("pdf.webview_generation_failed"));
             }
             finally { renderer.CoreWebView2.NavigationCompleted -= handler; }
         }
@@ -99,12 +99,13 @@ public static class PdfAnalysisDocumentService
             var description = new StackPanel { Spacing = 4 };
             description.Children.Add(new TextBlock
             {
-                Text = $"{title} · 共 {document.PageCount} 页 · 使用左右方向键翻页",
+                Text = LocalizationService.Current.Format("pdf.preview_description",
+                    ("title", title), ("pages", document.PageCount)),
                 FontSize = 12, Opacity = 0.72, TextWrapping = TextWrapping.Wrap
             });
             description.Children.Add(new TextBlock
             {
-                Text = $"保存位置：{path}", FontSize = 11, Opacity = 0.64,
+                Text = LocalizationService.Current.Format("pdf.saved_path", ("path", path)), FontSize = 11, Opacity = 0.64,
                 TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true
             });
 
@@ -131,12 +132,12 @@ public static class PdfAnalysisDocumentService
             footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var openButton = new Button
             {
-                Content = "用默认方式打开 PDF", Padding = new Thickness(12, 6, 12, 6),
+                Content = LocalizationService.Current.Translate("pdf.open_with_default_app"), Padding = new Thickness(12, 6, 12, 6),
                 HorizontalAlignment = HorizontalAlignment.Right
             };
             var closeButton = new Button
             {
-                Content = "关闭", Padding = new Thickness(18, 6, 18, 6)
+                Content = LocalizationService.Current.Translate("common.close"), Padding = new Thickness(18, 6, 18, 6)
             };
             Grid.SetColumn(openButton, 1);
             Grid.SetColumn(closeButton, 2);
@@ -145,7 +146,7 @@ public static class PdfAnalysisDocumentService
             Grid.SetRow(footer, 3);
             content.Children.Add(footer);
 
-            var dialog = new ContentDialog { Title = "PDF 详细解析", Content = content, XamlRoot = xamlRoot };
+            var dialog = new ContentDialog { Title = LocalizationService.Current.Translate("pdf.detailed_analysis_title"), Content = content, XamlRoot = xamlRoot };
             openButton.Click += (_, _) =>
             {
                 try
@@ -153,7 +154,8 @@ public static class PdfAnalysisDocumentService
                     Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
                     dialog.Hide();
                 }
-                catch (Exception ex) { InfoBarPresenter.Show(openError, "无法打开 PDF", ex.Message, InfoBarSeverity.Error); }
+                catch (Exception ex) { InfoBarPresenter.Show(openError,
+                    LocalizationService.Current.Translate("pdf.open_failed"), ex.Message, InfoBarSeverity.Error); }
             };
             closeButton.Click += (_, _) => dialog.Hide();
             dialog.KeyDown += (_, args) =>

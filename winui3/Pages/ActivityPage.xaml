@@ -21,8 +21,8 @@
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Spacing="8"
                                     Visibility="{Binding OutputActionsVisibility}">
-                            <Button Content="在应用内查看 PDF" Click="PreviewPdf_Click" Padding="10,5" />
-                            <Button Content="用默认程序打开" Click="OpenPdf_Click" Padding="10,5" />
+                            <Button Content="activity.view_pdf_app" Click="PreviewPdf_Click" Padding="10,5" />
+                            <Button Content="activity.open_default_app" Click="OpenPdf_Click" Padding="10,5" />
                         </StackPanel>
                     </StackPanel>
                 </Grid>
@@ -37,8 +37,8 @@
                         VerticalAlignment="Center" />
             <ProgressRing x:Name="HeaderRing" Width="25" Height="25" IsActive="False"
                           IsIndeterminate="True" Visibility="Collapsed" VerticalAlignment="Center" />
-            <TextBlock Grid.Column="1" Text="当前活动" FontSize="30" FontWeight="SemiBold" />
-            <TextBlock Grid.Row="1" Grid.Column="1" Text="查看正在生成的解析和最近完成的任务。"
+            <TextBlock Grid.Column="1" Text="common.activity" FontSize="30" FontWeight="SemiBold" />
+            <TextBlock Grid.Row="1" Grid.Column="1" Text="activity.view_analyses_progress_recently_completed"
                        FontSize="15" Opacity="0.72" />
         </Grid>
 
@@ -46,11 +46,11 @@
 
         <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
             <StackPanel Spacing="14">
-                <TextBlock x:Name="RunningHeader" Text="正在进行" FontSize="18" FontWeight="SemiBold" />
+                <TextBlock x:Name="RunningHeader" Text="activity.progress" FontSize="18" FontWeight="SemiBold" />
                 <ItemsControl x:Name="RunningItems" ItemTemplate="{StaticResource ActivityTemplate}" />
-                <TextBlock x:Name="EmptyText" Text="当前没有正在进行的活动。"
+                <TextBlock x:Name="EmptyText" Text="activity.there_no_activities_progress"
                            Opacity="0.65" Margin="0,4,0,8" />
-                <TextBlock x:Name="CompletedHeader" Text="最近完成" FontSize="18" FontWeight="SemiBold"
+                <TextBlock x:Name="CompletedHeader" Text="activity.recently_completed" FontSize="18" FontWeight="SemiBold"
                            Margin="0,8,0,0" />
                 <ItemsControl x:Name="CompletedItems" ItemTemplate="{StaticResource ActivityTemplate}" />
             </StackPanel>

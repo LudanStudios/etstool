@@ -1,5 +1,5 @@
 # 由 ETS 自动监听助手管理；也可在程序界面中修改。
 accuracy_rate: 1.00
-random_seed: '20261014'
+random_seed: 'e5cb9ac53e9345e6a81961f35d3f2b61'
 skip_interval_seconds: 0
-verbose_logging_enabled: false
+verbose_logging_enabled: true

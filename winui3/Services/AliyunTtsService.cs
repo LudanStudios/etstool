@@ -33,7 +33,7 @@ public sealed class AliyunTtsService
     {
         text = (text ?? string.Empty).Trim();
         if (text.Length == 0)
-            return new AliyunTtsResult(false, Error: "没有可合成的回答文本。先生成或提取一条口语回答。");
+            return new AliyunTtsResult(false, Error: LocalizationService.Current.Translate("aliyun_tts.no_text"));
 
         AliyunTtsCredentials? credentials = AliyunTtsCredentialStore.Load();
         bool hasLocalCredentials = credentials is not null &&
@@ -41,7 +41,7 @@ public sealed class AliyunTtsService
             !string.IsNullOrWhiteSpace(credentials.AccessKeySecret) &&
             !string.IsNullOrWhiteSpace(credentials.AppKey);
         if (!hasLocalCredentials)
-            return new AliyunTtsResult(false, Error: "未填写有效的凭据\n无法完成指定操作。");
+            return new AliyunTtsResult(false, Error: LocalizationService.Current.Translate("common.invalid_credentials_error"));
 
         IReadOnlyList<string> chunks = SplitText(text, MaxCharactersPerRequest);
 
@@ -70,11 +70,11 @@ public sealed class AliyunTtsService
         }
         catch (TaskCanceledException)
         {
-            return new AliyunTtsResult(false, Error: "阿里云 TTS 请求超时，请检查网络后重试。");
+            return new AliyunTtsResult(false, Error: LocalizationService.Current.Translate("aliyun_tts.timeout"));
         }
         catch (HttpRequestException ex)
         {
-            return new AliyunTtsResult(false, Error: $"连接阿里云 TTS 失败：{ex.Message}");
+            return new AliyunTtsResult(false, Error: LocalizationService.Current.Format("aliyun_tts.connection_failed", ("detail", ex.Message)));
         }
         catch (Exception ex)
         {
@@ -123,7 +123,7 @@ public sealed class AliyunTtsService
             tokenId.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(tokenId.GetString()) ||
             !tokenObject.TryGetProperty("ExpireTime", out JsonElement expireTime) ||
             !expireTime.TryGetInt64(out long expiry))
-            throw new InvalidOperationException("阿里云未返回有效 Token 或过期时间，请检查 RAM 权限和凭证配置。");
+            throw new InvalidOperationException(LocalizationService.Current.Translate("aliyun_tts.invalid_token"));
 
         return new TokenCache(fingerprint, tokenId.GetString()!, DateTimeOffset.FromUnixTimeSeconds(expiry));
     }
@@ -152,7 +152,8 @@ public sealed class AliyunTtsService
             cancellationToken).ConfigureAwait(false);
         byte[] body = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode || !IsWave(body))
-            throw new InvalidOperationException($"阿里云 TTS 返回 HTTP {(int)response.StatusCode}：{ExtractServiceError(body)}");
+            throw new InvalidOperationException(LocalizationService.Current.Format("aliyun_tts.http_error",
+                ("status", (int)response.StatusCode), ("detail", ExtractServiceError(body))));
         return body;
     }
 
@@ -180,7 +181,7 @@ public sealed class AliyunTtsService
 
     private static byte[] MergeWavFiles(IReadOnlyList<byte[]> files)
     {
-        if (files.Count == 0) throw new InvalidOperationException("阿里云没有返回可用音频。");
+        if (files.Count == 0) throw new InvalidOperationException(LocalizationService.Current.Translate("aliyun_tts.no_audio"));
 
         byte[]? format = null;
         using var audio = new MemoryStream();
@@ -189,11 +190,11 @@ public sealed class AliyunTtsService
             (byte[] currentFormat, byte[] data) = ReadWavChunks(file);
             if (format is null) format = currentFormat;
             else if (!format.AsSpan().SequenceEqual(currentFormat))
-                throw new InvalidOperationException("阿里云返回的 WAV 音频参数不一致，无法拼接。");
+                throw new InvalidOperationException(LocalizationService.Current.Translate("aliyun_tts.wav_parameters_mismatch"));
             audio.Write(data);
         }
 
-        if (format is null) throw new InvalidOperationException("阿里云没有返回可用音频。");
+        if (format is null) throw new InvalidOperationException(LocalizationService.Current.Translate("aliyun_tts.no_audio"));
         byte[] audioData = audio.ToArray();
         using var merged = new MemoryStream(44 + format.Length + audioData.Length);
         using var writer = new BinaryWriter(merged, Encoding.ASCII, leaveOpen: true);
@@ -214,7 +215,7 @@ public sealed class AliyunTtsService
 
     private static (byte[] Format, byte[] Data) ReadWavChunks(byte[] file)
     {
-        if (!IsWave(file)) throw new InvalidOperationException("阿里云返回的数据不是有效 WAV 文件。");
+        if (!IsWave(file)) throw new InvalidOperationException(LocalizationService.Current.Translate("aliyun_tts.invalid_wav"));
         byte[]? format = null;
         byte[]? data = null;
         int offset = 12;
@@ -237,12 +238,12 @@ public sealed class AliyunTtsService
                 continue;
             }
             if (chunkSize > int.MaxValue || offset + (long)chunkSize > file.Length)
-                throw new InvalidOperationException("阿里云返回的 WAV 数据块长度无效。");
+                throw new InvalidOperationException(LocalizationService.Current.Translate("aliyun_tts.invalid_wav_chunk_length"));
             if (chunkId == "fmt ") format ??= file.AsSpan(offset, (int)chunkSize).ToArray();
             offset += (int)chunkSize + ((int)chunkSize & 1);
         }
         if (format is null || data is null)
-            throw new InvalidOperationException("阿里云返回的 WAV 缺少 fmt 或 data 块。");
+            throw new InvalidOperationException(LocalizationService.Current.Translate("aliyun_tts.wav_missing_chunks"));
         return (format, data);
     }
 
@@ -265,12 +266,12 @@ public sealed class AliyunTtsService
                 message.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(message.GetString()))
             {
                 string status = document.RootElement.TryGetProperty("status", out JsonElement code)
-                    ? $"状态码 {code}，" : string.Empty;
+                    ? LocalizationService.Current.Format("aliyun_tts.service_status_prefix", ("status", code)) : string.Empty;
                 return status + message.GetString();
             }
         }
         catch (JsonException) { }
         string text = Encoding.UTF8.GetString(body).Replace('\r', ' ').Replace('\n', ' ').Trim();
-        return text.Length == 0 ? "服务返回了空错误信息。" : text[..Math.Min(text.Length, 300)];
+        return text.Length == 0 ? LocalizationService.Current.Translate("aliyun_tts.empty_error") : text[..Math.Min(text.Length, 300)];
     }
 }

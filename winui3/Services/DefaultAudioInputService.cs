@@ -6,16 +6,26 @@ namespace ETSAssistant.WinUI3.Services;
 
 public sealed record DefaultAudioInputStatus(string DeviceId, string Name, bool IsVirtualCable);
 
-/// <summary>Temporarily selects CABLE Output for capture and restores the previous Windows default on exit.</summary>
+/// <summary>
+/// Routes the ETS processes to the virtual capture endpoint using Windows' per-application
+/// audio policy. It deliberately never changes the machine-wide default input.
+/// </summary>
 public sealed class DefaultAudioInputService
 {
     private static readonly Lazy<DefaultAudioInputService> Lazy = new(() => new DefaultAudioInputService());
     public static DefaultAudioInputService Current => Lazy.Value;
-    private string? _originalDeviceId;
-    private string? _originalRenderDeviceId;
-    private string? _virtualDeviceId;
-    private readonly SemaphoreSlim _gate = new(1, 1);
 
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly Dictionary<(int ProcessId, EndpointRole Role), string?> _previousRoutes = new();
+    private readonly Dictionary<(int ProcessId, EndpointRole Role), string> _routedEndpoints = new();
+    private VirtualCableDevice? _captureDevice;
+    private DateTimeOffset _captureDeviceCheckedAt;
+
+    public bool LastSetVirtualDefaultSucceeded { get; private set; }
+    public bool HasActiveEtsRoute => _routedEndpoints.Count > 0;
+    public string? RoutedDeviceName => _captureDevice?.Name;
+
+    /// <summary>Reports the Windows-wide default input; this service does not modify it.</summary>
     public async Task<DefaultAudioInputStatus?> GetStatusAsync()
     {
         string id = MediaDevice.GetDefaultAudioCaptureId(AudioDeviceRole.Default);
@@ -24,54 +34,70 @@ public sealed class DefaultAudioInputService
         DeviceInformation? match = devices.FirstOrDefault(device => string.Equals(device.Id, id,
             StringComparison.OrdinalIgnoreCase));
         string name = match?.Name ?? id;
-        return new DefaultAudioInputStatus(id, name,
-            IsVirtualName(name));
+        return new DefaultAudioInputStatus(id, name, IsVirtualName(name));
     }
 
-    public async Task<string> BeginSessionAsync()
-    {
-        await _gate.WaitAsync();
-        try
-        {
-            DefaultAudioInputStatus? current = await GetStatusAsync();
-            if (current is null) return "未能读取 Windows 默认录音设备。";
-            _originalDeviceId ??= current.IsVirtualCable
-                ? await FindPhysicalFallbackAsync()
-                : current.DeviceId;
-            AudioEndpointStatus? render = await GetDefaultRenderStatusAsync();
-            if (render is not null)
-                _originalRenderDeviceId ??= render.IsVirtualCable
-                    ? await FindPhysicalRenderFallbackAsync()
-                    : render.DeviceId;
-            VirtualCableService cable = new();
-            await cable.RefreshAsync();
-            if (cable.Capture is null) return $"当前默认输入：{current.Name}；未检测到 CABLE Output。";
-            _virtualDeviceId = cable.Capture.Device.Id;
-            _originalDeviceId ??= string.Equals(current.DeviceId, _virtualDeviceId, StringComparison.OrdinalIgnoreCase)
-                ? null : current.DeviceId;
-            SetDefaultEndpoint(_virtualDeviceId);
-            return $"已将默认输入临时切换为：{cable.Capture.Name}";
-        }
-        catch (Exception ex) { return "虚拟麦克风切换失败：" + ex.Message; }
-        finally { _gate.Release(); }
-    }
+    /// <summary>Applies the virtual microphone only to the currently running ETS processes.</summary>
+    public async Task<string> BeginSessionAsync() => await RouteEtsProcessesAsync();
 
+    /// <summary>Developer tool action; routes ETS only and leaves Windows' default untouched.</summary>
     public async Task<string> SetVirtualDefaultAsync()
     {
+        LastSetVirtualDefaultSucceeded = false;
+        return await RouteEtsProcessesAsync();
+    }
+
+    private async Task<string> RouteEtsProcessesAsync()
+    {
         await _gate.WaitAsync();
         try
         {
-            DefaultAudioInputStatus? current = await GetStatusAsync();
-            if (current is null) return "未能读取 Windows 默认录音设备。";
-            VirtualCableService cable = new();
-            await cable.RefreshAsync();
-            if (cable.Capture is null) return "未检测到 CABLE Output 录音设备。";
-            if (!current.IsVirtualCable) _originalDeviceId ??= current.DeviceId;
-            _virtualDeviceId = cable.Capture.Device.Id;
-            SetDefaultEndpoint(_virtualDeviceId);
-            return $"已设为默认输入：{cable.Capture.Name}";
+            IReadOnlyCollection<int> processIds = AssistantService.Current.GetEtsProcessIds();
+            if (processIds.Count == 0)
+            {
+                LastSetVirtualDefaultSucceeded = false;
+                return LocalizationService.Current.Translate("audio_input.no_ets_process_found");
+            }
+
+            await RefreshCaptureDeviceIfNeededAsync();
+            if (_captureDevice is null)
+            {
+                LastSetVirtualDefaultSucceeded = false;
+                return LocalizationService.Current.Translate("audio_input.cable_output_missing");
+            }
+
+            var currentIds = processIds.ToHashSet();
+            foreach (int staleProcessId in _previousRoutes.Keys.Select(key => key.ProcessId).Distinct()
+                         .Where(processId => !currentIds.Contains(processId)).ToArray())
+                RestoreProcessRoutes(staleProcessId);
+
+            foreach (int processId in currentIds)
+            foreach (EndpointRole role in Enum.GetValues<EndpointRole>())
+            {
+                var routeKey = (processId, role);
+                if (!_previousRoutes.ContainsKey(routeKey))
+                    _previousRoutes[routeKey] = PerProcessAudioPolicy.GetCaptureEndpoint(processId, role);
+
+                if (!_routedEndpoints.TryGetValue(routeKey, out string? routedEndpoint) ||
+                    !string.Equals(routedEndpoint, _captureDevice.Device.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    PerProcessAudioPolicy.SetCaptureEndpoint(processId, role, _captureDevice.Device.Id);
+                    _routedEndpoints[routeKey] = _captureDevice.Device.Id;
+                }
+            }
+
+            LastSetVirtualDefaultSucceeded = true;
+            DiagnosticLogService.Info("audio_session.ets_capture_routed",
+                $"processCount={currentIds.Count} device={_captureDevice.Name} systemDefaultUnchanged=true");
+            return LocalizationService.Current.Format("audio_input.ets_capture_routed",
+                ("device", _captureDevice.Name), ("count", currentIds.Count));
         }
-        catch (Exception ex) { return "设置失败：" + ex.Message; }
+        catch (Exception ex)
+        {
+            LastSetVirtualDefaultSucceeded = false;
+            DiagnosticLogService.Warn("audio_session.ets_capture_route_failed", ex.Message);
+            return LocalizationService.Current.Format("audio_input.ets_capture_route_failed", ("detail", ex.Message));
+        }
         finally { _gate.Release(); }
     }
 
@@ -80,92 +106,57 @@ public sealed class DefaultAudioInputService
         await _gate.WaitAsync();
         try
         {
-            if (string.IsNullOrWhiteSpace(_originalDeviceId)) return "本次会话没有保存可恢复的物理麦克风。";
-            SetDefaultEndpoint(_originalDeviceId);
-            DefaultAudioInputStatus? status = await GetStatusAsync();
-            return "已恢复默认输入：" + (status?.Name ?? _originalDeviceId);
+            RestoreAllProcessRoutes();
+            LastSetVirtualDefaultSucceeded = false;
+            return LocalizationService.Current.Translate("audio_input.ets_capture_route_restored");
         }
-        catch (Exception ex) { return "恢复失败：" + ex.Message; }
+        catch (Exception ex)
+        {
+            DiagnosticLogService.Warn("audio_session.ets_capture_route_restore_failed", ex.Message);
+            return LocalizationService.Current.Format("audio_input.ets_capture_route_restore_failed", ("detail", ex.Message));
+        }
         finally { _gate.Release(); }
     }
 
     public async Task EndSessionAsync()
     {
         await _gate.WaitAsync();
-        try
-        {
-            DefaultAudioInputStatus? current = await GetStatusAsync();
-            if (!string.IsNullOrWhiteSpace(_originalDeviceId) &&
-                !string.IsNullOrWhiteSpace(_virtualDeviceId) && current is not null &&
-                string.Equals(current.DeviceId, _virtualDeviceId, StringComparison.OrdinalIgnoreCase))
-                SetDefaultEndpoint(_originalDeviceId);
-
-            AudioEndpointStatus? render = await GetDefaultRenderStatusAsync();
-            if (!string.IsNullOrWhiteSpace(_originalRenderDeviceId) && render?.IsVirtualCable == true)
-                SetDefaultEndpoint(_originalRenderDeviceId);
-        }
-        catch (Exception) { }
+        try { RestoreAllProcessRoutes(); }
+        catch (Exception ex) { DiagnosticLogService.Warn("audio_session.ets_capture_route_restore_failed", ex.Message); }
         finally
         {
-            _originalDeviceId = null;
-            _originalRenderDeviceId = null;
-            _virtualDeviceId = null;
+            _captureDevice = null;
+            _captureDeviceCheckedAt = default;
+            LastSetVirtualDefaultSucceeded = false;
             _gate.Release();
         }
     }
 
-    private static void SetDefaultEndpoint(string deviceId)
+    private async Task RefreshCaptureDeviceIfNeededAsync()
     {
-        IPolicyConfig? policy = null;
-        try
+        if (_captureDevice is not null && DateTimeOffset.UtcNow - _captureDeviceCheckedAt < TimeSpan.FromSeconds(30))
+            return;
+
+        var cable = new VirtualCableService();
+        await cable.RefreshAsync();
+        _captureDevice = cable.Capture;
+        _captureDeviceCheckedAt = DateTimeOffset.UtcNow;
+    }
+
+    private void RestoreAllProcessRoutes()
+    {
+        foreach (int processId in _previousRoutes.Keys.Select(key => key.ProcessId).Distinct().ToArray())
+            RestoreProcessRoutes(processId);
+    }
+
+    private void RestoreProcessRoutes(int processId)
+    {
+        foreach (var pair in _previousRoutes.Where(pair => pair.Key.ProcessId == processId).ToArray())
         {
-            policy = (IPolicyConfig)new PolicyConfigClient();
-            foreach (EndpointRole role in Enum.GetValues<EndpointRole>())
-            {
-                int result = policy.SetDefaultEndpoint(deviceId, role);
-                Marshal.ThrowExceptionForHR(result);
-            }
+            PerProcessAudioPolicy.SetCaptureEndpoint(processId, pair.Key.Role, pair.Value);
+            _previousRoutes.Remove(pair.Key);
+            _routedEndpoints.Remove(pair.Key);
         }
-        finally
-        {
-            if (policy is not null && Marshal.IsComObject(policy)) Marshal.FinalReleaseComObject(policy);
-        }
-    }
-
-    private static async Task<string?> FindPhysicalFallbackAsync()
-    {
-        string communications = MediaDevice.GetDefaultAudioCaptureId(AudioDeviceRole.Communications);
-        DeviceInformationCollection devices = await DeviceInformation.FindAllAsync(DeviceClass.AudioCapture);
-        DeviceInformation? communicationDevice = devices.FirstOrDefault(device =>
-            string.Equals(device.Id, communications, StringComparison.OrdinalIgnoreCase));
-        if (communicationDevice is not null && !IsVirtualName(communicationDevice.Name))
-            return communicationDevice.Id;
-        return devices.FirstOrDefault(device =>
-            !IsVirtualName(device.Name))?.Id;
-    }
-
-    private sealed record AudioEndpointStatus(string DeviceId, string Name, bool IsVirtualCable);
-
-    private static async Task<AudioEndpointStatus?> GetDefaultRenderStatusAsync()
-    {
-        string id = MediaDevice.GetDefaultAudioRenderId(AudioDeviceRole.Default);
-        if (string.IsNullOrWhiteSpace(id)) return null;
-        DeviceInformationCollection devices = await DeviceInformation.FindAllAsync(DeviceClass.AudioRender);
-        DeviceInformation? match = devices.FirstOrDefault(device => string.Equals(device.Id, id,
-            StringComparison.OrdinalIgnoreCase));
-        string name = match?.Name ?? id;
-        return new AudioEndpointStatus(id, name, IsVirtualName(name));
-    }
-
-    private static async Task<string?> FindPhysicalRenderFallbackAsync()
-    {
-        string communications = MediaDevice.GetDefaultAudioRenderId(AudioDeviceRole.Communications);
-        DeviceInformationCollection devices = await DeviceInformation.FindAllAsync(DeviceClass.AudioRender);
-        DeviceInformation? communicationDevice = devices.FirstOrDefault(device =>
-            string.Equals(device.Id, communications, StringComparison.OrdinalIgnoreCase));
-        if (communicationDevice is not null && !IsVirtualName(communicationDevice.Name))
-            return communicationDevice.Id;
-        return devices.FirstOrDefault(device => !IsVirtualName(device.Name))?.Id;
     }
 
     private static bool IsVirtualName(string name) =>
@@ -175,25 +166,179 @@ public sealed class DefaultAudioInputService
         name.Contains("VoiceMeeter", StringComparison.OrdinalIgnoreCase) ||
         name.Contains("Virtual Audio Cable", StringComparison.OrdinalIgnoreCase);
 
-    private enum EndpointRole { Console = 0, Multimedia = 1, Communications = 2 }
+    private enum EndpointRole : uint { Console = 0, Multimedia = 1, Communications = 2 }
 
-    [ComImport, Guid("870AF99C-171D-4F9E-AF0D-E63DF40C2BC9")]
-    private class PolicyConfigClient { }
-
-    [ComImport, Guid("F8679F50-850A-41CF-9C72-430F290290C8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IPolicyConfig
+    /// <summary>
+    /// Windows exposes per-application capture routing through an undocumented WinRT audio-policy
+    /// factory. The interface differs by Windows build; failures are surfaced and never fall back
+    /// to changing the global default device.
+    /// </summary>
+    private static class PerProcessAudioPolicy
     {
-        [PreserveSig] int GetMixFormat([MarshalAs(UnmanagedType.LPWStr)] string deviceId, out IntPtr format);
-        [PreserveSig] int GetDeviceFormat([MarshalAs(UnmanagedType.LPWStr)] string deviceId, int defaultFormat, out IntPtr format);
-        [PreserveSig] int ResetDeviceFormat([MarshalAs(UnmanagedType.LPWStr)] string deviceId);
-        [PreserveSig] int SetDeviceFormat([MarshalAs(UnmanagedType.LPWStr)] string deviceId, IntPtr endpointFormat, IntPtr mixFormat);
-        [PreserveSig] int GetProcessingPeriod([MarshalAs(UnmanagedType.LPWStr)] string deviceId, out long defaultPeriod, out long minimumPeriod);
-        [PreserveSig] int SetProcessingPeriod([MarshalAs(UnmanagedType.LPWStr)] string deviceId, IntPtr period);
-        [PreserveSig] int GetShareMode([MarshalAs(UnmanagedType.LPWStr)] string deviceId, IntPtr shareMode);
-        [PreserveSig] int SetShareMode([MarshalAs(UnmanagedType.LPWStr)] string deviceId, IntPtr shareMode);
-        [PreserveSig] int GetPropertyValue([MarshalAs(UnmanagedType.LPWStr)] string deviceId, IntPtr key, IntPtr value);
-        [PreserveSig] int SetPropertyValue([MarshalAs(UnmanagedType.LPWStr)] string deviceId, IntPtr key, IntPtr value);
-        [PreserveSig] int SetDefaultEndpoint([MarshalAs(UnmanagedType.LPWStr)] string deviceId, EndpointRole role);
-        [PreserveSig] int SetEndpointVisibility([MarshalAs(UnmanagedType.LPWStr)] string deviceId, int visible);
+        private static readonly object FactoryLock = new();
+        private static IAudioPolicyConfigFactory? _factory;
+
+        public static string? GetCaptureEndpoint(int processId, EndpointRole role)
+        {
+            IAudioPolicyConfigFactory factory = GetFactory();
+            int result = factory.GetPersistedDefaultAudioEndpoint((uint)processId, AudioDataFlow.Capture, role,
+                out string? deviceId);
+            if (result >= 0) return string.IsNullOrWhiteSpace(deviceId) ? null : deviceId;
+
+            // Windows uses not-found (and on some builds E_FAIL) to mean no per-app override exists.
+            if (result is unchecked((int)0x80070490) or unchecked((int)0x80004005)) return null;
+            Marshal.ThrowExceptionForHR(result);
+            return null;
+        }
+
+        public static void SetCaptureEndpoint(int processId, EndpointRole role, string? deviceId)
+        {
+            IAudioPolicyConfigFactory factory = GetFactory();
+            IntPtr deviceString = IntPtr.Zero;
+            try
+            {
+                if (deviceId is not null)
+                {
+                    Marshal.ThrowExceptionForHR(WindowsCreateString(deviceId, (uint)deviceId.Length, out deviceString));
+                }
+
+                Marshal.ThrowExceptionForHR(factory.SetPersistedDefaultAudioEndpoint((uint)processId,
+                    AudioDataFlow.Capture, role, deviceString));
+            }
+            finally
+            {
+                if (deviceString != IntPtr.Zero) WindowsDeleteString(deviceString);
+            }
+        }
+
+        private static IAudioPolicyConfigFactory GetFactory()
+        {
+            lock (FactoryLock)
+            {
+                if (_factory is not null) return _factory;
+
+                string className = "Windows.Media.Internal.AudioPolicyConfig";
+                Marshal.ThrowExceptionForHR(WindowsCreateString(className, (uint)className.Length, out IntPtr classNameString));
+                try
+                {
+                    Guid iid = Environment.OSVersion.Version.Build >= 19044
+                        ? new Guid("ab3d4648-e242-459f-b02f-541c70306324")
+                        : new Guid("2a59116d-6c4f-45e0-a74f-707e3fef9258");
+                    Marshal.ThrowExceptionForHR(RoGetActivationFactory(classNameString, ref iid, out IntPtr factoryPointer));
+                    try
+                    {
+                        bool downlevel = Environment.OSVersion.Version.Build < 19044;
+                        _factory = new AudioPolicyConfigFactory(Marshal.GetObjectForIUnknown(factoryPointer), downlevel);
+                        return _factory;
+                    }
+                    finally { Marshal.Release(factoryPointer); }
+                }
+                finally { WindowsDeleteString(classNameString); }
+            }
+        }
+
+        [DllImport("combase.dll", ExactSpelling = true, PreserveSig = true)]
+        private static extern int WindowsCreateString([MarshalAs(UnmanagedType.LPWStr)] string sourceString,
+            uint length, out IntPtr value);
+
+        [DllImport("combase.dll", ExactSpelling = true, PreserveSig = true)]
+        private static extern int WindowsDeleteString(IntPtr value);
+
+        [DllImport("combase.dll", ExactSpelling = true, PreserveSig = true)]
+        private static extern int RoGetActivationFactory(IntPtr activatableClassId, ref Guid iid,
+            out IntPtr factory);
+
+        private enum AudioDataFlow : int { Render = 0, Capture = 1, All = 2 }
+
+        private interface IAudioPolicyConfigFactory
+        {
+            int SetPersistedDefaultAudioEndpoint(uint processId, AudioDataFlow flow, EndpointRole role, IntPtr deviceId);
+            int GetPersistedDefaultAudioEndpoint(uint processId, AudioDataFlow flow, EndpointRole role, out string? deviceId);
+        }
+
+        private sealed class AudioPolicyConfigFactory(object factory, bool downlevel) : IAudioPolicyConfigFactory
+        {
+            public int SetPersistedDefaultAudioEndpoint(uint processId, AudioDataFlow flow,
+                EndpointRole role, IntPtr deviceId) => downlevel
+                ? ((IAudioPolicyConfigFactoryDownlevel)factory).SetPersistedDefaultAudioEndpoint(processId, flow, role, deviceId)
+                : ((IAudioPolicyConfigFactory21H2)factory).SetPersistedDefaultAudioEndpoint(processId, flow, role, deviceId);
+
+            public int GetPersistedDefaultAudioEndpoint(uint processId, AudioDataFlow flow,
+                EndpointRole role, out string? deviceId)
+            {
+                if (downlevel)
+                    return ((IAudioPolicyConfigFactoryDownlevel)factory).GetPersistedDefaultAudioEndpoint(processId, flow, role, out deviceId);
+                return ((IAudioPolicyConfigFactory21H2)factory).GetPersistedDefaultAudioEndpoint(processId, flow, role, out deviceId);
+            }
+        }
+
+        [ComImport, Guid("ab3d4648-e242-459f-b02f-541c70306324"),
+         InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        private interface IAudioPolicyConfigFactory21H2
+        {
+            // IInspectable's three ABI slots. Declaring the interface as IUnknown avoids
+            // .NET's unsupported IInspectable marshaller while preserving the WinRT vtable.
+            [PreserveSig] int GetIids(out uint iidCount, out IntPtr iids);
+            [PreserveSig] int GetRuntimeClassName(out IntPtr className);
+            [PreserveSig] int GetTrustLevel(out int trustLevel);
+            int __incomplete__add_CtxVolumeChange();
+            int __incomplete__remove_CtxVolumeChanged();
+            int __incomplete__add_RingerVibrateStateChanged();
+            int __incomplete__remove_RingerVibrateStateChange();
+            int __incomplete__SetVolumeGroupGainForId();
+            int __incomplete__GetVolumeGroupGainForId();
+            int __incomplete__GetActiveVolumeGroupForEndpointId();
+            int __incomplete__GetVolumeGroupsForEndpoint();
+            int __incomplete__GetCurrentVolumeContext();
+            int __incomplete__SetVolumeGroupMuteForId();
+            int __incomplete__GetVolumeGroupMuteForId();
+            int __incomplete__SetRingerVibrateState();
+            int __incomplete__GetRingerVibrateState();
+            int __incomplete__SetPreferredChatApplication();
+            int __incomplete__ResetPreferredChatApplication();
+            int __incomplete__GetPreferredChatApplication();
+            int __incomplete__GetCurrentChatApplications();
+            int __incomplete__add_ChatContextChanged();
+            int __incomplete__remove_ChatContextChanged();
+            [PreserveSig] int SetPersistedDefaultAudioEndpoint(uint processId, AudioDataFlow flow,
+                EndpointRole role, IntPtr deviceId);
+            [PreserveSig] int GetPersistedDefaultAudioEndpoint(uint processId, AudioDataFlow flow,
+                EndpointRole role, [Out, MarshalAs(UnmanagedType.HString)] out string? deviceId);
+            [PreserveSig] int ClearAllPersistedApplicationDefaultEndpoints();
+        }
+
+        [ComImport, Guid("2a59116d-6c4f-45e0-a74f-707e3fef9258"),
+         InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        private interface IAudioPolicyConfigFactoryDownlevel
+        {
+            // IInspectable's three ABI slots. Keep these before the factory methods below.
+            [PreserveSig] int GetIids(out uint iidCount, out IntPtr iids);
+            [PreserveSig] int GetRuntimeClassName(out IntPtr className);
+            [PreserveSig] int GetTrustLevel(out int trustLevel);
+            int __incomplete__add_CtxVolumeChange();
+            int __incomplete__remove_CtxVolumeChanged();
+            int __incomplete__add_RingerVibrateStateChanged();
+            int __incomplete__remove_RingerVibrateStateChange();
+            int __incomplete__SetVolumeGroupGainForId();
+            int __incomplete__GetVolumeGroupGainForId();
+            int __incomplete__GetActiveVolumeGroupForEndpointId();
+            int __incomplete__GetVolumeGroupsForEndpoint();
+            int __incomplete__GetCurrentVolumeContext();
+            int __incomplete__SetVolumeGroupMuteForId();
+            int __incomplete__GetVolumeGroupMuteForId();
+            int __incomplete__SetRingerVibrateState();
+            int __incomplete__GetRingerVibrateState();
+            int __incomplete__SetPreferredChatApplication();
+            int __incomplete__ResetPreferredChatApplication();
+            int __incomplete__GetPreferredChatApplication();
+            int __incomplete__GetCurrentChatApplications();
+            int __incomplete__add_ChatContextChanged();
+            int __incomplete__remove_ChatContextChanged();
+            [PreserveSig] int SetPersistedDefaultAudioEndpoint(uint processId, AudioDataFlow flow,
+                EndpointRole role, IntPtr deviceId);
+            [PreserveSig] int GetPersistedDefaultAudioEndpoint(uint processId, AudioDataFlow flow,
+                EndpointRole role, [Out, MarshalAs(UnmanagedType.HString)] out string? deviceId);
+            [PreserveSig] int ClearAllPersistedApplicationDefaultEndpoints();
+        }
     }
 }

@@ -15,14 +15,15 @@ public sealed partial class GuidePage : Page
         try
         {
             string path = _service.ReadmePath;
-            if (!File.Exists(path)) throw new FileNotFoundException("找不到 README 使用说明。", path);
+            if (!File.Exists(path)) throw new FileNotFoundException(LocalizationService.Current.Translate("guide.readme_missing"), path);
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
         }
         catch (Exception ex)
         {
             var dialog = new ContentDialog
             {
-                Title = "无法打开说明", Content = ex.Message, CloseButtonText = "知道了", XamlRoot = XamlRoot
+                Title = LocalizationService.Current.Translate("guide.open_failed"), Content = ex.Message,
+                CloseButtonText = LocalizationService.Current.Translate("guide.understood"), XamlRoot = XamlRoot
             };
             await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog);
         }

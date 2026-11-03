@@ -22,7 +22,7 @@ public static class VirtualCableSetupService
     public static async Task<int> RunSetupAsync(string appRoot)
     {
         string packagePath = PackagePath(appRoot);
-        if (!File.Exists(packagePath)) throw new FileNotFoundException("找不到完整的 VB-CABLE 驱动包。", packagePath);
+        if (!File.Exists(packagePath)) throw new FileNotFoundException(LocalizationService.Current.Translate("virtual_cable.package_missing"), packagePath);
 
         string extractionPath = Path.Combine(Path.GetTempPath(), "ETS-VBCABLE-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(extractionPath);
@@ -34,14 +34,14 @@ public static class VirtualCableSetupService
                 if (!archive.Entries.Any(entry => entry.FullName.EndsWith(".inf", StringComparison.OrdinalIgnoreCase)) ||
                     !archive.Entries.Any(entry => entry.FullName.EndsWith(".sys", StringComparison.OrdinalIgnoreCase)) ||
                     !archive.Entries.Any(entry => entry.FullName.EndsWith(".cat", StringComparison.OrdinalIgnoreCase)))
-                    throw new InvalidDataException("VB-CABLE 压缩包缺少 INF、SYS 或 CAT 驱动文件。");
+                    throw new InvalidDataException(LocalizationService.Current.Translate("virtual_cable.package_files_missing"));
 
                 archive.ExtractToDirectory(extractionPath);
             }
 
             string installerPath = Path.Combine(extractionPath, "VBCABLE_Setup_x64.exe");
             if (!File.Exists(installerPath))
-                throw new InvalidDataException("VB-CABLE 驱动包中找不到 VBCABLE_Setup_x64.exe。");
+                throw new InvalidDataException(LocalizationService.Current.Translate("virtual_cable.installer_missing"));
 
             var startInfo = new ProcessStartInfo(installerPath)
             {
@@ -50,7 +50,7 @@ public static class VirtualCableSetupService
                 Verb = "runas"
             };
             using Process? process = Process.Start(startInfo);
-            if (process is null) throw new InvalidOperationException("无法启动 VB-CABLE 安装程序。");
+            if (process is null) throw new InvalidOperationException(LocalizationService.Current.Translate("virtual_cable.installer_start_failed"));
             await process.WaitForExitAsync();
             return process.ExitCode;
         }
@@ -69,7 +69,7 @@ public static class VirtualCableSetupService
             string path = Path.GetFullPath(Path.Combine(destination,
                 entry.FullName.Replace('/', Path.DirectorySeparatorChar)));
             if (!path.StartsWith(root, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("VB-CABLE 压缩包包含无效路径。");
+                throw new InvalidDataException(LocalizationService.Current.Translate("virtual_cable.invalid_archive_path"));
         }
     }
 

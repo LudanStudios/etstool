@@ -2,6 +2,7 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using System.Globalization;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage.Pickers;
 using Windows.UI;
@@ -71,27 +72,36 @@ public sealed partial class OverviewPage : Page
 
     private void RefreshStatus()
     {
+        LocalizationService localization = LocalizationService.Current;
         _service.RefreshEts();
         bool found = _service.EtsExe is not null;
         bool running = found && _service.IsEtsRunning;
-        StatusText.Text = !found ? "未找到 ETS" : running ? "ETS 正在运行" : "已就绪，等待 ETS 启动";
+        StatusText.Text = localization.Translate(!found
+            ? "overview.ets_not_found"
+            : running ? "common.ets_running" : "overview.ready_waiting_ets");
         Color color = !found ? Color.FromArgb(255, 220, 38, 38) : running
             ? Color.FromArgb(255, 34, 197, 94) : Color.FromArgb(255, 22, 163, 74);
         StatusDot.Fill = new SolidColorBrush(color);
-        EtsPathText.Text = _service.EtsExe ?? "请先安装 ETS，再重新扫描。";
+        EtsPathText.Text = _service.EtsExe ?? localization.Translate("overview.install_ets_scan_again");
         ListenerText.Text = _service.IsAutostartEnabled
-            ? "监听器：已设置为登录 Windows 后自启动。"
-            : "监听器：尚未设置登录自启动，可在答题设置中开启。";
-        CredentialStatusText.Text = $"凭据：DeepSeek {(ApiKeyStore.HasKey ? "已配置" : "未配置")} · 阿里云 TTS " +
-            $"{(AliyunTtsCredentialStore.HasCredentials ? "已配置" : "未配置")}";
+            ? localization.Translate("overview.listener_autostart_enabled")
+            : localization.Translate("overview.listener_autostart_disabled");
+        CredentialStatusText.Text = localization.Format("overview.credentials_status",
+            ("deepseek", localization.Translate(ApiKeyStore.HasKey ? "common.configured" : "common.not_configured")),
+            ("aliyun", localization.Translate(AliyunTtsCredentialStore.HasCredentials
+                ? "common.configured" : "common.not_configured")));
         AppPreferencesService preferences = AppPreferencesService.Current;
         AssistantSettings config = _service.LoadSettings();
-        AnswerConfigText.Text = $"正确率 {config.Accuracy:P0} · 跳题间隔 {config.SkipInterval:0.##} 秒 · " +
-            $"口语模式 {(preferences.SpeakingMode == "flexible" ? "生成" : "标答")}";
+        AnswerConfigText.Text = localization.Format("overview.answer_settings_summary",
+            ("accuracy", config.Accuracy.ToString("P0", CultureInfo.CurrentCulture)),
+            ("skip", config.SkipInterval.ToString("0.##", CultureInfo.CurrentCulture)),
+            ("mode", localization.Translate(preferences.SpeakingMode == "flexible"
+                ? "common.flexible_mode" : "common.standard_mode")));
         EtsErrorBar.IsOpen = !found;
         if (!string.IsNullOrWhiteSpace(_service.LastError))
         {
-            InfoBarPresenter.Show(GeneralInfoBar, "需要注意", _service.LastError, InfoBarSeverity.Warning);
+            InfoBarPresenter.Show(GeneralInfoBar,
+                LocalizationService.Current.Translate("overview.need_attention"), _service.LastError, InfoBarSeverity.Warning);
         }
         else if (found) GeneralInfoBar.IsOpen = false;
     }
@@ -110,12 +120,12 @@ public sealed partial class OverviewPage : Page
             var picker = new FolderPicker
             {
                 SuggestedStartLocation = PickerLocationId.ComputerFolder,
-                CommitButtonText = "选择此文件夹"
+                CommitButtonText = LocalizationService.Current.Translate("overview.choose_this_folder")
             };
             picker.FileTypeFilter.Add("*");
 
             MainWindow window = MainWindow.Current
-                ?? throw new InvalidOperationException("窗口尚未准备好，请稍后重试。");
+                ?? throw new InvalidOperationException(LocalizationService.Current.Translate("overview.window_not_ready"));
             WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(window));
 
             var folder = await picker.PickSingleFolderAsync();
@@ -124,20 +134,22 @@ public sealed partial class OverviewPage : Page
             EtsDirectoryValidation validation = _service.ValidateEtsDirectory(folder.Path);
             if (!validation.IsValid)
             {
-                await ShowDialogAsync("目录校验失败", validation.Message, "知道了");
+                await ShowDialogAsync("overview.directory_validation_failed", validation.Message, "common.ok");
                 return;
             }
 
+            LocalizationService localization = LocalizationService.Current;
             string versionLine = string.IsNullOrWhiteSpace(validation.FileVersion)
                 ? string.Empty
-                : $"\n版本：{validation.FileVersion}";
+                : localization.Format("overview.version_line", ("version", validation.FileVersion));
             var confirm = new ContentDialog
             {
-                Title = "校验通过，应用这个目录？",
-                Content = $"ETS 安装目录：\n{validation.DirectoryPath}\n\n启动程序：\n{validation.ExecutablePath}{versionLine}\n\n" +
-                          "应用后会更新登录启动项和 ETS 快捷方式，并重启后台监听器。",
-                PrimaryButtonText = "应用",
-                CloseButtonText = "取消",
+                Title = localization.Translate("overview.directory_validation_confirm_title"),
+                Content = localization.Format("overview.ets_installation_info",
+                    ("directory", validation.DirectoryPath), ("executable", validation.ExecutablePath),
+                    ("versionLine", versionLine)),
+                PrimaryButtonText = localization.Translate("overview.apply"),
+                CloseButtonText = localization.Translate("common.cancel"),
                 DefaultButton = ContentDialogButton.Primary,
                 XamlRoot = XamlRoot
             };
@@ -145,9 +157,11 @@ public sealed partial class OverviewPage : Page
 
             string warnings = _service.ApplyEtsDirectory(validation.DirectoryPath);
             RefreshStatus();
-            string title = warnings.Length == 0 ? "已应用新的 ETS 目录" : "目录已保存，但有需要注意的问题";
+            string title = LocalizationService.Current.Translate(warnings.Length == 0
+                ? "overview.ets_directory_applied" : "overview.ets_directory_saved_warning");
             string message = warnings.Length == 0
-                ? $"后续启动和监听将使用 {validation.ExecutablePath}。"
+                ? LocalizationService.Current.Format("overview.ets_directory_future_use",
+                    ("executable", validation.ExecutablePath))
                 : warnings;
             InfoBarPresenter.Show(GeneralInfoBar, title, message,
                 warnings.Length == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
@@ -162,8 +176,10 @@ public sealed partial class OverviewPage : Page
             _service.RefreshEts();
             string warnings = _service.InitializeAndOpen(_service.LoadSettings());
             RefreshStatus();
-            string title = warnings.Length == 0 ? "已完成初始化" : "ETS 已打开，但有需要注意的问题";
-            string message = warnings.Length == 0 ? "监听器已启动，ETS 正在打开。" : warnings;
+            string title = LocalizationService.Current.Translate(warnings.Length == 0
+                ? "overview.initialization_completed" : "overview.ets_opened_warning");
+            string message = warnings.Length == 0
+                ? LocalizationService.Current.Translate("overview.listener_started_ets_opening") : warnings;
             InfoBarPresenter.Show(GeneralInfoBar, title, message,
                 warnings.Length == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
             if (AppPreferencesService.Current.IntegrateEtsMainProgramEnabled)
@@ -179,7 +195,9 @@ public sealed partial class OverviewPage : Page
             _service.RefreshEts();
             _service.EnsureListener();
             _service.OpenEts();
-            InfoBarPresenter.Show(GeneralInfoBar, "ETS 已启动", "后台监听器正在等待 ETS 页面加载。",
+            InfoBarPresenter.Show(GeneralInfoBar,
+                LocalizationService.Current.Translate("overview.ets_started"),
+                LocalizationService.Current.Translate("overview.listener_waits_for_ets"),
                 InfoBarSeverity.Success);
             RefreshStatus();
         }
@@ -207,32 +225,41 @@ public sealed partial class OverviewPage : Page
         _currentPaper = paper;
         if (paper is null)
         {
-            PaperStateText.Text = "等待检测";
+            PaperStateText.Text = LocalizationService.Current.Translate("overview.waiting");
             PaperStateBadge.Background = WaitingBadgeBrush;
-            PaperTitleText.Text = "尚未检测到正在作答的试卷";
-            PaperMetaText.Text = "启动 ETS 并打开试卷后，这里会显示答题进度和本地答案。";
+            PaperTitleText.Text = LocalizationService.Current.Translate("overview.no_paper_detected_yet");
+            PaperMetaText.Text = LocalizationService.Current.Translate("overview.open_paper_ets_see_progress");
             PaperProgressPanel.Visibility = Visibility.Collapsed;
             AnswerChips.ItemsSource = null;
             ManualResetButton.IsEnabled = false;
             EmptyPaperActions.Visibility = Visibility.Visible;
+            LocalizationService.Current.Apply(EmptyPaperActions);
             return;
         }
 
         ManualResetButton.IsEnabled = true;
         EmptyPaperActions.Visibility = Visibility.Collapsed;
-        PaperStateText.Text = paper.Complete ? "已完成" : "已检测";
+        PaperStateText.Text = LocalizationService.Current.Translate(paper.Complete
+            ? "common.completed" : "overview.detected");
         PaperStateBadge.Background = paper.Complete ? CompleteBadgeBrush : ActiveBadgeBrush;
         PaperTitleText.Text = paper.Title;
-        string activity = paper.LastActivity is DateTime last ? $" · 最后作答 {last:HH:mm:ss}" : string.Empty;
-        PaperMetaText.Text = $"试卷编号 {paper.PackId} · 共 {paper.Total} 道选择题{activity}" +
-                             (paper.Total == 0 ? " · 没有可读取的选择题答案" : string.Empty);
-        PaperProgressText.Text = $"已答 {paper.Answered} / {paper.Total} 题";
+        LocalizationService localization = LocalizationService.Current;
+        PaperMetaText.Text = paper.Total == 0
+            ? localization.Format("dynamic.paper_summary_no_questions", ("paperId", paper.PackId))
+            : paper.LastActivity is DateTime last
+                ? localization.Format("dynamic.paper_summary_last_answered",
+                    ("paperId", paper.PackId), ("count", paper.Total), ("time", last.ToString("HH:mm:ss")))
+                : localization.Format("dynamic.paper_summary", ("paperId", paper.PackId), ("count", paper.Total));
+        PaperProgressText.Text = localization.Format("dynamic.answered_count",
+            ("answered", paper.Answered), ("total", paper.Total));
         PaperPercentText.Text = paper.Total == 0 ? "0%" : $"{Math.Round(paper.Answered * 100.0 / paper.Total):0}%";
         PaperProgressBar.Maximum = Math.Max(paper.Total, 1);
         PaperProgressBar.Value = paper.Answered;
         int pending = paper.Answered - paper.Correct;
-        PaperCorrectText.Text = $"本地记录：答案一致 {paper.Correct} 题" +
-                                (pending > 0 ? $" · 待复习 {pending} 题" : string.Empty);
+        PaperCorrectText.Text = pending > 0
+            ? localization.Format("dynamic.local_answer_summary_with_review",
+                ("matching", paper.Correct), ("review", pending))
+            : localization.Format("dynamic.local_answer_summary", ("matching", paper.Correct));
         PaperProgressPanel.Visibility = paper.Total == 0 ? Visibility.Collapsed : Visibility.Visible;
         AnswerChips.ItemsSource = paper.Answers.Select(answer => new AnswerChip(
             NumberText: answer.Number.ToString(),
@@ -240,15 +267,23 @@ public sealed partial class OverviewPage : Page
             Tooltip: BuildAnswerTooltip(answer),
             Background: !answer.Answered ? UnansweredChipBrush : answer.Matches ? CorrectChipBrush : WrongChipBrush
         )).ToList();
+        LocalizationService.Current.Apply(PaperProgressPanel);
     }
 
     private static string BuildAnswerTooltip(CurrentPaperAnswer answer)
     {
-        string kind = answer.IsListening ? "听力题" : "选择题";
-        string detail = $"{kind} 第 {answer.Number} 题\n正确答案：{answer.CorrectAnswer}";
-        return answer.Answered
-            ? detail + $"\n已选答案：{answer.SelectedAnswer}（{(answer.Matches ? "一致" : "不一致")}）"
-            : detail + "\n尚未作答";
+        LocalizationService localization = LocalizationService.Current;
+        string kind = localization.Translate(answer.IsListening
+            ? "dynamic.answer_type_listening" : "dynamic.answer_type_choice");
+        if (!answer.Answered)
+            return localization.Format("dynamic.answer_tooltip_unanswered",
+                ("kind", kind), ("number", answer.Number), ("correct", answer.CorrectAnswer));
+
+        return localization.Format("dynamic.answer_tooltip_answered",
+            ("kind", kind), ("number", answer.Number), ("correct", answer.CorrectAnswer),
+            ("selected", answer.SelectedAnswer),
+            ("match", localization.Translate(answer.Matches
+                ? "dynamic.answer_match" : "dynamic.answer_mismatch")));
     }
 
     private async void CopyAnswers_Click(object sender, RoutedEventArgs e)
@@ -262,10 +297,16 @@ public sealed partial class OverviewPage : Page
             package.SetText(text);
             Clipboard.SetContent(package);
             Clipboard.Flush();
-            InfoBarPresenter.Show(GeneralInfoBar, "答案已复制",
-                $"已复制 {_currentPaper.Answers.Count} 道题的答案，可直接粘贴使用。", InfoBarSeverity.Success);
+            InfoBarPresenter.Show(GeneralInfoBar,
+                LocalizationService.Current.Translate("overview.answers_copied"),
+                LocalizationService.Current.Format("overview.answers_copied_detail",
+                    ("count", _currentPaper.Answers.Count)), InfoBarSeverity.Success);
         }
-        catch (Exception ex) { await ShowErrorAsync($"无法复制答案：{ex.Message}"); }
+        catch (Exception ex)
+        {
+            await ShowErrorAsync(LocalizationService.Current.Format("overview.copy_answers_failed",
+                ("detail", ex.Message)));
+        }
     }
 
     private async void ManualReset_Click(object sender, RoutedEventArgs e)
@@ -273,11 +314,10 @@ public sealed partial class OverviewPage : Page
         if (_currentPaper is null) return;
         var confirm = new ContentDialog
         {
-            Title = "重新开始答题？",
-            Content = "请先在 ETS 中手动切换到第 1 题，然后点击“开始重置”。\n\n" +
-                      "助手会清空本轮的答题进度（历史记录仍会保留），并从当前题目重新作答。",
-            PrimaryButtonText = "开始重置",
-            CloseButtonText = "取消",
+            Title = LocalizationService.Current.Translate("overview.reset_confirmation_title"),
+            Content = LocalizationService.Current.Translate("overview.reset_confirmation_content"),
+            PrimaryButtonText = LocalizationService.Current.Translate("overview.start_reset"),
+            CloseButtonText = LocalizationService.Current.Translate("common.cancel"),
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = XamlRoot
         };
@@ -288,7 +328,8 @@ public sealed partial class OverviewPage : Page
         {
             AnswerResetResult result = await _resetService.RequestAsync(_currentPaper.PackId);
             bool applied = result.Status == AnswerResetStatus.Applied;
-            InfoBarPresenter.Show(GeneralInfoBar, applied ? "已重置答题进度" : "重置未完成", result.Message,
+            InfoBarPresenter.Show(GeneralInfoBar, LocalizationService.Current.Translate(applied
+                    ? "overview.answer_progress_reset" : "overview.reset_incomplete"), result.Message,
                 applied ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
             if (applied) await RefreshPaperAsync();
         }
@@ -304,7 +345,8 @@ public sealed partial class OverviewPage : Page
         string path = Path.Combine(_service.DataRoot, _currentPaper.PackId);
         try
         {
-            if (!Directory.Exists(path)) throw new DirectoryNotFoundException("当前试卷目录不存在。");
+            if (!Directory.Exists(path))
+                throw new DirectoryNotFoundException(LocalizationService.Current.Translate("overview.ets_folder_missing"));
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
         }
         catch (Exception ex) { await ShowErrorAsync(ex.Message); }
@@ -314,10 +356,10 @@ public sealed partial class OverviewPage : Page
     {
         var dialog = new ContentDialog
         {
-            Title = "结束 ETS 进程？",
-            Content = "这会立即关闭 ETS 及其外壳进程；未保存的 ETS 操作可能丢失。",
-            PrimaryButtonText = "结束 ETS",
-            CloseButtonText = "取消",
+            Title = LocalizationService.Current.Translate("overview.terminate_confirmation_title"),
+            Content = LocalizationService.Current.Translate("overview.terminate_confirmation_content"),
+            PrimaryButtonText = LocalizationService.Current.Translate("common.end_ets"),
+            CloseButtonText = LocalizationService.Current.Translate("common.cancel"),
             DefaultButton = ContentDialogButton.None,
             XamlRoot = XamlRoot
         };
@@ -325,8 +367,11 @@ public sealed partial class OverviewPage : Page
         try
         {
             int ended = _service.EndEtsProcesses();
-            InfoBarPresenter.Show(GeneralInfoBar, ended > 0 ? "ETS 已结束" : "没有运行中的 ETS",
-                ended > 0 ? $"已结束 {ended} 个 ETS 进程。" : "当前没有找到 ETS 进程。",
+            InfoBarPresenter.Show(GeneralInfoBar, LocalizationService.Current.Translate(ended > 0
+                    ? "overview.ets_terminated" : "overview.no_ets_running"),
+                ended > 0
+                    ? LocalizationService.Current.Format("overview.terminated_processes", ("count", ended))
+                    : LocalizationService.Current.Translate("overview.no_ets_process_found"),
                 InfoBarSeverity.Informational);
             RefreshStatus();
         }
@@ -341,11 +386,13 @@ public sealed partial class OverviewPage : Page
 
     private sealed record AnswerChip(string NumberText, string Answer, string Tooltip, Brush Background);
 
-    private async Task ShowDialogAsync(string title, string message, string closeText)
+    private async Task ShowDialogAsync(string titleKey, string message, string closeKey)
     {
+        LocalizationService localization = LocalizationService.Current;
         var dialog = new ContentDialog
         {
-            Title = title, Content = message, CloseButtonText = closeText, XamlRoot = XamlRoot
+            Title = localization.Translate(titleKey), Content = localization.Translate(message),
+            CloseButtonText = localization.Translate(closeKey), XamlRoot = XamlRoot
         };
         await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog);
     }
@@ -354,7 +401,9 @@ public sealed partial class OverviewPage : Page
     {
         var dialog = new ContentDialog
         {
-            Title = "无法完成操作", Content = message, CloseButtonText = "知道了", XamlRoot = XamlRoot
+            Title = LocalizationService.Current.Translate("common.action_could_not_complete"),
+            Content = LocalizationService.Current.Translate(message),
+            CloseButtonText = LocalizationService.Current.Translate("common.ok"), XamlRoot = XamlRoot
         };
         await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog);
     }

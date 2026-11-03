@@ -18,14 +18,14 @@ public sealed partial class AssistantService
     public EtsDirectoryValidation ValidateEtsDirectory(string directory)
     {
         if (string.IsNullOrWhiteSpace(directory))
-            return new EtsDirectoryValidation(false, string.Empty, null, "请选择一个 ETS 安装文件夹。");
+            return new EtsDirectoryValidation(false, string.Empty, null, LocalizationService.Current.Translate("ets_installation.choose_folder"));
 
         string fullPath;
         try { fullPath = Path.GetFullPath(directory.Trim().Trim('"')); }
-        catch (Exception ex) { return new EtsDirectoryValidation(false, directory, null, $"路径无效：{ex.Message}"); }
+        catch (Exception ex) { return new EtsDirectoryValidation(false, directory, null, LocalizationService.Current.Format("ets_installation.invalid_path", ("detail", ex.Message))); }
 
         if (!Directory.Exists(fullPath))
-            return new EtsDirectoryValidation(false, fullPath, null, "选择的文件夹不存在，或当前账户无权访问。");
+            return new EtsDirectoryValidation(false, fullPath, null, LocalizationService.Current.Translate("ets_installation.folder_not_accessible"));
 
         string executable = Path.Combine(fullPath, "Ets.exe");
         string shell = Path.Combine(fullPath, "ETSShell.exe");
@@ -33,9 +33,9 @@ public sealed partial class AssistantService
         {
             return File.Exists(shell)
                 ? new EtsDirectoryValidation(false, fullPath, null,
-                    "这个文件夹中只有 ETSShell.exe。请选择包含 Ets.exe 的 ETS 安装根目录。")
+                    LocalizationService.Current.Translate("ets_installation.only_shell_found"))
                 : new EtsDirectoryValidation(false, fullPath, null,
-                    "文件夹中未找到 Ets.exe。请选择 ETS 的安装根目录，例如 C:\\Program Files (x86)\\ETS。");
+                    LocalizationService.Current.Translate("ets_installation.exe_not_found"));
         }
 
         if (!File.Exists(shell) &&
@@ -43,21 +43,21 @@ public sealed partial class AssistantService
             !File.Exists(Path.Combine(fullPath, "resources.pak")))
         {
             return new EtsDirectoryValidation(false, fullPath, executable,
-                "找到的 Ets.exe 不像是完整的 ETS 安装（缺少 ETSShell.exe、libcef.dll 等文件）。");
+                LocalizationService.Current.Translate("ets_installation.incomplete_installation"));
         }
 
         try
         {
             var info = new FileInfo(executable);
             if (info.Length < 64 * 1024)
-                return new EtsDirectoryValidation(false, fullPath, executable, "Ets.exe 文件大小异常，可能不是有效的程序。");
+                return new EtsDirectoryValidation(false, fullPath, executable, LocalizationService.Current.Translate("ets_installation.exe_size_invalid"));
             using FileStream stream = File.OpenRead(executable);
             if (stream.ReadByte() != 'M' || stream.ReadByte() != 'Z')
-                return new EtsDirectoryValidation(false, fullPath, executable, "Ets.exe 不是有效的 Windows 可执行文件。");
+                return new EtsDirectoryValidation(false, fullPath, executable, LocalizationService.Current.Translate("ets_installation.exe_invalid"));
         }
         catch (Exception ex)
         {
-            return new EtsDirectoryValidation(false, fullPath, executable, $"无法读取 Ets.exe：{ex.Message}");
+            return new EtsDirectoryValidation(false, fullPath, executable, LocalizationService.Current.Format("ets_installation.exe_read_failed", ("detail", ex.Message)));
         }
 
         string? version = null;
@@ -68,7 +68,7 @@ public sealed partial class AssistantService
         }
         catch { }
 
-        return new EtsDirectoryValidation(true, fullPath, executable, "目录校验通过。", version);
+        return new EtsDirectoryValidation(true, fullPath, executable, LocalizationService.Current.Translate("ets_installation.validation_passed"), version);
     }
 
     /// <summary>Persists a validated ETS directory and refreshes dependent shortcuts and listener.</summary>
@@ -92,10 +92,10 @@ public sealed partial class AssistantService
         }
 
         try { UpdateEtsShortcut(validation.ExecutablePath); }
-        catch (Exception ex) { warnings.Add($"ETS 快捷方式更新失败：{ex.Message}"); }
+        catch (Exception ex) { warnings.Add(LocalizationService.Current.Format("ets_installation.shortcut_update_failed", ("detail", ex.Message))); }
 
         try { RestartListenerIfRunning(); }
-        catch (Exception ex) { warnings.Add($"后台监听器重启失败：{ex.Message}"); }
+        catch (Exception ex) { warnings.Add(LocalizationService.Current.Format("ets_installation.listener_restart_failed", ("detail", ex.Message))); }
 
         LastError = string.Join(" ", warnings);
         return LastError;

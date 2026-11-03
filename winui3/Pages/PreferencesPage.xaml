@@ -7,13 +7,13 @@
             <Grid ColumnDefinitions="32,*" RowDefinitions="Auto,Auto" ColumnSpacing="14" RowSpacing="5">
                 <SymbolIcon Symbol="Setting" VerticalAlignment="Center" Width="28" Height="28"
                             Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                <TextBlock Grid.Column="1" Text="偏好设置" FontSize="30" FontWeight="SemiBold" />
-                <TextBlock Grid.Row="1" Grid.Column="1" Text="个性化 ETS Tool 的外观、隐私与更新行为。"
+                <TextBlock Grid.Column="1" Text="common.preferences" FontSize="30" FontWeight="SemiBold" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="preferences.personalize_ets_tool_appearance_privacy"
                            FontSize="15" Opacity="0.72" />
             </Grid>
 
             <StackPanel Spacing="10">
-                <TextBlock Text="外观" FontSize="20" FontWeight="SemiBold" Margin="2,0,0,2" />
+                <TextBlock Text="preferences.appearance" FontSize="20" FontWeight="SemiBold" Margin="2,0,0,2" />
                 <Border Padding="4" CornerRadius="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                     <StackPanel>
@@ -21,12 +21,12 @@
                             <SymbolIcon Symbol="Setting" Width="21" Height="21" VerticalAlignment="Center"
                                         Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
                             <StackPanel Grid.Column="1" Margin="12,0,18,0" VerticalAlignment="Center" Spacing="3">
-                                <TextBlock Text="应用模式" FontSize="15" FontWeight="SemiBold" />
-                                <TextBlock Text="浅色、深色或跟随 Windows。" FontSize="12" Opacity="0.68" />
+                                <TextBlock Text="preferences.app_mode" FontSize="15" FontWeight="SemiBold" />
+                                <TextBlock Text="preferences.light_dark_follow_windows" FontSize="12" Opacity="0.68" />
                             </StackPanel>
                             <ComboBox x:Name="ThemeBox" Grid.Column="2" Width="178" VerticalAlignment="Center"
                                       SelectionChanged="ThemeBox_SelectionChanged">
-                                <ComboBoxItem Content="跟随系统" /><ComboBoxItem Content="浅色" /><ComboBoxItem Content="深色" />
+                                <ComboBoxItem Content="preferences.follow_system" /><ComboBoxItem Content="preferences.light" /><ComboBoxItem Content="preferences.dark" />
                             </ComboBox>
                         </Grid>
                         <Rectangle Height="1" Fill="{ThemeResource CardStrokeColorDefaultBrush}" Margin="16,0" />
@@ -34,20 +34,18 @@
                             <SymbolIcon Symbol="Globe" Width="21" Height="21" VerticalAlignment="Center"
                                         Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
                             <StackPanel Grid.Column="1" Margin="12,0,18,0" VerticalAlignment="Center" Spacing="3">
-                                <TextBlock Text="显示语言" FontSize="15" FontWeight="SemiBold" />
-                                <TextBlock Text="选择应用界面语言。" FontSize="12" Opacity="0.68" />
+                                <TextBlock Text="preferences.display_language" FontSize="15" FontWeight="SemiBold" />
+                                <TextBlock Text="preferences.choose_app_display_language" FontSize="12" Opacity="0.68" />
                             </StackPanel>
                             <ComboBox x:Name="LanguageBox" Grid.Column="2" Width="178" VerticalAlignment="Center"
-                                      SelectionChanged="LanguageBox_SelectionChanged">
-                                <ComboBoxItem Content="中文" /><ComboBoxItem Content="English" />
-                            </ComboBox>
+                                      SelectionChanged="LanguageBox_SelectionChanged" />
                         </Grid>
                     </StackPanel>
                 </Border>
             </StackPanel>
 
             <StackPanel Spacing="10">
-                <TextBlock Text="服务与隐私" FontSize="20" FontWeight="SemiBold" Margin="2,0,0,2" />
+                <TextBlock Text="preferences.services_privacy" FontSize="20" FontWeight="SemiBold" Margin="2,0,0,2" />
                 <Border Padding="4" CornerRadius="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                     <StackPanel>
@@ -56,11 +54,11 @@
                                 <SymbolIcon Symbol="Download" Width="21" Height="21" VerticalAlignment="Center"
                                             Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
                                 <StackPanel Grid.Column="1" Margin="12,0,22,0" VerticalAlignment="Center" Spacing="3">
-                                    <TextBlock Text="自动检查更新" FontSize="15" FontWeight="SemiBold" />
-                                    <TextBlock Text="默认开启。定期查看 GitHub 代码与 Release 版本；同版本的代码和 MSI 安装包按同一版本处理。"
+                                    <TextBlock Text="preferences.check_updates_automatically" FontSize="15" FontWeight="SemiBold" />
+                                    <TextBlock Text="preferences.enabled_default_periodically_checks_github"
                                                FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                                 </StackPanel>
-                                <ToggleSwitch x:Name="AutoUpdateToggle" Grid.Column="2" OnContent="开" OffContent="关"
+                                <ToggleSwitch x:Name="AutoUpdateToggle" Grid.Column="2" OnContent="common.on" OffContent="common.off"
                                               Toggled="AutoUpdateToggle_Toggled" VerticalAlignment="Center" />
                             </Grid>
                             <Rectangle Height="1" Fill="{ThemeResource CardStrokeColorDefaultBrush}" Margin="16,0" />
@@ -68,11 +66,11 @@
                                 <SymbolIcon Symbol="Refresh" Width="21" Height="21" VerticalAlignment="Center"
                                             Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
                                 <StackPanel Grid.Column="1" Margin="12,0,18,0" VerticalAlignment="Center" Spacing="3">
-                                    <TextBlock Text="手动检查" FontSize="15" FontWeight="SemiBold" />
-                                    <TextBlock x:Name="UpdateStatusText" Text="尚未检查。" FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
+                                    <TextBlock Text="preferences.manual_check" FontSize="15" FontWeight="SemiBold" />
+                                    <TextBlock x:Name="UpdateStatusText" Text="preferences.not_checked_yet" FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                                 </StackPanel>
                                 <Button x:Name="CheckUpdatesButton" Grid.Column="2" Click="CheckUpdates_Click"
-                                        Content="立即检查" VerticalAlignment="Center" />
+                                        Content="preferences.check_now" VerticalAlignment="Center" />
                             </Grid>
                             <InfoBar x:Name="UpdateInfoBar" IsOpen="False" />
                         </StackPanel>
@@ -81,7 +79,7 @@
                     </StackPanel>
                 </Border>
             </StackPanel>
-            <TextBlock Text="设置会立即应用并保存在本机。" FontSize="12" Opacity="0.65" Margin="4,0,0,0" />
+            <TextBlock Text="preferences.settings_take_effect_immediately_saved" FontSize="12" Opacity="0.65" Margin="4,0,0,0" />
         </StackPanel>
     </ScrollViewer>
 </Page>

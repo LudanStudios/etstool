@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import http.client
 import json
 import os
 import random
@@ -34,10 +35,12 @@ RESET_REQUEST_FILE = "reset_request.json"
 RESET_ACK_FILE = "reset_ack.json"
 APP_TITLE = "E听说"
 NEXT_CONFIRM_SECONDS = 3.0
-NEXT_RETRY_COOLDOWN_SECONDS = 10.0
+NEXT_RETRY_COOLDOWN_SECONDS = 3.0
 WATCH_INTERVAL_SECONDS = 0.15
 LAST_NEXT_CLICK_AT = 0.0
-PENDING_NEXT_CLICKS: dict[tuple[str, tuple[str, ...]], float] = {}
+PENDING_NEXT_CLICKS: dict[
+    tuple[str, tuple[str, ...], tuple[tuple[str, str], ...], str], float
+] = {}
 _DIAGNOSTIC_LOG_TIMES: dict[str, float] = {}
 
 
@@ -107,13 +110,17 @@ NAV_STATUS_JS = r"""(()=>{
 QUESTION_JS = r"""(questionOrder={})=>{
  const navStatus=""" + NAV_STATUS_JS + r""";
  const f=document.querySelector('iframe.examIframe'),d=f?.contentDocument;
- if(!d)return JSON.stringify({ready:false});
+ const pageText=()=>[document.querySelector('#app')?.innerText||'',d?.body?.innerText||'']
+   .join(' ').replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g,' ')
+   .replace(/(?:已答|已完成|已作答|answered|completed)\s*\d+\s*(?:\/|／|of)\s*\d+/ig,' ')
+   .replace(/\s+/g,' ').trim().slice(0,12000);
+ if(!d)return JSON.stringify({ready:false,pageText:pageText(),url:location.href});
  const qs=[...d.querySelectorAll('.question2')].filter(x=>x.getBoundingClientRect().height>0&&/^\d+_\d+$/.test(x.id));
- if(!qs.length)return JSON.stringify({ready:false});
+ if(!qs.length)return JSON.stringify({ready:false,pageText:pageText(),url:location.href});
  const fr=f.getBoundingClientRect();
  const sx=fr.width/(f.clientWidth||fr.width),sy=fr.height/(f.clientHeight||fr.height);
  const frameLeft=fr.left+f.clientLeft*sx,frameTop=fr.top+f.clientTop*sy;
- const questions=qs.map(q=>{const order=questionOrder[q.id]||null,nav=order?navStatus(order):{done:false,found:false,answeredCount:null};return {id:q.id,order,recorded:nav.done,navFound:nav.found,answeredCount:nav.answeredCount,options:[...q.querySelectorAll('.choose2')].map(e=>{
+ const questions=qs.map(q=>{const order=questionOrder[q.id]||null,nav=order?navStatus(order):{done:false,found:false,answeredCount:null};return {id:q.id,order,contentText:(q.innerText||q.textContent||'').replace(/\s+/g,' ').trim(),recorded:nav.done,navFound:nav.found,answeredCount:nav.answeredCount,options:[...q.querySelectorAll('.choose2')].map(e=>{
    const t=e.querySelector('.choose2_text')||e,r=t.getBoundingClientRect(),er=e.getBoundingClientRect();
    const candidates=[e.querySelector('input[type="radio"]:not(:disabled)'),e.querySelector('label,[role="radio"]'),t,e];
    const clicks=candidates.filter(Boolean).map(target=>{
@@ -125,8 +132,54 @@ QUESTION_JS = r"""(questionOrder={})=>{
    return {id:e.id,cls:e.className,text:t.innerText,selected:classSelected||e.getAttribute('aria-checked')==='true'||e.getAttribute('aria-selected')==='true'||e.getAttribute('aria-pressed')==='true'||e.matches(':checked')||!!e.querySelector(':checked'),
      clicks:clicks.length?clicks:[{x:frameLeft+(hit.left+hit.width/2)*sx,y:frameTop+(hit.top+hit.height/2)*sy}]};
   })}});
- return JSON.stringify({ready:true,questions});
+ return JSON.stringify({ready:true,questions,pageText:pageText(),url:location.href});
 }"""
+
+NEXT_CONTROL_JS = r"""(()=>{
+ const documents=[{doc:document,frame:null}];
+ const frame=document.querySelector('iframe.examIframe');
+ if(frame?.contentDocument)documents.push({doc:frame.contentDocument,frame});
+ const candidates=[];
+ const exact=/^(下一页|下一题|下一題|下一步|下一个|下一個|Next|Next Page|Next Question|Continue)$/i;
+ const clean=value=>String(value||'').replace(/\s+/g,' ').replace(/[›»>→]+$/,'').trim();
+ for(const entry of documents){
+   const {doc,frame}=entry;
+   const seen=new Set();
+   for(const found of doc.querySelectorAll('button,a,[role="button"],input[type="button"],input[type="submit"],[onclick],[class*="next"],[aria-label]')){
+     const el=found.closest('button,a,[role="button"],[onclick]')||found;
+     if(seen.has(el))continue;
+     seen.add(el);
+     const labels=[el.getAttribute('aria-label'),el.getAttribute('title'),el.value,el.innerText,el.textContent,
+       found.getAttribute('aria-label'),found.getAttribute('title'),found.value,found.innerText,found.textContent]
+       .map(clean).filter(Boolean);
+     const label=labels.find(value=>exact.test(value))||'';
+     const className=[el,found].map(node=>typeof node.className==='string'?node.className:'').join(' ');
+     const icon=el.matches('[class*="nextQuestion"],[class*="next-page"],[class*="nextPage"],[class*="icon-next"]')||
+       found.matches('[class*="nextQuestion"],[class*="next-page"],[class*="nextPage"],[class*="icon-next"]')||
+       /(next[-_]?question|next[-_]?page|icon[-_]?next)/i.test(className)||
+       !!el.querySelector('[class*="nextQuestion"],[class*="next-page"],[class*="nextPage"],[class*="icon-next"]');
+     const nextClass=/next/i.test(className);
+     if(!icon&&!label&&!nextClass)continue;
+     if(el.disabled||el.getAttribute('aria-disabled')==='true'||el.classList.contains('disabled')||el.getClientRects().length===0)continue;
+     const style=doc.defaultView.getComputedStyle(el);
+     if(style.display==='none'||style.visibility==='hidden'||style.pointerEvents==='none')continue;
+     const r=el.getBoundingClientRect();
+     if(r.width<8||r.height<8)continue;
+     let x=r.left+r.width/2,y=r.top+r.height/2;
+     let score=label?0:icon?1:2;
+     if(frame){
+       const fr=frame.getBoundingClientRect();
+       const sx=fr.width/(frame.clientWidth||fr.width),sy=fr.height/(frame.clientHeight||fr.height);
+       x=fr.left+frame.clientLeft*sx+x*sx;
+       y=fr.top+frame.clientTop*sy+y*sy;
+     }
+     candidates.push({x,y,score,bottom:r.bottom,label:label||className});
+   }
+ }
+ candidates.sort((a,b)=>a.score-b.score||b.bottom-a.bottom);
+ return JSON.stringify(candidates[0]||null);
+})()"""
+
 CHECK_JS = r"""(id,index,number)=>{
  const navStatus=""" + NAV_STATUS_JS + r""";
  const d=document.querySelector('iframe.examIframe')?.contentDocument;
@@ -284,11 +337,31 @@ class CDPClient:
 
 
 def devtools_targets(endpoint: str = DEFAULT_DEVTOOLS) -> list[dict[str, Any]]:
-    with urllib.request.urlopen(endpoint, timeout=2) as response:
-        targets = json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(endpoint, timeout=2) as response:
+            targets = json.loads(response.read().decode("utf-8"))
+    except (OSError, http.client.HTTPException, UnicodeError, ValueError) as exc:
+        # Chrome's loopback DevTools endpoint can briefly return an invalid or
+        # truncated HTTP response while ETS navigates or recreates its page.
+        # Treat that as a transient empty result so the long-running worker
+        # retries instead of exiting and leaving all later questions unanswered.
+        warn_throttled(
+            f"devtools-target-list:{endpoint}",
+            f"无法读取 ETS 调试页面列表，自动答题将重试。{type(exc).__name__}: {exc}",
+            interval_seconds=5.0,
+        )
+        return []
+    if not isinstance(targets, list):
+        warn_throttled(
+            f"devtools-target-list-invalid:{endpoint}",
+            "ETS 调试页面列表格式无效，自动答题将重试。",
+            interval_seconds=5.0,
+        )
+        return []
     return [
         item for item in targets
-        if item.get("type") == "page" and item.get("webSocketDebuggerUrl")
+        if isinstance(item, dict)
+        and item.get("type") == "page" and item.get("webSocketDebuggerUrl")
         and APP_TITLE in item.get("title", "")
     ]
 
@@ -486,19 +559,37 @@ def answer_for_accuracy(
     return wrong_answers[rng.randrange(len(wrong_answers))]
 
 
+def read_question_state(
+    client: CDPClient,
+    question_order: dict[str, int] | None = None,
+) -> tuple[list[dict[str, Any]], str, str, str]:
+    order_json = json.dumps(question_order or {}, separators=(",", ":"))
+    raw = client.evaluate(f"({QUESTION_JS})({order_json})")
+    if not raw:
+        return [], "", "", ""
+    try:
+        data = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return [], "", "", ""
+    questions = data.get("questions", []) if data.get("ready") else []
+    page_text = " ".join(str(data.get("pageText", "")).split())
+    page_signature = hashlib.sha256(page_text.encode("utf-8")).hexdigest() if page_text else ""
+    return questions, page_signature, str(data.get("url", "")), page_text
+
+
 def visible_questions(
     client: CDPClient,
     question_order: dict[str, int] | None = None,
 ) -> list[dict[str, Any]]:
-    order_json = json.dumps(question_order or {}, separators=(",", ":"))
-    raw = client.evaluate(f"({QUESTION_JS})({order_json})")
-    if not raw:
-        return []
-    try:
-        data = json.loads(raw)
-    except (TypeError, json.JSONDecodeError):
-        return []
-    return data.get("questions", []) if data.get("ready") else []
+    return read_question_state(client, question_order)[0]
+
+
+def question_signature(questions: list[dict[str, Any]]) -> tuple[tuple[str, str], ...]:
+    return tuple(
+        (str(question.get("id", "")), " ".join(str(question.get("contentText", "")).split()))
+        for question in questions
+        if question.get("id")
+    )
 
 
 def choose_answer(client: CDPClient, question: dict[str, Any], letter: str) -> bool:
@@ -580,31 +671,34 @@ def click_next(
     client: CDPClient,
     before_ids: set[str] | None = None,
     skip_interval_seconds: float = 0.0,
+    before_questions: list[dict[str, Any]] | None = None,
 ) -> bool:
     """Send a trusted mouse click and confirm that ETS actually changed questions."""
     global LAST_NEXT_CLICK_AT
+    state_questions, before_page_signature, old_url, _ = read_question_state(client)
+    if before_questions is None:
+        before_questions = state_questions
     if before_ids is None:
-        before_ids = {str(item.get("id", "")) for item in visible_questions(client)}
-    old_url = str(client.evaluate("location.href") or "")
+        before_ids = {str(item.get("id", "")) for item in before_questions}
+    if not old_url:
+        old_url = str(client.evaluate("location.href") or "")
     before_ids = {question_id for question_id in before_ids if question_id}
-    transition_key = (old_url, tuple(sorted(before_ids)))
+    before_signature = question_signature(before_questions)
+    transition_key = (old_url, tuple(sorted(before_ids)), before_signature, before_page_signature)
 
     def page_advanced() -> bool:
-        current = visible_questions(client)
+        current, current_page_signature, current_url, current_page_text = read_question_state(client)
+        if current_url and current_url != old_url:
+            return True
         current_ids = {str(item.get("id", "")) for item in current if item.get("id")}
         if current_ids and current_ids != before_ids:
             return True
+        if current_ids and question_signature(current) != before_signature:
+            return True
+        if before_page_signature and current_page_signature and current_page_signature != before_page_signature:
+            return True
         if not current_ids:
-            state = client.evaluate(
-                "JSON.stringify({url:location.href,text:document.querySelector('#app')?.innerText||''})"
-            )
-            try:
-                page = json.loads(state or "{}")
-            except json.JSONDecodeError:
-                page = {}
-            if page.get("url") != old_url or re.search(
-                r"提交成功|已完成|答题结果|成绩|本次练习", page.get("text", "")
-            ):
+            if re.search(r"提交成功|答题结果|成绩|本次练习", current_page_text):
                 return True
         return False
 
@@ -619,26 +713,39 @@ def click_next(
                 return True
             time.sleep(0.1)
         PENDING_NEXT_CLICKS.pop(transition_key, None)
-        return False
+        warn_throttled(
+            f"next-no-advance:{old_url}",
+            "ETS did not advance after the next-page click; retrying the control.",
+            interval_seconds=5.0,
+        )
 
     remaining_delay = skip_interval_seconds - (time.monotonic() - LAST_NEXT_CLICK_AT)
     if remaining_delay > 0:
         time.sleep(remaining_delay)
-        if page_advanced():
-            return True
+    if page_advanced():
+        PENDING_NEXT_CLICKS.pop(transition_key, None)
+        return True
 
-    expr = r"(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.querySelector('.icon-nextQuestion'));if(!b||b.disabled||b.getAttribute('aria-disabled')==='true'||b.getClientRects().length===0)return '';const r=b.getBoundingClientRect();return JSON.stringify({x:r.left+r.width/2,y:r.top+r.height/2})})()"
-    raw = client.evaluate(expr)
+    raw = client.evaluate(NEXT_CONTROL_JS)
     if not raw:
+        warn_throttled(
+            f"next-control-missing:{old_url}",
+            "ETS current page has no enabled next-question control; automatic advance will retry.",
+            interval_seconds=5.0,
+        )
         return False
     try:
         point = json.loads(raw)
-        old_url = str(client.evaluate("location.href") or "")
-        transition_key = (old_url, tuple(sorted(before_ids)))
+        if not isinstance(point, dict) or "x" not in point or "y" not in point:
+            return False
+        if page_advanced():
+            PENDING_NEXT_CLICKS.pop(transition_key, None)
+            return True
         LAST_NEXT_CLICK_AT = time.monotonic()
         PENDING_NEXT_CLICKS[transition_key] = LAST_NEXT_CLICK_AT
         client.click(float(point["x"]), float(point["y"]))
-    except (TypeError, ValueError, KeyError, json.JSONDecodeError):
+    except (CDPError, TypeError, ValueError, KeyError, json.JSONDecodeError):
+        PENDING_NEXT_CLICKS.pop(transition_key, None)
         return False
     deadline = time.monotonic() + NEXT_CONFIRM_SECONDS
     while time.monotonic() < deadline:
@@ -646,6 +753,11 @@ def click_next(
             PENDING_NEXT_CLICKS.pop(transition_key, None)
             return True
         time.sleep(0.1)
+    warn_throttled(
+        f"next-no-advance:{old_url}",
+        "ETS did not advance after the next-page click; it will retry.",
+        interval_seconds=5.0,
+    )
     return False
 
 
@@ -735,11 +847,11 @@ def run_once(
                             f"试卷 {pack_id} 检测到尚未确认作答的题目 {missed_id}；已暂停切题以避免漏答。",
                         )
                         return "waiting", missed_id
-                    if remaining and click_next(client, visible_ids, skip_interval_seconds):
+                    if remaining and click_next(client, visible_ids, skip_interval_seconds, questions):
                         return "advanced", None
                     if not remaining:
                         last_id = max(answers, key=lambda question_id: question_order_key(question_id, question_order))
-                        if click_next(client, visible_ids, skip_interval_seconds):
+                        if click_next(client, visible_ids, skip_interval_seconds, questions):
                             print("Advanced past the last local question group; ETS may complete the section automatically.", flush=True)
                             return "complete", last_id
                         print("Next button click was not confirmed; will retry while this ETS page remains open.", flush=True)
@@ -777,11 +889,11 @@ def run_once(
                     )
                     return "waiting", missed_id
                 if remaining:
-                    if not click_next(client, visible_ids, skip_interval_seconds):
+                    if not click_next(client, visible_ids, skip_interval_seconds, questions):
                         print("Next button did not advance the visible questions; will retry.", flush=True)
                         return "waiting", None
                 else:
-                    if click_next(client, visible_ids, skip_interval_seconds):
+                    if click_next(client, visible_ids, skip_interval_seconds, questions):
                         print("Advanced past the last local question group; ETS may complete the section automatically.", flush=True)
                         return "complete", sorted(selected_ids, key=lambda question_id: question_order_key(question_id, question_order))[-1]
                     print("Last answers are selected, but ETS did not advance; will retry the next button.", flush=True)

@@ -30,16 +30,16 @@ public sealed class DeepSeekService
     public async Task<DeepSeekResult> AskSpeakingAsync(string stem, CancellationToken cancellationToken = default)
     {
         stem = (stem ?? string.Empty).Trim();
-        if (stem.Length == 0) return new DeepSeekResult(false, string.Empty, "请先输入口语题干。");
+        if (stem.Length == 0) return new DeepSeekResult(false, string.Empty, LocalizationService.Current.Translate("deepseek.empty_prompt"));
 
         string apiKey = ApiKeyStore.Load();
         if (apiKey.Length == 0)
-            return new DeepSeekResult(false, string.Empty, "未填写有效的凭据\n无法完成指定操作。");
+            return new DeepSeekResult(false, string.Empty, LocalizationService.Current.Translate("common.invalid_credentials_error"));
 
         string? attachment = FindAttachment();
         if (attachment is null)
             return new DeepSeekResult(false, string.Empty,
-                "找不到 llm_stt.md 附件。请把它放到程序目录或 Assets 目录。");
+                LocalizationService.Current.Translate("deepseek.attachment_missing"));
 
         string instructions;
         try
@@ -48,7 +48,8 @@ public sealed class DeepSeekService
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return new DeepSeekResult(false, string.Empty, $"无法读取附件 {Path.GetFileName(attachment)}：{ex.Message}");
+            return new DeepSeekResult(false, string.Empty, LocalizationService.Current.Format("deepseek.attachment_read_failed",
+                ("file", Path.GetFileName(attachment)), ("detail", ex.Message)));
         }
 
         string payload = JsonSerializer.Serialize(new
@@ -75,12 +76,14 @@ public sealed class DeepSeekService
             string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
                 return new DeepSeekResult(false, string.Empty,
-                    $"DeepSeek 返回 HTTP {(int)response.StatusCode}：{ExtractError(body)}", (int)response.StatusCode);
+                    LocalizationService.Current.Format("deepseek.http_error", ("status", (int)response.StatusCode),
+                        ("detail", ExtractError(body))), (int)response.StatusCode);
 
             using JsonDocument document = JsonDocument.Parse(body);
             if (!document.RootElement.TryGetProperty("choices", out JsonElement choices) ||
                 choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0)
-                return new DeepSeekResult(false, string.Empty, $"无法解析 DeepSeek 返回：{Shorten(body)}", 200);
+                return new DeepSeekResult(false, string.Empty, LocalizationService.Current.Format("deepseek.invalid_response",
+                    ("detail", Shorten(body))), 200);
 
             JsonElement message = choices[0];
             if (message.TryGetProperty("message", out JsonElement messageObject) &&
@@ -90,19 +93,19 @@ public sealed class DeepSeekService
                 string text = (content.GetString() ?? string.Empty).Trim();
                 if (text.Length > 0) return new DeepSeekResult(true, text);
             }
-            return new DeepSeekResult(false, string.Empty, "DeepSeek 返回了空文本。", 200);
+            return new DeepSeekResult(false, string.Empty, LocalizationService.Current.Translate("deepseek.empty_response"), 200);
         }
         catch (TaskCanceledException)
         {
-            return new DeepSeekResult(false, string.Empty, "请求超时（120 秒），请检查网络后重试。");
+            return new DeepSeekResult(false, string.Empty, LocalizationService.Current.Translate("deepseek.timeout"));
         }
         catch (HttpRequestException ex)
         {
-            return new DeepSeekResult(false, string.Empty, $"网络错误：{ex.Message}");
+            return new DeepSeekResult(false, string.Empty, LocalizationService.Current.Format("deepseek.network_error", ("detail", ex.Message)));
         }
         catch (JsonException)
         {
-            return new DeepSeekResult(false, string.Empty, "DeepSeek 返回的内容不是有效 JSON。");
+            return new DeepSeekResult(false, string.Empty, LocalizationService.Current.Translate("deepseek.invalid_json"));
         }
     }
 

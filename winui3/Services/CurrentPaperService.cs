@@ -176,11 +176,12 @@ public sealed class CurrentPaperService
         string title;
         try
         {
-            title = _catalog.ReadLabels().TryGetValue(packId, out string? label) ? label : $"试卷 {packId}";
+            title = _catalog.ReadLabels().TryGetValue(packId, out string? label) ? label :
+                LocalizationService.Current.Format("dynamic.paper_title", ("paperId", packId));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            title = $"试卷 {packId}";
+            title = LocalizationService.Current.Format("dynamic.paper_title", ("paperId", packId));
         }
 
         DateTime? lastActivity = session?.Max(record => record.Timestamp).LocalDateTime;

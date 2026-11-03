@@ -3,7 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:ETSAssistant.WinUI3"
-    Title="口语题准备">
+    Title="speaking.speaking_preparation">
     <Grid x:Name="RootGrid" Background="Transparent">
         <Border x:Name="BackdropFallback"
                 Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
@@ -22,19 +22,19 @@
                 <StackPanel Padding="32,4,32,28" Spacing="16">
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
                         <StackPanel Spacing="4">
-                            <TextBlock Text="口语题准备" FontSize="28" FontWeight="SemiBold" />
+                            <TextBlock Text="speaking.speaking_preparation" FontSize="28" FontWeight="SemiBold" />
                             <TextBlock x:Name="PackText" FontSize="13"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                            <TextBlock x:Name="HeaderStatusText" Text="准备中" FontSize="13"
+                            <TextBlock x:Name="HeaderStatusText" Text="speaking.preparing" FontSize="13"
                                        VerticalAlignment="Center"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             <Button x:Name="StartAutoButton" Visibility="Collapsed"
                                     Style="{StaticResource AccentButtonStyle}" Click="StartAuto_Click">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <SymbolIcon Symbol="Play" />
-                                    <TextBlock x:Name="StartAutoButtonText" Text="开始自动口语" />
+                                    <TextBlock x:Name="StartAutoButtonText" Text="common.start_automatic_speaking" />
                                 </StackPanel>
                             </Button>
                         </StackPanel>
@@ -46,7 +46,7 @@
                         <StackPanel Spacing="10">
                             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
                                 <TextBlock x:Name="StatusText" FontSize="13" TextWrapping="Wrap"
-                                           Text="正在检查口语题…" />
+                                           Text="speaking.checking_speaking_questions" />
                                 <TextBlock x:Name="ProgressCountText" Grid.Column="1" Text="0/0" FontSize="12"
                                            VerticalAlignment="Center"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
@@ -55,7 +55,7 @@
                         </StackPanel>
                     </Border>
 
-                    <TextBlock Text="题目" FontSize="14" FontWeight="SemiBold" />
+                    <TextBlock Text="speaking.questions" FontSize="14" FontWeight="SemiBold" />
 
                     <ItemsControl x:Name="QuestionList">
                         <ItemsControl.ItemTemplate>

@@ -14,6 +14,9 @@ namespace ETSAssistant.WinUI3.Pages;
 
 public sealed partial class ToolsPage : Page
 {
+    private static string T(string key) => LocalizationService.Current.Translate(key);
+    private static string F(string key, params (string Name, object? Value)[] values) =>
+        LocalizationService.Current.Format(key, values);
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMilliseconds(1200) };
     private readonly AssistantService _service = AssistantService.Current;
     private readonly PacketCaptureService _capture = PacketCaptureService.Current;
@@ -40,8 +43,8 @@ public sealed partial class ToolsPage : Page
         _autoSpeakingRunner.Output += ReportAutoSpeaking;
         _autoSpeakingRunner.Exited += () => DispatcherQueue.TryEnqueue(() =>
         {
-            AutoSpeakingButtonText.Text = "开始自动口语";
-            AutoSpeakingStatusText.Text = "自动口语已结束。";
+            AutoSpeakingButtonText.Text = T("common.start_automatic_speaking");
+            AutoSpeakingStatusText.Text = T("speaking.auto_speaking_ended");
         });
         Unloaded += (_, _) =>
         {
@@ -51,6 +54,7 @@ public sealed partial class ToolsPage : Page
         Loaded += async (_, _) =>
         {
             RefreshLogSummary();
+            RefreshDiagnosticLogViewer();
             RefreshDeepSeekStatus();
             RefreshAliyunTtsStatus();
             RefreshAudioStatus();
@@ -75,8 +79,8 @@ public sealed partial class ToolsPage : Page
         {
             _updatingCapture = true;
             CaptureToggle.IsOn = _capture.IsEnabled;
-            CaptureStatusText.Text = _capture.Status;
-            CapturePathText.Text = "抓包文件：" + _capture.CapturePath;
+            CaptureStatusText.Text = T(_capture.Status);
+            CapturePathText.Text = F("tools.capture_file_path", ("path", _capture.CapturePath));
             _updatingCapture = false;
         }
     }
@@ -93,32 +97,39 @@ public sealed partial class ToolsPage : Page
     {
         if (_updatingVerbose) return;
         AppPreferencesService.Current.SetVerboseLogging(VerboseLoggingToggle.IsOn);
-        ShowMessage("详细日志已更新", VerboseLoggingToggle.IsOn
-            ? "后台监听器会在日志中附加听力匹配诊断细节。"
-            : "后台监听器已关闭详细级别日志。", InfoBarSeverity.Informational);
+        ShowMessage(T("tools.verbose_logs_updated"), T(VerboseLoggingToggle.IsOn
+            ? "tools.listener_verbose_on" : "tools.listener_verbose_off"), InfoBarSeverity.Informational);
     }
 
     private async Task RefreshDefaultMicStatusAsync()
     {
+        DefaultAudioInputService audioInput = DefaultAudioInputService.Current;
         DefaultAudioInputStatus? status = await DefaultAudioInputService.Current.GetStatusAsync();
-        DefaultMicStatusText.Text = status is null
-            ? "系统默认输入：无法读取"
-            : $"系统默认输入：{status.Name}{(status.IsVirtualCable ? "（CABLE Output）" : "（物理/其他设备）")}";
+        string systemStatus = status is null
+            ? T("tools.default_input_unreadable")
+            : F("tools.default_input_status", ("device", status.Name),
+                ("kind", T(status.IsVirtualCable ? "tools.cable_output" : "tools.physical_other_device")));
+        string routeStatus = F("tools.ets_capture_route_status", ("device",
+            audioInput.HasActiveEtsRoute
+                ? audioInput.RoutedDeviceName ?? T("common.not_available")
+                : T("tools.ets_capture_route_inactive")));
+        DefaultMicStatusText.Text = systemStatus + Environment.NewLine + routeStatus;
     }
 
     private async void SetVirtualMicDefault_Click(object sender, RoutedEventArgs e)
     {
         string result = await DefaultAudioInputService.Current.SetVirtualDefaultAsync();
         await RefreshDefaultMicStatusAsync();
-        ShowMessage(result.StartsWith("已设为", StringComparison.Ordinal) ? "虚拟麦克风已启用" : "无法设置虚拟麦克风",
-            result, result.StartsWith("已设为", StringComparison.Ordinal) ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
+        bool succeeded = DefaultAudioInputService.Current.LastSetVirtualDefaultSucceeded;
+        ShowMessage(T(succeeded ? "tools.virtual_microphone_enabled" : "tools.set_virtual_microphone_failed"),
+            result, succeeded ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
     }
 
     private async void RestoreDefaultMic_Click(object sender, RoutedEventArgs e)
     {
         string result = await DefaultAudioInputService.Current.RestorePreviousAsync();
         await RefreshDefaultMicStatusAsync();
-        ShowMessage("默认输入状态", result, InfoBarSeverity.Informational);
+        ShowMessage(T("tools.default_input_status_title"), result, InfoBarSeverity.Informational);
     }
 
     private void OpenCapture_Click(object sender, RoutedEventArgs e)
@@ -127,13 +138,13 @@ public sealed partial class ToolsPage : Page
         {
             if (!File.Exists(_capture.CapturePath))
             {
-                ShowMessage("暂无抓包文件", "启用抓包模式并完成一次答题提交后，这里会生成抓包记录。",
+                ShowMessage(T("tools.capture_file_missing_title"), T("tools.capture_file_missing_detail"),
                     InfoBarSeverity.Warning);
                 return;
             }
             Process.Start(new ProcessStartInfo(_capture.CapturePath) { UseShellExecute = true });
         }
-        catch (Exception ex) { ShowMessage("无法打开抓包文件", ex.Message, InfoBarSeverity.Error); }
+        catch (Exception ex) { ShowMessage(T("tools.open_capture_failed"), ex.Message, InfoBarSeverity.Error); }
     }
 
     private async Task<bool> ProbePortAsync()
@@ -148,7 +159,7 @@ public sealed partial class ToolsPage : Page
         PortDot.Fill = new SolidColorBrush(_portAvailable
             ? Color.FromArgb(255, 34, 197, 94)
             : Color.FromArgb(255, 148, 163, 184));
-        PortStatusText.Text = _portAvailable ? "端口可用" : "未连接";
+        PortStatusText.Text = T(_portAvailable ? "tools.port_available" : "tools.port_not_connected");
         EnvironmentText.Text = BuildEnvironmentText();
         return _portAvailable;
     }
@@ -165,7 +176,7 @@ public sealed partial class ToolsPage : Page
             string body = await response.Content.ReadAsStringAsync();
             if (!response.IsSuccessStatusCode)
             {
-                ShowMessage("端口返回错误", $"{url} 返回 HTTP {(int)response.StatusCode}。", InfoBarSeverity.Warning);
+                ShowMessage(T("tools.endpoint_error"), F("tools.endpoint_http_error", ("url", url), ("status", (int)response.StatusCode)), InfoBarSeverity.Warning);
                 return;
             }
 
@@ -182,8 +193,8 @@ public sealed partial class ToolsPage : Page
             {
                 Title = $"127.0.0.1:10086/{path}",
                 Content = viewer,
-                PrimaryButtonText = "复制 JSON",
-                CloseButtonText = "关闭",
+                PrimaryButtonText = T("tools.copy_json"),
+                CloseButtonText = T("common.close"),
                 DefaultButton = ContentDialogButton.Close,
                 XamlRoot = XamlRoot
             };
@@ -191,7 +202,7 @@ public sealed partial class ToolsPage : Page
         }
         catch (Exception)
         {
-            ShowMessage("端口未开放", "请先打开带 --remote-debugging-port=10086 的 ETS，再查看调试端口。",
+            ShowMessage(T("tools.ets_port_not_open_title"), T("tools.ets_port_not_open_detail"),
                 InfoBarSeverity.Warning);
         }
     }
@@ -199,8 +210,9 @@ public sealed partial class ToolsPage : Page
     private void RefreshAudioStatus()
     {
         var audio = new SpeakingAudioService(_service.DataRoot, _service.EtsExe);
-        string state = audio.HasInput ? $"已准备：{audio.InputPath}" : $"尚未准备 WAV（目标：{audio.InputPath}）";
-        AudioStatusText.Text = state + (_service.IsEtsRunning ? " · ETS 正在运行" : " · ETS 未运行");
+        string state = audio.HasInput ? F("tools.wav_ready_path", ("path", audio.InputPath)) :
+            F("tools.wav_not_ready_path", ("path", audio.InputPath));
+        AudioStatusText.Text = state + " · " + T(_service.IsEtsRunning ? "tools.ets_running_suffix" : "tools.ets_not_running_suffix");
     }
 
     private async void PickSpeakingWav_Click(object sender, RoutedEventArgs e)
@@ -209,7 +221,7 @@ public sealed partial class ToolsPage : Page
         {
             var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.MusicLibrary };
             picker.FileTypeFilter.Add(".wav");
-            MainWindow window = MainWindow.Current ?? throw new InvalidOperationException("窗口尚未准备好。");
+            MainWindow window = MainWindow.Current ?? throw new InvalidOperationException(T("common.window_not_ready"));
             WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(window));
 
             var file = await picker.PickSingleFileAsync();
@@ -218,11 +230,11 @@ public sealed partial class ToolsPage : Page
             var audio = new SpeakingAudioService(_service.DataRoot, _service.EtsExe);
             string output = await audio.PrepareAsync(file.Path);
             RefreshAudioStatus();
-            ShowMessage("WAV 已准备", $"已转换为 16-bit / 48 kHz：{output}", InfoBarSeverity.Success);
+            ShowMessage(T("tools.wav_prepared_title"), F("tools.wav_prepared_detail", ("path", output)), InfoBarSeverity.Success);
         }
         catch (Exception ex)
         {
-            ShowMessage("准备 WAV 失败", ex.Message, InfoBarSeverity.Error);
+            ShowMessage(T("tools.wav_prepare_failed"), ex.Message, InfoBarSeverity.Error);
         }
     }
 
@@ -230,7 +242,7 @@ public sealed partial class ToolsPage : Page
     {
         if (string.IsNullOrWhiteSpace(_lastTtsWavPath) || !File.Exists(_lastTtsWavPath))
         {
-            ShowMessage("没有可用的 TTS WAV", "先在下面的阿里云 TTS 区域合成一次语音。",
+            ShowMessage(T("tools.tts_wav_unavailable_title"), T("tools.tts_wav_unavailable_detail"),
                 InfoBarSeverity.Warning);
             return;
         }
@@ -239,11 +251,11 @@ public sealed partial class ToolsPage : Page
             var audio = new SpeakingAudioService(_service.DataRoot, _service.EtsExe);
             string output = await audio.PrepareAsync(_lastTtsWavPath);
             RefreshAudioStatus();
-            ShowMessage("TTS WAV 已准备", $"已转换为 16-bit / 48 kHz：{output}", InfoBarSeverity.Success);
+            ShowMessage(T("tools.tts_wav_prepared_title"), F("tools.wav_prepared_detail", ("path", output)), InfoBarSeverity.Success);
         }
         catch (Exception ex)
         {
-            ShowMessage("准备 TTS WAV 失败", ex.Message, InfoBarSeverity.Error);
+            ShowMessage(T("tools.wav_prepare_tts_failed"), ex.Message, InfoBarSeverity.Error);
         }
     }
 
@@ -254,12 +266,12 @@ public sealed partial class ToolsPage : Page
             var audio = new SpeakingAudioService(_service.DataRoot, _service.EtsExe);
             if (!audio.HasInput)
             {
-                ShowMessage("还没有 WAV", "先点“选择 WAV 并准备”，再启动 ETS。", InfoBarSeverity.Warning);
+                ShowMessage(T("tools.wav_missing_title"), T("tools.wav_missing_detail"), InfoBarSeverity.Warning);
                 return;
             }
             if (_service.IsEtsRunning)
             {
-                ShowMessage("ETS 正在运行", "请先完全关闭 ETS（包括托盘里的进程），再用虚拟麦克风启动。",
+                ShowMessage(T("tools.ets_already_running_title"), T("tools.close_ets_before_fake_mic"),
                     InfoBarSeverity.Warning);
                 return;
             }
@@ -267,18 +279,17 @@ public sealed partial class ToolsPage : Page
             bool loop = LoopAudioCheck.IsChecked == true;
             _service.OpenEts(audio.BuildFakeMicrophoneArguments(loop));
             RefreshAudioStatus();
-            ShowMessage("已请求启动 ETS",
-                "如果出现 UAC 提示请允许。启动后进入口语题，ETS 录音时会读取这个 WAV。",
+            ShowMessage(T("tools.ets_start_requested"), T("tools.ets_fake_mic_launch_detail"),
                 InfoBarSeverity.Success);
         }
         catch (Exception ex)
         {
-            ShowMessage("启动失败", ex.Message, InfoBarSeverity.Error);
+            ShowMessage(T("tools.start_failed"), ex.Message, InfoBarSeverity.Error);
         }
     }
 
     private void OnCablePlaybackEnded() =>
-        DispatcherQueue.TryEnqueue(() => SessionStatusText.Text = "播放完成。");
+        DispatcherQueue.TryEnqueue(() => SessionStatusText.Text = T("tools.playback_completed"));
 
     private async Task RefreshCableAsync()
     {
@@ -287,21 +298,20 @@ public sealed partial class ToolsPage : Page
             VirtualCableDevice? device = await _cable.RefreshAsync();
             if (_cable.IsReady)
             {
-                CableStatusText.Text = $"虚拟声卡：{_cable.Current!.Name} → {_cable.Capture!.Name}";
+                CableStatusText.Text = F("tools.virtual_cable_status", ("input", _cable.Current!.Name), ("output", _cable.Capture!.Name));
             }
             else if (_cable.IsAvailable)
             {
-                CableStatusText.Text =
-                    $"虚拟声卡：{_cable.Current!.Name}；未检测到 CABLE Output。打开录音设备，启用 CABLE Output 并把 ETS 麦克风设为它。";
+                CableStatusText.Text = F("tools.virtual_cable_capture_missing", ("input", _cable.Current!.Name));
             }
             else
             {
-                CableStatusText.Text = "虚拟声卡：未检测到 CABLE Input。请到“答题设置”安装 VB-CABLE。";
+                CableStatusText.Text = T("tools.virtual_cable_not_installed");
             }
         }
         catch (Exception ex)
         {
-            CableStatusText.Text = "虚拟声卡：检测失败 — " + ex.Message;
+            CableStatusText.Text = F("tools.virtual_cable_check_failed", ("detail", ex.Message));
         }
     }
 
@@ -309,11 +319,11 @@ public sealed partial class ToolsPage : Page
     {
         await RefreshCableAsync();
         if (_cable.IsReady)
-            ShowMessage("虚拟声卡已就绪", $"{_cable.Current!.Name} → {_cable.Capture!.Name}", InfoBarSeverity.Success);
+            ShowMessage(T("tools.virtual_cable_ready_title"), F("tools.virtual_cable_status", ("input", _cable.Current!.Name), ("output", _cable.Capture!.Name)), InfoBarSeverity.Success);
         else if (_cable.IsAvailable)
-            ShowMessage("缺少 CABLE Output", "CABLE Input 已安装，请启用录音端的 CABLE Output。", InfoBarSeverity.Warning);
+            ShowMessage(T("tools.virtual_cable_missing_output_title"), T("tools.cable_input_needs_output"), InfoBarSeverity.Warning);
         else
-            ShowMessage("未检测到虚拟声卡", "请到“答题设置”安装 VB-CABLE。", InfoBarSeverity.Warning);
+            ShowMessage(T("tools.virtual_cable_missing_title"), T("tools.install_cable_in_settings"), InfoBarSeverity.Warning);
     }
 
     private void OpenSoundSettings_Click(object sender, RoutedEventArgs e)
@@ -324,7 +334,7 @@ public sealed partial class ToolsPage : Page
         }
         catch (Exception ex)
         {
-            ShowMessage("无法打开声音设置", ex.Message, InfoBarSeverity.Error);
+            ShowMessage(T("tools.open_sound_settings_failed"), ex.Message, InfoBarSeverity.Error);
         }
     }
 
@@ -334,10 +344,11 @@ public sealed partial class ToolsPage : Page
         SessionItemBox.ItemsSource = _session?.Items;
         if (_session is null)
         {
-            SessionStatusText.Text = "尚未预生成整卷音频。";
+            SessionStatusText.Text = T("tools.no_generated_audio_yet");
             return;
         }
-        SessionStatusText.Text = $"试卷 {_session.PackId} · {_session.Items.Count} 条音频 · {_session.Mode}";
+        SessionStatusText.Text = F("tools.session_summary", ("paperId", _session.PackId),
+            ("count", _session.Items.Count), ("mode", T(_session.Mode == "flexible" ? "tools.generated_mode" : "tools.standard_mode")));
         if (_session.Items.Count > 0)
         {
             SessionItemBox.SelectedIndex = 0;
@@ -355,13 +366,13 @@ public sealed partial class ToolsPage : Page
     {
         if (SpeakingPaperBox.SelectedItem is not SpeakingPaper paper)
         {
-            ShowMessage("未选择试卷", "先点“读取所有试卷口语题”，在试卷下拉框里选一份试卷。",
+            ShowMessage(T("tools.paper_required"), T("tools.load_questions_then_choose_paper"),
                 InfoBarSeverity.Warning);
             return;
         }
         if (paper.Questions.Count == 0)
         {
-            ShowMessage("没有口语题", "这份试卷里没有可生成的口语题。", InfoBarSeverity.Warning);
+            ShowMessage(T("tools.no_speaking_questions"), T("tools.no_speaking_questions_for_paper"), InfoBarSeverity.Warning);
             return;
         }
         string mode = AppPreferencesService.Current.SpeakingMode;
@@ -385,7 +396,8 @@ public sealed partial class ToolsPage : Page
             for (int index = 0; index < paper.Questions.Count; index++)
             {
                 SpeakingQuestion question = paper.Questions[index];
-                BatchStatusText.Text = $"正在处理 {index + 1}/{paper.Questions.Count}：{question.Type}";
+                BatchStatusText.Text = F("tools.processing_questions", ("current", index + 1),
+                    ("total", paper.Questions.Count), ("kind", T(question.Type)));
                 string answer = question.StandardAnswer;
                 if (mode == "flexible")
                 {
@@ -395,7 +407,7 @@ public sealed partial class ToolsPage : Page
                 if (string.IsNullOrWhiteSpace(answer))
                 {
                     failed++;
-                    errors.Add($"第 {question.Number} 题：没有可用答案");
+                    errors.Add(F("tools.no_answer_for_question", ("question", question.Number)));
                     BatchProgress.Value = index + 1;
                     continue;
                 }
@@ -404,7 +416,7 @@ public sealed partial class ToolsPage : Page
                 if (!tts.Success)
                 {
                     failed++;
-                    errors.Add($"第 {question.Number} 题：{tts.Error}");
+                    errors.Add(F("tools.tts_question_failed", ("question", question.Number), ("detail", TtsError(tts.Error))));
                     BatchProgress.Value = index + 1;
                     continue;
                 }
@@ -417,18 +429,20 @@ public sealed partial class ToolsPage : Page
             _sessionStore.Save(_session);
             _sessionIndex = 0;
             RefreshSessionUi();
-            BatchStatusText.Text = $"完成：{items.Count} 条音频" + (failed > 0 ? $"，{failed} 条失败" : "");
+            BatchStatusText.Text = F("tools.audio_generation_progress", ("count", items.Count)) +
+                (failed > 0 ? F("tools.audio_generation_failures", ("count", failed)) : string.Empty);
             string detail = errors.Count > 0
                 ? Environment.NewLine + string.Join(Environment.NewLine, errors.Take(3))
                 : "";
             BatchStatusText.Text += detail;
-            ShowMessage("整卷 TTS 已生成",
-                $"试卷 {paper.PackId}：{items.Count} 条音频" + (failed > 0 ? $"，{failed} 条失败" : "") + detail,
+            ShowMessage(T("tools.whole_paper_tts_complete"),
+                F("tools.paper_audio_summary", ("paperId", paper.PackId), ("count", items.Count)) +
+                (failed > 0 ? F("tools.audio_generation_failures", ("count", failed)) : string.Empty) + detail,
                 failed == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
         }
         catch (Exception ex)
         {
-            ShowMessage("整卷 TTS 失败", ex.Message, InfoBarSeverity.Error);
+            ShowMessage(T("tools.whole_paper_tts_failed"), ex.Message, InfoBarSeverity.Error);
         }
         finally
         {
@@ -442,7 +456,7 @@ public sealed partial class ToolsPage : Page
         SpeakingSessionItem? item = SelectedSessionItem();
         if (item is null)
         {
-            ShowMessage("没有选中音频", "先从播放列表里选一条。", InfoBarSeverity.Warning);
+            ShowMessage(T("tools.no_audio_selected"), T("tools.select_audio_from_playlist"), InfoBarSeverity.Warning);
             return;
         }
         PlaySessionItem(item);
@@ -453,17 +467,17 @@ public sealed partial class ToolsPage : Page
         SpeakingSessionItem? item = SelectedSessionItem();
         if (item is null)
         {
-            ShowMessage("没有可试听的音频", "先从播放列表里选一条。", InfoBarSeverity.Warning);
+            ShowMessage(T("tools.no_audio_to_preview"), T("tools.select_audio_from_playlist"), InfoBarSeverity.Warning);
             return;
         }
         try
         {
             _cable.PlayPreview(item.WavPath);
-            SessionStatusText.Text = $"本地试听第 {item.Number} 题：{item.WavName}";
+            SessionStatusText.Text = F("tools.local_preview_question", ("number", item.Number), ("name", item.WavName));
         }
         catch (Exception ex)
         {
-            ShowMessage("试听失败", ex.Message, InfoBarSeverity.Error);
+            ShowMessage(T("tools.preview_failed"), ex.Message, InfoBarSeverity.Error);
         }
     }
 
@@ -471,7 +485,7 @@ public sealed partial class ToolsPage : Page
     {
         if (_session is null || _session.Items.Count == 0)
         {
-            ShowMessage("没有播放列表", "先预生成整卷 TTS。", InfoBarSeverity.Warning);
+            ShowMessage(T("tools.no_playlist"), T("tools.generate_audio_first"), InfoBarSeverity.Warning);
             return;
         }
         int index = Math.Clamp(_sessionIndex, 0, _session.Items.Count - 1);
@@ -485,11 +499,11 @@ public sealed partial class ToolsPage : Page
         {
             _cable.Play(item.WavPath);
             SessionItemBox.SelectedItem = item;
-            SessionStatusText.Text = $"正在播放第 {item.Number} 题：{item.WavName}";
+            SessionStatusText.Text = F("tools.play_question", ("number", item.Number), ("name", item.WavName));
         }
         catch (Exception ex)
         {
-            ShowMessage("播放失败", ex.Message, InfoBarSeverity.Error);
+            ShowMessage(T("tools.play_failed"), ex.Message, InfoBarSeverity.Error);
         }
     }
 
@@ -497,17 +511,18 @@ public sealed partial class ToolsPage : Page
     {
         _cable.Stop();
         _cable.StopPreview();
-        SessionStatusText.Text = "已停止播放。";
+        SessionStatusText.Text = T("tools.playback_stopped");
     }
 
     private void RefreshDeepSeekStatus()
     {
         string keyState = ApiKeyStore.HasKey
-            ? "API Key：本机已配置（直连）"
-            : "API Key：未配置";
-        string attachment = _deepSeek.FindAttachment() ?? "未找到 llm_stt.md";
-        string mode = AppPreferencesService.Current.SpeakingMode == "flexible" ? "生成模式" : "标答模式";
-        DeepSeekStatusText.Text = $"{mode} · {keyState} · 模型 {DeepSeekService.Model} · 附件：{attachment}";
+            ? T("tools.api_key_configured_direct")
+            : T("tools.api_key_missing");
+        string attachment = _deepSeek.FindAttachment() ?? T("tools.attachment_missing");
+        string mode = T(AppPreferencesService.Current.SpeakingMode == "flexible" ? "tools.generated_mode" : "tools.standard_mode");
+        DeepSeekStatusText.Text = F("tools.deepseek_status_summary", ("mode", mode), ("keyState", keyState),
+            ("model", DeepSeekService.Model), ("attachment", attachment));
     }
 
     private void RefreshAliyunTtsStatus()
@@ -521,8 +536,9 @@ public sealed partial class ToolsPage : Page
     private void UpdateSpeakingModeUi()
     {
         bool flexible = AppPreferencesService.Current.SpeakingMode == "flexible";
-        SpeakingModeSummaryText.Text = $"当前模式：{(flexible ? "生成模式" : "标答模式")}（在答题设置中修改）";
-        AskDeepSeekText.Text = flexible ? "发送到 DeepSeek" : "提取标答";
+        SpeakingModeSummaryText.Text = F("tools.speaking_mode_summary",
+            ("mode", T(flexible ? "tools.generated_mode" : "tools.standard_mode")));
+        AskDeepSeekText.Text = T(flexible ? "tools.send_to_deepseek" : "tools.extract_standard_answer");
     }
 
     private async void LoadSpeakingQuestions_Click(object sender, RoutedEventArgs e)
@@ -534,18 +550,18 @@ public sealed partial class ToolsPage : Page
             SpeakingPaperBox.ItemsSource = papers;
             if (papers.Count == 0)
             {
-                ShowMessage("没有口语题", "本机试卷里没有找到朗读、看图或问答类口语题。",
+                ShowMessage(T("tools.no_speaking_questions"), T("tools.no_speaking_questions_found"),
                     InfoBarSeverity.Warning);
                 return;
             }
             SpeakingPaperBox.SelectedIndex = 0;
             int total = papers.Sum(paper => paper.Questions.Count);
-            ShowMessage("已读取口语题", $"共 {papers.Count} 份试卷、{total} 道口语题。",
+            ShowMessage(T("tools.speaking_questions_loaded"), F("tools.speaking_question_count", ("papers", papers.Count), ("questions", total)),
                 InfoBarSeverity.Success);
         }
         catch (Exception ex)
         {
-            ShowMessage("读取口语题失败", ex.Message, InfoBarSeverity.Error);
+            ShowMessage(T("tools.load_speaking_questions_failed"), ex.Message, InfoBarSeverity.Error);
         }
     }
 
@@ -564,7 +580,7 @@ public sealed partial class ToolsPage : Page
         if (AppPreferencesService.Current.SpeakingMode != "standard") return;
         if (question.StandardAnswer.Length == 0)
         {
-            ShowMessage("这道题没有标答", "试卷里没有为这道口语题提供推荐答案，请改用生成模式。",
+            ShowMessage(T("tools.question_no_standard_answer"), T("tools.question_no_standard_answer_detail"),
                 InfoBarSeverity.Warning);
             return;
         }
@@ -598,7 +614,7 @@ public sealed partial class ToolsPage : Page
         string stem = SpeakingStemBox.Text.Trim();
         if (stem.Length == 0)
         {
-            ShowMessage("缺少题干", "请先输入口语题干，再发送到 DeepSeek。", InfoBarSeverity.Warning);
+            ShowMessage(T("tools.missing_prompt_title"), T("tools.enter_prompt_before_send"), InfoBarSeverity.Warning);
             return;
         }
 
@@ -607,14 +623,13 @@ public sealed partial class ToolsPage : Page
             SpeakingQuestion? question = await ResolveSpeakingQuestionAsync(stem);
             if (question is null || question.StandardAnswer.Length == 0)
             {
-                ShowMessage("没有找到标答",
-                    "当前试卷里没有匹配的标准答案。可以先点“读取当前试卷口语题”，或切换到灵活模式。",
+                ShowMessage(T("tools.no_matching_answer"), T("tools.no_matching_answer_detail"),
                     InfoBarSeverity.Warning);
                 return;
             }
             SpeakingResultBox.Text = question.StandardAnswer;
-            ShowMessage("已提取标答",
-                $"标答来自试卷 {_speakingPackId ?? "当前试卷"}，共 {question.StandardAnswer.Length} 个字符。",
+            ShowMessage(T("tools.standard_answer_extracted"),
+                F("tools.standard_answer_source", ("paperId", _speakingPackId ?? T("common.current_paper")), ("count", question.StandardAnswer.Length)),
                 InfoBarSeverity.Success);
             return;
         }
@@ -634,12 +649,12 @@ public sealed partial class ToolsPage : Page
             if (result.Success)
             {
                 SpeakingResultBox.Text = result.Text;
-                ShowMessage("DeepSeek 已返回", $"模型 {DeepSeekService.Model} · 返回 {result.Text.Length} 个字符。",
+                ShowMessage(T("tools.deepseek_returned"), F("tools.deepseek_result_summary", ("model", DeepSeekService.Model), ("count", result.Text.Length)),
                     InfoBarSeverity.Success);
             }
             else
             {
-                ShowMessage("DeepSeek 调用失败", result.Error, InfoBarSeverity.Error);
+                ShowMessage(T("tools.deepseek_call_failed"), TtsError(result.Error), InfoBarSeverity.Error);
             }
         }
         finally
@@ -660,11 +675,11 @@ public sealed partial class ToolsPage : Page
     {
         if (string.IsNullOrWhiteSpace(SpeakingResultBox.Text))
         {
-            ShowMessage("暂无结果", "先发送一次口语题干，等模型返回后再复制。", InfoBarSeverity.Warning);
+            ShowMessage(T("tools.no_result"), T("tools.send_prompt_before_copy"), InfoBarSeverity.Warning);
             return;
         }
         CopyText(SpeakingResultBox.Text);
-        ShowMessage("结果已复制", "模型返回的文本已复制到剪贴板。", InfoBarSeverity.Success);
+        ShowMessage(T("tools.result_copied"), T("tools.model_result_copied"), InfoBarSeverity.Success);
     }
 
     private async void AliyunTts_Click(object sender, RoutedEventArgs e)
@@ -672,7 +687,7 @@ public sealed partial class ToolsPage : Page
         string text = SpeakingResultBox.Text.Trim();
         if (text.Length == 0)
         {
-            ShowMessage("没有可合成的回答", "先提取标答或调用 DeepSeek 生成一条回答。", InfoBarSeverity.Warning);
+            ShowMessage(T("tools.no_synthesizable_answer"), T("tools.generate_or_extract_before_tts"), InfoBarSeverity.Warning);
             return;
         }
         if (!AliyunTtsCredentialStore.HasCredentials)
@@ -689,19 +704,18 @@ public sealed partial class ToolsPage : Page
             AliyunTtsResult result = await _aliyunTts.SynthesizeToWavAsync(text);
             if (!result.Success)
             {
-                ShowMessage("阿里云 TTS 失败", result.Error, InfoBarSeverity.Error);
+                ShowMessage(T("tools.aliyun_tts_failed"), TtsError(result.Error), InfoBarSeverity.Error);
                 return;
             }
 
-            AliyunTtsStatusText.Text = $"WAV 已保存：{result.FilePath}";
+            AliyunTtsStatusText.Text = F("tools.wav_saved_path", ("path", result.FilePath));
             _lastTtsWavPath = result.FilePath;
             Process.Start(new ProcessStartInfo(result.FilePath) { UseShellExecute = true });
-            ShowMessage("阿里云 TTS 已完成",
-                $"Betty 已合成并打开 WAV 文件（{result.ChunkCount} 段）。", InfoBarSeverity.Success);
+            ShowMessage(T("tools.aliyun_tts_complete"), F("tools.tts_opened_wav", ("count", result.ChunkCount)), InfoBarSeverity.Success);
         }
         catch (Exception ex)
         {
-            ShowMessage("阿里云 TTS 失败", ex.Message, InfoBarSeverity.Error);
+            ShowMessage(T("tools.aliyun_tts_failed"), ex.Message, InfoBarSeverity.Error);
         }
         finally
         {
@@ -722,14 +736,14 @@ public sealed partial class ToolsPage : Page
     private void CopyPort_Click(object sender, RoutedEventArgs e)
     {
         CopyText("http://127.0.0.1:10086/json/list");
-        ShowMessage("地址已复制", "调试端口地址已复制到剪贴板。", InfoBarSeverity.Success);
+        ShowMessage(T("tools.address_copied"), T("tools.debug_address_copied"), InfoBarSeverity.Success);
     }
 
     private async void RefreshPort_Click(object sender, RoutedEventArgs e)
     {
         bool available = await ProbePortAsync();
-        ShowMessage(available ? "端口可用" : "端口未连接",
-            available ? "127.0.0.1:10086 可以访问。" : "请先启动带调试端口的 ETS。",
+        ShowMessage(T(available ? "tools.port_available" : "tools.port_not_connected"),
+            T(available ? "tools.port_available_message" : "tools.start_debug_ets"),
             available ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
     }
 
@@ -742,17 +756,17 @@ public sealed partial class ToolsPage : Page
                 SuggestedFileName = $"ets-logs-{DateTime.Now:yyyyMMdd-HHmmss}",
                 SuggestedStartLocation = PickerLocationId.DocumentsLibrary
             };
-            picker.FileTypeChoices.Add("ZIP 压缩包", new List<string> { ".zip" });
-            MainWindow window = MainWindow.Current ?? throw new InvalidOperationException("窗口尚未准备好。");
+            picker.FileTypeChoices.Add(T("tools.zip_file_type"), new List<string> { ".zip" });
+            MainWindow window = MainWindow.Current ?? throw new InvalidOperationException(T("common.window_not_ready"));
             WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(window));
 
             var file = await picker.PickSaveFileAsync();
             if (file is null) return;
             int count = await Task.Run(() => WriteLogArchive(file.Path));
             RefreshLogSummary();
-            ShowMessage("日志已导出", $"已打包 {count} 个文件：{file.Path}", InfoBarSeverity.Success);
+            ShowMessage(T("tools.logs_exported"), F("tools.logs_exported_count", ("count", count), ("path", file.Path)), InfoBarSeverity.Success);
         }
-        catch (Exception ex) { ShowMessage("导出失败", ex.Message, InfoBarSeverity.Error); }
+        catch (Exception ex) { ShowMessage(T("tools.export_failed"), ex.Message, InfoBarSeverity.Error); }
     }
 
     private int WriteLogArchive(string destination)
@@ -807,35 +821,83 @@ public sealed partial class ToolsPage : Page
             .OrderBy(info => info.Name)
             .ToList();
         string backgroundSummary = files.Count == 0
-            ? "暂无后台日志"
+            ? T("tools.no_background_logs")
             : string.Join(" · ", files.Select(info => $"{info.Name} {info.Length / 1024.0:0.#} KB"));
         string diagnosticSummary = diagnosticFiles.Count == 0
-            ? "暂无诊断日志"
+            ? T("tools.no_diagnostic_logs")
             : string.Join(" · ", diagnosticFiles.Select(info => $"{info.Name} {info.Length / 1024.0:0.#} KB"));
-        LogSummaryText.Text = $"诊断日志：{DiagnosticLogService.LogDirectory}\n{diagnosticSummary}\n后台日志：{_service.DataRoot}\n{backgroundSummary}";
+        LogSummaryText.Text = F("tools.log_summary", ("diagnosticPath", DiagnosticLogService.LogDirectory),
+            ("diagnosticSummary", diagnosticSummary), ("backgroundPath", _service.DataRoot),
+            ("backgroundSummary", backgroundSummary));
+    }
+
+    private void DiagnosticLogFilter_Click(object sender, RoutedEventArgs e) => RefreshDiagnosticLogViewer();
+
+    private void RefreshDiagnosticLogs_Click(object sender, RoutedEventArgs e) => RefreshDiagnosticLogViewer();
+
+    private void RefreshDiagnosticLogViewer()
+    {
+        var selectedLevels = new HashSet<string>(StringComparer.Ordinal)
+        {
+            InfoLogFilter.IsChecked == true ? "INFO" : string.Empty,
+            WarnLogFilter.IsChecked == true ? "WARN" : string.Empty,
+            ErrorLogFilter.IsChecked == true ? "ERROR" : string.Empty,
+            FatalLogFilter.IsChecked == true ? "FATAL" : string.Empty
+        };
+        selectedLevels.Remove(string.Empty);
+
+        string[] recentLines = DiagnosticLogService.ReadRecentEntries(1200)
+            .Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+        string[] visibleLines = recentLines
+            .Where(line => TryGetDiagnosticLogLevel(line) is string level && selectedLevels.Contains(level))
+            .ToArray();
+
+        LocalizationService localization = LocalizationService.Current;
+        string text = visibleLines.Length == 0
+            ? recentLines.Length == 0
+                ? localization.Translate("tools.no_diagnostic_logs_yet")
+                : localization.Translate("tools.no_logs_match_selected_levels")
+            : string.Join(Environment.NewLine, visibleLines);
+        if (!string.Equals(DiagnosticLogText.Text, text, StringComparison.Ordinal))
+        {
+            DiagnosticLogText.Text = text;
+            DispatcherQueue.TryEnqueue(() => DiagnosticLogText.Select(DiagnosticLogText.Text.Length, 0));
+        }
+        DiagnosticLogViewerStatusText.Text = localization.Format(
+            "tools.diagnostic_log_status",
+            ("visible", visibleLines.Length),
+            ("read", recentLines.Length),
+            ("time", DateTime.Now.ToString("HH:mm:ss", System.Globalization.CultureInfo.CurrentCulture)));
+    }
+
+    private static string? TryGetDiagnosticLogLevel(string line)
+    {
+        if (!line.StartsWith('[')) return null;
+        int closingBracket = line.IndexOf(']');
+        return closingBracket > 1 ? line[1..closingBracket] : null;
     }
 
     private void CopyEnvironment_Click(object sender, RoutedEventArgs e)
     {
         CopyText(BuildEnvironmentText());
-        ShowMessage("环境信息已复制", "当前程序、数据目录和端口信息已复制到剪贴板。", InfoBarSeverity.Success);
+        ShowMessage(T("tools.environment_copied"), T("tools.environment_copied_detail"), InfoBarSeverity.Success);
     }
 
     private string BuildEnvironmentText()
     {
         var lines = new List<string>
         {
-            $"时间：{DateTime.Now:yyyy-MM-dd HH:mm:ss}",
-            $"应用目录：{_service.AppRoot}",
-            $"数据目录：{_service.DataRoot}",
-            $"诊断日志：{DiagnosticLogService.LogDirectory}",
-            $"ETS 程序：{_service.EtsExe ?? "未找到"}",
-            $"后台引擎：{_service.EnginePath}",
-            $"调试端口：10086（{(_portAvailable ? "可用" : "未连接")}）",
-            $"ETS 进程：{(_service.IsEtsRunning ? "运行中" : "未运行")}",
+            F("tools.environment_time", ("time", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"))),
+            F("tools.environment_app_folder", ("path", _service.AppRoot)),
+            F("tools.environment_data_folder", ("path", _service.DataRoot)),
+            F("tools.environment_diagnostic_logs", ("path", DiagnosticLogService.LogDirectory)),
+            F("tools.environment_ets_program", ("path", _service.EtsExe ?? T("tools.ets_not_found"))),
+            F("tools.environment_engine", ("path", _service.EnginePath)),
+            F("tools.environment_debug_port", ("status", T(_portAvailable ? "tools.port_available" : "tools.port_not_connected"))),
+            F("tools.environment_ets_process", ("status", T(_service.IsEtsRunning ? "tools.ets_running" : "tools.ets_not_running"))),
             AliyunTtsCredentialStore.ConfigurationStatus,
             AliyunTtsCredentialStore.CredentialSourceStatus,
-            $"系统：{Environment.OSVersion.VersionString}"
+            F("tools.environment_system", ("system", Environment.OSVersion.VersionString))
         };
         return string.Join(Environment.NewLine, lines);
     }
@@ -856,7 +918,7 @@ public sealed partial class ToolsPage : Page
         catch (Exception ex)
         {
             DiagnosticLogService.Error("developer_tools.diagnostics_directory.create_failed", ex);
-            ShowMessage("无法打开目录", ex.Message, InfoBarSeverity.Error);
+            ShowMessage(T("tools.open_folder_failed"), ex.Message, InfoBarSeverity.Error);
             return;
         }
         OpenFolder(DiagnosticLogService.LogDirectory);
@@ -867,31 +929,25 @@ public sealed partial class ToolsPage : Page
     {
         try
         {
-            if (!Directory.Exists(path)) throw new DirectoryNotFoundException("目录不存在：" + path);
+            if (!Directory.Exists(path)) throw new DirectoryNotFoundException(F("tools.directory_not_found", ("path", path)));
             Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
         }
-        catch (Exception ex) { ShowMessage("无法打开目录", ex.Message, InfoBarSeverity.Error); }
+        catch (Exception ex) { ShowMessage(T("tools.open_folder_failed"), ex.Message, InfoBarSeverity.Error); }
     }
 
     private async void FullReset_Click(object sender, RoutedEventArgs e)
     {
         var content = new TextBlock
         {
-            Text = "即将执行：\n" +
-                   "• 停止监听器、转换器和答题进程\n" +
-                   "• 移除登录启动项和桌面/启动快捷方式\n" +
-                   "• 清除 DeepSeek API Key 和阿里云 TTS 凭证\n" +
-                   "• 恢复默认答题设置并清除界面偏好\n" +
-                   "• 删除虚拟麦克风 WAV、TTS 临时文件和助手日志\n\n" +
-                   "不会删除：试卷包、答题历史、答案记录。",
+            Text = T("tools.full_reset_warning"),
             TextWrapping = TextWrapping.Wrap
         };
         var dialog = new ContentDialog
         {
-            Title = "完全重置？",
+            Title = T("tools.full_reset_question"),
             Content = content,
-            PrimaryButtonText = "确认重置",
-            CloseButtonText = "取消",
+            PrimaryButtonText = T("tools.confirm_reset"),
+            CloseButtonText = T("common.cancel"),
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = XamlRoot
         };
@@ -906,13 +962,13 @@ public sealed partial class ToolsPage : Page
             RefreshAliyunTtsStatus();
             RefreshAudioStatus();
             EnvironmentText.Text = BuildEnvironmentText();
-            ShowMessage("完全重置完成",
+            ShowMessage(T("tools.reset_complete"),
                 string.Join(Environment.NewLine, result.Steps.Concat(result.Notes)),
                 InfoBarSeverity.Success);
         }
         catch (Exception ex)
         {
-            ShowMessage("完全重置失败", ex.Message, InfoBarSeverity.Error);
+            ShowMessage(T("tools.reset_failed"), ex.Message, InfoBarSeverity.Error);
         }
     }
 
@@ -921,7 +977,7 @@ public sealed partial class ToolsPage : Page
         if (_autoSpeakingRunner.IsRunning)
         {
             _autoSpeakingRunner.Stop();
-            AutoSpeakingStatusText.Text = "正在停止自动口语…";
+            AutoSpeakingStatusText.Text = T("tools.reset_stopping_auto_speaking");
             return;
         }
         StartAutoSpeaking();
@@ -932,7 +988,7 @@ public sealed partial class ToolsPage : Page
         _session ??= _sessionStore.Load();
         if (_session is null || _session.Items.Count == 0)
         {
-            ShowMessage("没有口语会话", "先预生成整卷 TTS，等播放列表里出现音频后再启动自动口语。",
+            ShowMessage(T("tools.no_speaking_session"), T("tools.prepare_tts_before_start"),
                 InfoBarSeverity.Warning);
             return;
         }
@@ -942,29 +998,28 @@ public sealed partial class ToolsPage : Page
             .ToArray();
         if (missing.Length > 0)
         {
-            ShowMessage("音频文件缺失",
-                "这些 TTS 文件已经不在了，请重新预生成整卷 TTS：" + Environment.NewLine + string.Join(Environment.NewLine, missing),
+            ShowMessage(T("tools.audio_files_missing"), F("tools.audio_files_missing_detail", ("files", string.Join(Environment.NewLine, missing))),
                 InfoBarSeverity.Warning);
             return;
         }
         await RefreshCableAsync();
         if (!_cable.IsReady)
         {
-            ShowMessage("虚拟声卡未就绪",
+            ShowMessage(T("tools.virtual_cable_not_ready"),
                 _cable.IsAvailable
-                    ? "检测到 CABLE Input，但缺少 CABLE Output。请在录音设备中启用 CABLE Output，并把它设为 ETS 麦克风。"
-                    : "未安装 VB-CABLE。请到“答题设置”安装驱动后再启动自动口语。",
+                    ? T("speaking.cable_output_not_enabled")
+                    : T("speaking.virtual_cable_not_installed"),
                 InfoBarSeverity.Warning);
             return;
         }
 
         if (!_autoSpeakingRunner.Start(_service.AppRoot, _service.DataRoot, _sessionStore.FilePath, out string error))
         {
-            ShowMessage("自动口语启动失败", error, InfoBarSeverity.Error);
+            ShowMessage(T("tools.auto_speaking_start_failed"), TtsError(error), InfoBarSeverity.Error);
             return;
         }
-        AutoSpeakingButtonText.Text = "停止自动口语";
-        AutoSpeakingStatusText.Text = "自动口语运行中，请保持 ETS 停在口语题页面…";
+        AutoSpeakingButtonText.Text = T("tools.stop_automatic_speaking");
+        AutoSpeakingStatusText.Text = T("tools.auto_speaking_running_status");
     }
 
     private void ReportAutoSpeaking(string? line)
@@ -977,4 +1032,7 @@ public sealed partial class ToolsPage : Page
     {
         InfoBarPresenter.Show(MessageBar, title, message, severity);
     }
+
+    private static string TtsError(string? message) =>
+        LocalizationService.Current.Translate(message ?? string.Empty);
 }

@@ -7,13 +7,13 @@
             <Grid ColumnDefinitions="28,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="5">
                 <SymbolIcon Symbol="Document" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
                             Width="28" Height="28" VerticalAlignment="Center" />
-                <TextBlock Grid.Column="1" Text="运行记录" FontSize="30" FontWeight="SemiBold" />
-                <TextBlock Grid.Row="1" Grid.Column="1" Text="监听器、转换和答题进程的最近状态。" FontSize="15" Opacity="0.72" />
+                <TextBlock Grid.Column="1" Text="common.logs" FontSize="30" FontWeight="SemiBold" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="common.recent_status_listener_converter_answer" FontSize="15" Opacity="0.72" />
             </Grid>
             <Button Grid.Column="1" Click="Refresh_Click" VerticalAlignment="Center">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <SymbolIcon Symbol="Refresh" />
-                    <TextBlock Text="立即刷新" />
+                    <TextBlock Text="common.refresh_now" />
                 </StackPanel>
             </Button>
         </Grid>

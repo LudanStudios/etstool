@@ -15,6 +15,9 @@ public sealed partial class PapersPage : Page
     private readonly PaperCatalog _catalog;
     private readonly AnswerHistoryStore _history;
     private bool _busy;
+    private static string T(string key) => LocalizationService.Current.Translate(key);
+    private static string F(string key, params (string Name, object? Value)[] values) =>
+        LocalizationService.Current.Format(key, values);
 
     public PapersPage()
     {
@@ -27,15 +30,15 @@ public sealed partial class PapersPage : Page
     private async Task ReloadAsync()
     {
         if (_busy) return;
-        SetBusy(true, "正在读取本机试卷…");
+        SetBusy(true, T("papers.reading_local_papers"));
         try
         {
             IReadOnlyList<PaperEntry> entries = await Task.Run(_catalog.Scan);
             PaperList.ItemsSource = entries;
-            SummaryText.Text = $"共 {entries.Count} 份试卷";
+            SummaryText.Text = F("papers.paper_count", ("count", entries.Count));
             EmptyText.Visibility = entries.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
-        catch (Exception ex) { ShowMessage("读取失败", ex.Message, InfoBarSeverity.Error); }
+        catch (Exception ex) { ShowMessage(T("papers.read_failed"), ex.Message, InfoBarSeverity.Error); }
         finally { SetBusy(false); }
     }
 
@@ -55,10 +58,10 @@ public sealed partial class PapersPage : Page
         try
         {
             if (!Directory.Exists(paper.FolderPath))
-                throw new DirectoryNotFoundException("试卷目录已经不存在，请刷新列表。");
+                throw new DirectoryNotFoundException(T("papers.folder_missing_refresh"));
             Process.Start(new ProcessStartInfo(paper.FolderPath) { UseShellExecute = true });
         }
-        catch (Exception ex) { ShowMessage("无法打开目录", ex.Message, InfoBarSeverity.Error); }
+        catch (Exception ex) { ShowMessage(T("papers.open_folder_failed"), ex.Message, InfoBarSeverity.Error); }
     }
 
     private async void AnalyzeAnswers_Click(object sender, RoutedEventArgs e)
@@ -69,7 +72,7 @@ public sealed partial class PapersPage : Page
             IReadOnlyList<PaperAnswerItem> answers = await Task.Run(() => _catalog.ReadAnswers(paper.PackId));
             if (answers.Count == 0)
             {
-                ShowMessage("没有答案", "这份试卷中没有可分析的选择题答案。", InfoBarSeverity.Warning);
+                ShowMessage(T("papers.no_answers_title"), T("papers.no_analyzable_answers"), InfoBarSeverity.Warning);
                 return;
             }
 
@@ -88,24 +91,25 @@ public sealed partial class PapersPage : Page
                 selected.TryGetValue(answer.QuestionId, out string? chosen) && chosen == answer.Answer);
             var distribution = answers.GroupBy(answer => answer.Answer)
                 .OrderBy(group => group.Key)
-                .Select(group => $"{group.Key} {group.Count()} 题（{group.Count() * 100.0 / answers.Count:0.#}%）");
+                .Select(group => F("papers.distribution_item", ("answer", group.Key), ("count", group.Count()),
+                    ("percent", (group.Count() * 100.0 / answers.Count).ToString("0.#"))));
 
-            var lines = new List<string> { $"试卷 {paper.PackId}（{answers.Count} 道选择题）" };
+            var lines = new List<string> { F("papers.answer_analysis_title", ("paperId", paper.PackId), ("count", answers.Count)) };
             lines.Add(answered == 0
-                ? "本地作答记录：暂无"
-                : $"上次作答：已答 {answered} 题 · 正确 {correct} 题 · 错误 {answered - correct} 题");
-            lines.Add("答案分布：" + string.Join(" · ", distribution));
-            lines.Add("答案：" + string.Join("  ", answers.Select(answer => $"{answer.Number}.{answer.Answer}")));
+                ? T("papers.local_history_empty")
+                : F("papers.last_attempt_summary", ("answered", answered), ("correct", correct), ("wrong", answered - correct)));
+            lines.Add(F("papers.answer_distribution", ("distribution", string.Join(" · ", distribution))));
+            lines.Add(F("papers.answers", ("answers", string.Join("  ", answers.Select(answer => $"{answer.Number}.{answer.Answer}")))));
             string text = string.Join(Environment.NewLine, lines);
 
             var package = new DataPackage { RequestedOperation = DataPackageOperation.Copy };
             package.SetText(text);
             Clipboard.SetContent(package);
             Clipboard.Flush();
-            ShowMessage("分析已复制", $"已复制 {answers.Count} 道题的答案分布、作答统计和完整答案。",
+            ShowMessage(T("papers.analysis_copied_title"), F("papers.analysis_copied_message", ("count", answers.Count)),
                 InfoBarSeverity.Success);
         }
-        catch (Exception ex) { ShowMessage("无法分析答案", ex.Message, InfoBarSeverity.Error); }
+        catch (Exception ex) { ShowMessage(T("papers.analyze_failed"), ex.Message, InfoBarSeverity.Error); }
     }
 
     private async void DetailedAnalysis_Click(object sender, RoutedEventArgs e)
@@ -120,10 +124,10 @@ public sealed partial class PapersPage : Page
 
         var confirm = new ContentDialog
         {
-            Title = "发送试题到 DeepSeek？",
-            Content = $"详细解析（Beta）会将“{paper.Title}”的题干、选项和标准答案发送给 DeepSeek，用于逐题生成讲解。不会发送本机凭据或作答历史。请求由你的个人 API Key 计费。继续？",
-            PrimaryButtonText = "确认并继续",
-            CloseButtonText = "取消",
+            Title = T("papers.send_questions_deepseek"),
+            Content = F("papers.detailed_analysis_confirmation", ("title", paper.Title)),
+            PrimaryButtonText = T("papers.confirm_continue"),
+            CloseButtonText = T("common.cancel"),
             DefaultButton = ContentDialogButton.None,
             XamlRoot = XamlRoot
         };
@@ -135,32 +139,32 @@ public sealed partial class PapersPage : Page
             string downloads = PdfAnalysisDocumentService.GetDownloadsFolderPath();
             Directory.CreateDirectory(downloads);
             targetPath = Path.Combine(downloads,
-                $"ETS-解析-{paper.PackId}-{DateTime.Now:yyyyMMdd-HHmmssfff}-{Guid.NewGuid().ToString("N")[..8]}.pdf");
+                $"{T("papers.analysis_file_prefix")}-{paper.PackId}-{DateTime.Now:yyyyMMdd-HHmmssfff}-{Guid.NewGuid().ToString("N")[..8]}.pdf");
         }
         catch (Exception ex)
         {
-            ShowMessage("无法访问下载文件夹", ex.Message, InfoBarSeverity.Error);
+            ShowMessage(T("papers.download_folder_unavailable"), ex.Message, InfoBarSeverity.Error);
             return;
         }
 
-        Guid activityId = AnalysisActivityService.Current.Start($"试卷 {paper.PackId} · 详细解析");
+        Guid activityId = AnalysisActivityService.Current.Start(F("papers.detailed_analysis_activity_title", ("paperId", paper.PackId)));
         try
         {
             var progress = new Progress<string>(message => AnalysisActivityService.Current.Update(activityId, message));
             string markdown = await new PaperAnalysisService().GenerateAsync(paper, progress);
-            AnalysisActivityService.Current.Update(activityId, $"正在排版并保存到：{targetPath}");
+            AnalysisActivityService.Current.Update(activityId, F("papers.layout_saving_path", ("path", targetPath)));
             await PdfAnalysisDocumentService.SaveMarkdownAsync(markdown, targetPath);
-            AnalysisActivityService.Current.Complete(activityId, $"已保存到：{targetPath}", targetPath);
+            AnalysisActivityService.Current.Complete(activityId, F("papers.saved_to_path", ("path", targetPath)), targetPath);
             if (MainWindow.Current?.IsShowingPage(this) == true)
                 await PdfAnalysisDocumentService.ShowPreviewAsync(XamlRoot, targetPath, paper.Title);
             if (MainWindow.Current?.IsShowingPage(this) == true)
-                ShowMessage("解析已保存", $"PDF 保存位置：{targetPath}", InfoBarSeverity.Success);
+                ShowMessage(T("papers.analysis_saved_title"), F("papers.pdf_saved_location", ("path", targetPath)), InfoBarSeverity.Success);
         }
         catch (Exception ex)
         {
             AnalysisActivityService.Current.Fail(activityId, ex.Message);
             if (MainWindow.Current?.IsShowingPage(this) == true)
-                ShowMessage("详细解析失败", ex.Message, InfoBarSeverity.Error);
+                ShowMessage(T("papers.detailed_analysis_failed"), ex.Message, InfoBarSeverity.Error);
         }
     }
 
@@ -172,7 +176,7 @@ public sealed partial class PapersPage : Page
             IReadOnlyList<PaperAnswerItem> answers = await Task.Run(() => _catalog.ReadAnswers(paper.PackId));
             if (answers.Count == 0)
             {
-                ShowMessage("没有答案", "这份试卷中没有可读取的选择题答案。", InfoBarSeverity.Warning);
+                ShowMessage(T("papers.no_answers_title"), T("papers.no_extractable_answers"), InfoBarSeverity.Warning);
                 return;
             }
 
@@ -187,10 +191,10 @@ public sealed partial class PapersPage : Page
             };
             var dialog = new ContentDialog
             {
-                Title = $"试卷 {paper.PackId} 的答案（{answers.Count} 题）",
+                Title = F("papers.paper_answers_title", ("paperId", paper.PackId), ("count", answers.Count)),
                 Content = viewer,
-                PrimaryButtonText = "复制答案",
-                CloseButtonText = "关闭",
+                PrimaryButtonText = T("papers.copy_answers"),
+                CloseButtonText = T("papers.close"),
                 DefaultButton = ContentDialogButton.Primary,
                 XamlRoot = XamlRoot
             };
@@ -200,9 +204,9 @@ public sealed partial class PapersPage : Page
             package.SetText(text);
             Clipboard.SetContent(package);
             Clipboard.Flush();
-            ShowMessage("答案已复制", $"已复制 {answers.Count} 道题的答案。", InfoBarSeverity.Success);
+            ShowMessage(T("papers.answers_copied_title"), F("papers.answers_copied", ("count", answers.Count)), InfoBarSeverity.Success);
         }
-        catch (Exception ex) { ShowMessage("无法提取答案", ex.Message, InfoBarSeverity.Error); }
+        catch (Exception ex) { ShowMessage(T("papers.extract_answers_failed"), ex.Message, InfoBarSeverity.Error); }
     }
 
     private async void Delete_Click(object sender, RoutedEventArgs e)
@@ -211,17 +215,17 @@ public sealed partial class PapersPage : Page
 
         var dialog = new ContentDialog
         {
-            Title = "确认删除试卷？",
+            Title = T("papers.delete_confirmation_title"),
             Content = BuildDeleteWarning(paper),
-            PrimaryButtonText = "确认删除",
-            CloseButtonText = "取消",
+            PrimaryButtonText = T("papers.confirm_delete"),
+            CloseButtonText = T("papers.cancel"),
             DefaultButton = ContentDialogButton.None,
             XamlRoot = XamlRoot
         };
         dialog.Opened += (_, _) =>
         {
             FocusCancelButton(dialog);
-            if (FindButton(dialog, "确认删除") is Button confirm)
+            if (FindButton(dialog, T("papers.confirm_delete")) is Button confirm)
             {
                 var danger = new SolidColorBrush(Color.FromArgb(255, 220, 38, 38));
                 confirm.Background = danger;
@@ -235,7 +239,7 @@ public sealed partial class PapersPage : Page
 
     private static void FocusCancelButton(DependencyObject root)
     {
-        if (FindButton(root, "取消") is Button cancel) cancel.Focus(FocusState.Programmatic);
+        if (FindButton(root, T("papers.cancel")) is Button cancel) cancel.Focus(FocusState.Programmatic);
     }
 
     private static Button? FindButton(DependencyObject root, string text)
@@ -259,16 +263,16 @@ public sealed partial class PapersPage : Page
         heading.Children.Add(new SymbolIcon(Symbol.Important) { Foreground = new SolidColorBrush(warning) });
         heading.Children.Add(new TextBlock
         {
-            Text = "此操作不可恢复", FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(warning)
+            Text = T("papers.delete_irreversible"), FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(warning)
         });
 
         var panel = new StackPanel { Spacing = 10 };
         panel.Children.Add(heading);
-        panel.Children.Add(new TextBlock { Text = $"试卷编号：{paper.PackId}", TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(new TextBlock { Text = F("papers.paper_number", ("paperId", paper.PackId)), TextWrapping = TextWrapping.Wrap });
         panel.Children.Add(new TextBlock { Text = paper.FolderPath, Opacity = 0.7, TextWrapping = TextWrapping.Wrap });
         panel.Children.Add(new TextBlock
         {
-            Text = "将永久删除试卷目录及其转换文件；已记录的答题分析会保留。", TextWrapping = TextWrapping.Wrap
+            Text = T("papers.delete_explanation"), TextWrapping = TextWrapping.Wrap
         });
         return panel;
     }
@@ -277,13 +281,13 @@ public sealed partial class PapersPage : Page
     {
         try
         {
-            SetBusy(true, "正在删除试卷…");
+            SetBusy(true, T("papers.deleting"));
             await Task.Run(() => _catalog.Delete(paper.PackId));
             SetBusy(false);
             await ReloadAsync();
-            ShowMessage("试卷已删除", $"已删除试卷 {paper.PackId}，答题分析记录仍然保留。", InfoBarSeverity.Success);
+            ShowMessage(T("papers.deleted_title"), F("papers.deleted_detail", ("paperId", paper.PackId)), InfoBarSeverity.Success);
         }
-        catch (Exception ex) { ShowMessage("删除失败", ex.Message, InfoBarSeverity.Error); }
+        catch (Exception ex) { ShowMessage(T("papers.delete_failed"), ex.Message, InfoBarSeverity.Error); }
         finally { SetBusy(false); }
     }
 
