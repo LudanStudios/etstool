@@ -187,7 +187,7 @@ public sealed partial class ToolsPage : Page
                 DefaultButton = ContentDialogButton.Close,
                 XamlRoot = XamlRoot
             };
-            if (await dialog.ShowAsync() == ContentDialogResult.Primary) CopyText(body);
+            if (await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog) == ContentDialogResult.Primary) CopyText(body);
         }
         catch (Exception)
         {
@@ -769,6 +769,12 @@ public sealed partial class ToolsPage : Page
             }
         }
 
+        foreach (string file in DiagnosticLogService.GetLogFiles().OrderBy(Path.GetFileName))
+        {
+            AddFile(archive, file, $"logs/diagnostics/{Path.GetFileName(file)}");
+            count++;
+        }
+
         string config = Path.Combine(_service.AppRoot, "ets_answer_config.yaml");
         if (File.Exists(config)) { AddFile(archive, config, "config/ets_answer_config.yaml"); count++; }
         string installation = Path.Combine(_service.DataRoot, "ets_install_dir.txt");
@@ -790,19 +796,23 @@ public sealed partial class ToolsPage : Page
 
     private void RefreshLogSummary()
     {
-        if (!Directory.Exists(_service.DataRoot))
-        {
-            LogSummaryText.Text = "日志目录不存在。";
-            return;
-        }
-        var files = Directory.EnumerateFiles(_service.DataRoot, "*.log")
+        var files = (Directory.Exists(_service.DataRoot)
+                ? Directory.EnumerateFiles(_service.DataRoot, "*.log")
+                : Enumerable.Empty<string>())
             .Select(path => new FileInfo(path))
             .OrderBy(info => info.Name)
             .ToList();
-        LogSummaryText.Text = files.Count == 0
-            ? $"日志目录：{_service.DataRoot}\n暂无日志文件。"
-            : $"日志目录：{_service.DataRoot}\n" +
-              string.Join(" · ", files.Select(info => $"{info.Name} {info.Length / 1024.0:0.#} KB"));
+        var diagnosticFiles = DiagnosticLogService.GetLogFiles()
+            .Select(path => new FileInfo(path))
+            .OrderBy(info => info.Name)
+            .ToList();
+        string backgroundSummary = files.Count == 0
+            ? "暂无后台日志"
+            : string.Join(" · ", files.Select(info => $"{info.Name} {info.Length / 1024.0:0.#} KB"));
+        string diagnosticSummary = diagnosticFiles.Count == 0
+            ? "暂无诊断日志"
+            : string.Join(" · ", diagnosticFiles.Select(info => $"{info.Name} {info.Length / 1024.0:0.#} KB"));
+        LogSummaryText.Text = $"诊断日志：{DiagnosticLogService.LogDirectory}\n{diagnosticSummary}\n后台日志：{_service.DataRoot}\n{backgroundSummary}";
     }
 
     private void CopyEnvironment_Click(object sender, RoutedEventArgs e)
@@ -818,6 +828,7 @@ public sealed partial class ToolsPage : Page
             $"时间：{DateTime.Now:yyyy-MM-dd HH:mm:ss}",
             $"应用目录：{_service.AppRoot}",
             $"数据目录：{_service.DataRoot}",
+            $"诊断日志：{DiagnosticLogService.LogDirectory}",
             $"ETS 程序：{_service.EtsExe ?? "未找到"}",
             $"后台引擎：{_service.EnginePath}",
             $"调试端口：10086（{(_portAvailable ? "可用" : "未连接")}）",
@@ -838,6 +849,18 @@ public sealed partial class ToolsPage : Page
     }
 
     private void OpenData_Click(object sender, RoutedEventArgs e) => OpenFolder(_service.DataRoot);
+
+    private void OpenDiagnosticLogs_Click(object sender, RoutedEventArgs e)
+    {
+        try { Directory.CreateDirectory(DiagnosticLogService.LogDirectory); }
+        catch (Exception ex)
+        {
+            DiagnosticLogService.Error("developer_tools.diagnostics_directory.create_failed", ex);
+            ShowMessage("无法打开目录", ex.Message, InfoBarSeverity.Error);
+            return;
+        }
+        OpenFolder(DiagnosticLogService.LogDirectory);
+    }
     private void OpenProgram_Click(object sender, RoutedEventArgs e) => OpenFolder(_service.AppRoot);
 
     private void OpenFolder(string path)
@@ -872,7 +895,7 @@ public sealed partial class ToolsPage : Page
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = XamlRoot
         };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
 
         try
         {

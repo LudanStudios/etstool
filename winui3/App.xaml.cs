@@ -1,4 +1,3 @@
-using System.Text;
 using System.Threading;
 using Microsoft.UI.Xaml;
 using ETSAssistant.WinUI3.Services;
@@ -10,22 +9,33 @@ public partial class App : Application
     private static Mutex? _instanceMutex;
     private static readonly List<Mutex> LegacyInstanceMutexes = [];
     private Window? _window;
-    private static string ErrorLog => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ETS", "ets_winui_startup.log");
-
     public App()
     {
-        UnhandledException += (_, args) => LogException(args.Exception);
-        AppDomain.CurrentDomain.UnhandledException += (_, args) => LogException(args.ExceptionObject as Exception);
+        UnhandledException += (_, args) => DiagnosticLogService.Fatal("etstool.window.crashed", args.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
+            if (args.ExceptionObject is Exception exception)
+                DiagnosticLogService.Fatal("etstool.process.crashed", exception);
+            else
+                DiagnosticLogService.Fatal("etstool.process.crashed", args.ExceptionObject?.ToString());
+        };
         try { InitializeComponent(); }
-        catch (Exception ex) { LogException(ex); throw; }
+        catch (Exception ex) { DiagnosticLogService.Fatal("etstool.startup.xaml_initialization.failed", ex); throw; }
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         try
         {
+            _ = AppPreferencesService.Current;
+            DiagnosticLogService.Info("etstool.startup.started");
             _instanceMutex = new Mutex(true, "Local\\ETSAssistantWinUI3-v1", out bool createdNew);
-            if (!createdNew) { Environment.Exit(0); return; }
+            if (!createdNew)
+            {
+                DiagnosticLogService.Warn("etstool.startup.blocked", "reason=another_instance_running");
+                Environment.Exit(0);
+                return;
+            }
 
             // Also reserve the former privilege-specific names so older builds
             // cannot run beside this single elevated instance.
@@ -36,27 +46,23 @@ public partial class App : Application
                      })
             {
                 var legacyMutex = new Mutex(true, legacyName, out bool legacyCreated);
-                if (!legacyCreated) { Environment.Exit(0); return; }
+                if (!legacyCreated)
+                {
+                    DiagnosticLogService.Warn("etstool.startup.blocked", "reason=legacy_instance_running");
+                    Environment.Exit(0);
+                    return;
+                }
                 LegacyInstanceMutexes.Add(legacyMutex);
             }
 
             AliyunTtsCredentialStore.Initialize();
             _window = new MainWindow();
             _window.Activate();
+            DiagnosticLogService.Info("etstool.window.activation.requested");
             if (Environment.GetCommandLineArgs().Skip(1).Any(argument =>
                     string.Equals(argument, "--open-ets-preview", StringComparison.OrdinalIgnoreCase)))
                 ((MainWindow)_window).NavigateToTag("etsPreview");
         }
-        catch (Exception ex) { LogException(ex); throw; }
-    }
-
-    private static void LogException(Exception? exception)
-    {
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(ErrorLog)!);
-            File.AppendAllText(ErrorLog, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {exception}\n", Encoding.UTF8);
-        }
-        catch { }
+        catch (Exception ex) { DiagnosticLogService.Fatal("etstool.startup.failed", ex); throw; }
     }
 }

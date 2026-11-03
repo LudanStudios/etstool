@@ -1,19 +1,25 @@
 [CmdletBinding()]
-param()
+param(
+    [string]$RuntimeRoot = $PSScriptRoot,
+    [string]$AnswerConfigPath = (Join-Path $PSScriptRoot 'ets_answer_config.yaml'),
+    [switch]$NoRestore,
+    [switch]$SuppressValidation
+)
 
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath($PSScriptRoot)
+$runtimeRoot = [IO.Path]::GetFullPath($RuntimeRoot)
 $csproj = Join-Path $root 'winui3\ETSAssistant.WinUI3.csproj'
 [xml]$project = Get-Content -LiteralPath $csproj -Raw
 $version = [string]$project.Project.PropertyGroup.Version
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid release version: $version" }
 
-$manifestPath = Join-Path $root 'MANIFEST.sha256'
+$manifestPath = Join-Path $runtimeRoot 'MANIFEST.sha256'
 $manifestRoots = @('ETS-Assistant-Engine.exe', '_internal_engine', '_winui', 'tools', 'VERSION.txt')
 $excludedNames = @('aliyun_tts_credentials.bin', 'deepseek_api_key.txt', 'credentials.json', '.env')
 $runtimeFiles = [Collections.Generic.List[IO.FileInfo]]::new()
 foreach ($relativeRoot in $manifestRoots) {
-    $path = Join-Path $root $relativeRoot
+    $path = Join-Path $runtimeRoot $relativeRoot
     if (-not (Test-Path -LiteralPath $path)) { throw "Release runtime path missing: $path" }
     $item = Get-Item -LiteralPath $path -Force
     if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Refusing a linked release path: $path" }
@@ -29,7 +35,7 @@ foreach ($relativeRoot in $manifestRoots) {
     }
 }
 $manifestLines = foreach ($file in ($runtimeFiles | Sort-Object FullName)) {
-    $relative = $file.FullName.Substring($root.Length + 1).Replace('\', '/')
+    $relative = $file.FullName.Substring($runtimeRoot.Length + 1).Replace('\', '/')
     $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
     "$hash  $relative"
 }
@@ -46,17 +52,22 @@ New-Item -ItemType Directory -Force -Path $payload, $wixOutput, $wixIntermediate
 foreach ($line in $manifestLines) {
     if ($line -notmatch '^([0-9a-f]{64})  (.+)$') { throw "Invalid generated manifest line: $line" }
     $relative = $Matches[2].Replace('/', '\')
-    $source = [IO.Path]::GetFullPath((Join-Path $root $relative))
-    if (-not $source.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase)) { throw "Unsafe manifest path: $relative" }
+    $source = [IO.Path]::GetFullPath((Join-Path $runtimeRoot $relative))
+    if (-not $source.StartsWith($runtimeRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { throw "Unsafe manifest path: $relative" }
     $destination = Join-Path $payload $relative
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
     Copy-Item -LiteralPath $source -Destination $destination
 }
-foreach ($relative in @('README.md', 'MANIFEST.sha256', 'ets_answer_config.yaml', 'llm_stt.md')) {
+foreach ($relative in @('README.md', 'llm_stt.md')) {
     $source = Join-Path $root $relative
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Release support file missing: $source" }
     Copy-Item -LiteralPath $source -Destination (Join-Path $payload $relative)
 }
+Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $payload 'MANIFEST.sha256')
+if (-not (Test-Path -LiteralPath $AnswerConfigPath -PathType Leaf)) {
+    throw "Sanitized answer configuration file missing: $AnswerConfigPath"
+}
+Copy-Item -LiteralPath $AnswerConfigPath -Destination (Join-Path $payload 'ets_answer_config.yaml')
 $unexpectedCredential = Get-ChildItem -LiteralPath $payload -Recurse -File -Force | Where-Object { $_.Name.ToLowerInvariant() -in $excludedNames }
 if ($unexpectedCredential) { throw 'A credential-like file was found in the release payload.' }
 
@@ -64,7 +75,12 @@ $installerProject = Join-Path $root 'Installer\ETS-Assistant.wixproj'
 $buildStarted = Get-Date
 $msiName = "ETS-Assistant-r$version.msi"
 $zipName = "ETS-Assistant-r$version.zip"
-& dotnet build $installerProject --configuration Release "-p:ProductVersion=$version" "-p:PayloadDirectory=$payload" "-p:OutputPath=$wixOutput\" "-p:BaseIntermediateOutputPath=$wixIntermediate\" "-p:MSBuildProjectExtensionsPath=$wixIntermediate\" -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true --verbosity minimal
+$buildArgs = @('build', $installerProject, '--configuration', 'Release', "-p:ProductVersion=$version",
+    "-p:PayloadDirectory=$payload", "-p:OutputPath=$wixOutput\", '-p:NuGetAudit=false', '--verbosity', 'minimal')
+if ($NoRestore) { $buildArgs += '--no-restore' }
+else { $buildArgs += @("-p:BaseIntermediateOutputPath=$wixIntermediate\", "-p:MSBuildProjectExtensionsPath=$wixIntermediate\", '-p:RestoreIgnoreFailedSources=true') }
+if ($SuppressValidation) { $buildArgs += '-p:SuppressValidation=true' }
+& dotnet @buildArgs
 if ($LASTEXITCODE -ne 0) { throw "WiX MSI build failed with exit code $LASTEXITCODE." }
 $builtMsi = Join-Path $wixOutput $msiName
 if (-not (Test-Path -LiteralPath $builtMsi -PathType Leaf)) {

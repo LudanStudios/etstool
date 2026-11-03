@@ -7,14 +7,14 @@ if (args.Contains("--live"))
 {
     UpdateCheckResult result = await new GitHubUpdateService(new HttpClient(), new Version(1, 2, 2, 0)).CheckAsync();
     Console.WriteLine($"Live GitHub: {result.Message}");
-    if (result.UpdateAvailable) throw new Exception("The current 1.2.2 release and code must not trigger an update.");
+    if (result.UpdateAvailable) throw new Exception("The current 1.2.3 release and code must not trigger an update.");
     return;
 }
 
-await Check("matching code and MSI", "1.2.2", "1.2.2", false, "当前版本已是最新。");
-await Check("matching revision and metadata", "v1.2.2+msi", "1.2.2.42", false, "当前版本已是最新。");
+await Check("matching code and MSI", "1.2.3", "1.2.3", false, "当前版本已是最新。");
+await Check("matching revision and metadata", "v1.2.3+msi", "1.2.3.42", false, "当前版本已是最新。");
 await Check("newer MSI and code", "1.2.3", "1.2.3", true, "发现新版本 1.2.3");
-await Check("newer code only", "1.2.2", "1.2.3", true, "发现新代码版本 1.2.3");
+await Check("newer code only", "1.2.3", "1.2.4", true, "发现新代码版本 1.2.4");
 await Check("older remote sources", "1.0.0", "1.0.0", false, "当前版本已是最新。");
 Console.WriteLine("All update check scenarios passed.");
 

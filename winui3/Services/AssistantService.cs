@@ -108,6 +108,8 @@ public sealed partial class AssistantService
             $"skip_interval_seconds: {settings.SkipInterval.ToString("0.###", CultureInfo.InvariantCulture)}\n" +
             $"verbose_logging_enabled: {settings.VerboseLoggingEnabled.ToString().ToLowerInvariant()}\n";
         File.WriteAllText(ConfigPath, contents, new UTF8Encoding(false));
+        DiagnosticLogService.Info("settings.answer.saved",
+            $"accuracy={settings.Accuracy.ToString("0.##", CultureInfo.InvariantCulture)} skipIntervalSeconds={settings.SkipInterval.ToString("0.###", CultureInfo.InvariantCulture)} startAtLogin={settings.StartAtLogin}");
     }
 
     public void SyncListenerSettings()
@@ -120,7 +122,10 @@ public sealed partial class AssistantService
                 VerboseLoggingEnabled = AppPreferencesService.Current.VerboseLoggingEnabled
             });
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            DiagnosticLogService.Warn("listener.settings_sync.failed", ex.Message);
+        }
     }
 
     /// <summary>Updates the login entry; returns a friendly warning instead of throwing when Windows blocks the registry write.</summary>
@@ -169,7 +174,11 @@ public sealed partial class AssistantService
             throw new FileNotFoundException("后台组件不存在，请重新生成完整程序文件夹。", EnginePath);
         if (EtsExe is null) RefreshEts();
         if (EtsExe is null) throw new FileNotFoundException("找不到 ETS 安装目录。请确认 ETS 已安装，再重新扫描。", "Ets.exe");
-        if (IsListenerRunning()) return;
+        if (IsListenerRunning())
+        {
+            DiagnosticLogService.Info("listener.start.skipped", "reason=already_running");
+            return;
+        }
 
         Directory.CreateDirectory(DataRoot);
         string args = $"--background-listener --root {Quote(DataRoot)} --config {Quote(ConfigPath)} --ets-exe {Quote(EtsExe)} --debug-port {DebugPort}";
@@ -178,6 +187,7 @@ public sealed partial class AssistantService
             WorkingDirectory = AppRoot, UseShellExecute = false, CreateNoWindow = true,
             WindowStyle = ProcessWindowStyle.Hidden
         });
+        DiagnosticLogService.Info("listener.start.requested", $"engine={Path.GetFileName(EnginePath)}");
     }
 
     private static bool IsListenerRunning()
@@ -206,18 +216,25 @@ public sealed partial class AssistantService
     {
         if (EtsExe is null) RefreshEts();
         if (EtsExe is null) throw new FileNotFoundException("找不到 ETS 安装目录。请确认 ETS 已安装，再重新扫描。", "Ets.exe");
-        if (IsEtsRunning) return;
+        if (IsEtsRunning)
+        {
+            DiagnosticLogService.Info("ets.start.skipped", "reason=already_running");
+            return;
+        }
         string arguments = $"--remote-debugging-port={DebugPort}";
         if (!string.IsNullOrWhiteSpace(extraArguments)) arguments += " " + extraArguments;
         Process.Start(new ProcessStartInfo(EtsExe, arguments)
         {
             WorkingDirectory = Path.GetDirectoryName(EtsExe)!, UseShellExecute = true
         });
+        DiagnosticLogService.Info("ets.start.requested", $"executable={Path.GetFileName(EtsExe)}");
     }
 
     public int EndEtsProcesses()
     {
+        DiagnosticLogService.Info("ets.terminate.started");
         int ended = 0;
+        int failed = 0;
         foreach (string name in new[] { "Ets", "ETSShell", "EtsCore", "Shell" })
         {
             foreach (Process process in Process.GetProcessesByName(name))
@@ -235,11 +252,26 @@ public sealed partial class AssistantService
                         ended++;
                     }
                     catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or
-                                              UnauthorizedAccessException) { }
+                                              UnauthorizedAccessException)
+                    {
+                        failed++;
+                        DiagnosticLogService.Warn("ets.terminate.process_failed",
+                            $"process={name} pid={SafeProcessId(process)} detail={ex.Message}");
+                    }
                 }
             }
         }
+        if (failed == 0)
+            DiagnosticLogService.Info("ets.terminate.completed", $"endedCount={ended}");
+        else
+            DiagnosticLogService.Warn("ets.terminate.completed_with_errors", $"endedCount={ended} failedCount={failed}");
         return ended;
+    }
+
+    private static int SafeProcessId(Process process)
+    {
+        try { return process.Id; }
+        catch (InvalidOperationException) { return 0; }
     }
 
     private static bool IsNamedProcessAtPath(string name, string? expectedPath)
@@ -270,18 +302,31 @@ public sealed partial class AssistantService
 
     public string InitializeAndOpen(AssistantSettings settings, string extraArguments = "")
     {
-        RefreshEts();
-        if (EtsExe is null) throw new FileNotFoundException("找不到 ETS 安装目录。请确认 ETS 已安装，再重新扫描。", "Ets.exe");
-        SaveSettings(settings);
+        DiagnosticLogService.Info("ets.initialize_and_start.started");
+        try
+        {
+            RefreshEts();
+            if (EtsExe is null) throw new FileNotFoundException("找不到 ETS 安装目录。请确认 ETS 已安装，再重新扫描。", "Ets.exe");
+            SaveSettings(settings);
 
-        var warnings = new List<string>();
-        string autostart = TryInstallAutostart(settings.StartAtLogin);
-        if (autostart.Length > 0) warnings.Add(autostart);
+            var warnings = new List<string>();
+            string autostart = TryInstallAutostart(settings.StartAtLogin);
+            if (autostart.Length > 0) warnings.Add(autostart);
 
-        EnsureListener();
-        OpenEts(extraArguments);
-        LastError = string.Join(" ", warnings);
-        return LastError;
+            EnsureListener();
+            OpenEts(extraArguments);
+            LastError = string.Join(" ", warnings);
+            if (LastError.Length == 0)
+                DiagnosticLogService.Info("ets.initialize_and_start.completed");
+            else
+                DiagnosticLogService.Warn("ets.initialize_and_start.completed_with_warnings", LastError);
+            return LastError;
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogService.Error("ets.initialize_and_start.failed", ex);
+            throw;
+        }
     }
 
     public string ReadRecentLogs()
@@ -301,7 +346,13 @@ public sealed partial class AssistantService
             }
             catch (IOException) { }
         }
-        return output.Count == 0 ? "尚无运行记录。初始化后，ETS 启动时会显示监听状态。" : string.Join(Environment.NewLine, output.TakeLast(180));
+        string diagnostics = DiagnosticLogService.ReadRecentEntries();
+        if (!string.IsNullOrWhiteSpace(diagnostics))
+        {
+            output.Add("── ETS Tool 诊断日志 ──");
+            output.AddRange(diagnostics.Split(Environment.NewLine));
+        }
+        return output.Count == 0 ? "尚无运行记录。初始化后，ETS 启动时会显示监听状态。" : string.Join(Environment.NewLine, output.TakeLast(420));
     }
 
     private string? ReadAutostartValue()
