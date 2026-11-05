@@ -15,6 +15,8 @@ namespace ETSAssistant.WinUI3;
 public sealed partial class MainWindow : Window
 {
     internal new static MainWindow? Current { get; private set; }
+    internal TrayMinimizeService? TrayService { get; private set; }
+    private TrayStatusWindow? _trayStatusWindow;
     internal Microsoft.UI.Xaml.Controls.WebView2 AnalysisPdfRenderer => SharedPdfRendererControl;
     internal bool IsShowingPage(Page page) => ReferenceEquals(PageFrame.Content, page);
     private readonly CurrentPaperService _paperService = new(AssistantService.Current.DataRoot);
@@ -27,7 +29,6 @@ public sealed partial class MainWindow : Window
     private bool _checkingAudioSession;
     private bool _audioSessionActive;
     private SpeakingPrepWindow? _prepWindow;
-    private DispatcherQueueTimer? _paneClosingTimer;
     private string? _currentPageName;
     private bool _windowOpenedLogged;
     private string? _lastAudioSessionError;
@@ -37,14 +38,17 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         Current = this;
+        TrayService = new TrayMinimizeService(WindowNative.GetWindowHandle(this));
         AnalysisActivityService.Current.Changed += UpdateActivityNavigation;
         UpdateActivityNavigation();
         Closed += async (_, _) =>
         {
             DiagnosticLogService.Info("etstool.window.closed");
+            TrayService?.Dispose();
+            TrayService = null;
+            _trayStatusWindow?.Close();
+            _trayStatusWindow = null;
             AnalysisActivityService.Current.Changed -= UpdateActivityNavigation;
-            AppPreferencesService.Current.EtsProgramIntegrationChanged -= OnEtsProgramIntegrationChanged;
-            EtsWindowPreviewService.RestoreAll();
             _audioSessionTimer?.Stop();
             try { await DefaultAudioInputService.Current.EndSessionAsync(); }
             catch (Exception) { }
@@ -60,10 +64,6 @@ public sealed partial class MainWindow : Window
 
         AppPreferencesService preferences = AppPreferencesService.Current;
         DiagnosticLogService.SetVerboseEnabled(preferences.VerboseLoggingEnabled);
-        EtsPreviewNavigationItem.Visibility = preferences.IntegrateEtsMainProgramEnabled
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        preferences.EtsProgramIntegrationChanged += OnEtsProgramIntegrationChanged;
         Activated += (_, args) =>
         {
             if (args.WindowActivationState == WindowActivationState.Deactivated)
@@ -132,6 +132,22 @@ public sealed partial class MainWindow : Window
         _paperTimer.Tick += async (_, _) => await CheckSpeakingPaperAsync();
         _paperTimer.Start();
         Closed += (_, _) => _paperTimer.Stop();
+    }
+
+    internal void HideTrayStatusFlyout() => _trayStatusWindow?.HidePopup();
+
+    internal void ShowTrayStatusFlyout()
+    {
+        try
+        {
+            _trayStatusWindow ??= new TrayStatusWindow();
+            _trayStatusWindow.ShowNearTray();
+            DiagnosticLogService.Info("tray.status.opened");
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogService.Warn("tray.status.open.failed", ex.Message);
+        }
     }
 
     private async Task SyncAudioSessionWithEtsAsync()
@@ -398,9 +414,6 @@ public sealed partial class MainWindow : Window
 
     public void NavigateToTag(string tag)
     {
-        if (tag == "etsPreview" && !AppPreferencesService.Current.IntegrateEtsMainProgramEnabled)
-            return;
-
         foreach (object item in RootNavigation.MenuItems.Concat(RootNavigation.FooterMenuItems))
         {
             if (item is NavigationViewItem nav && string.Equals(nav.Tag as string, tag, StringComparison.Ordinal))
@@ -410,23 +423,6 @@ public sealed partial class MainWindow : Window
                 break;
             }
         }
-    }
-
-    private void OnEtsProgramIntegrationChanged()
-    {
-        if (!DispatcherQueue.HasThreadAccess)
-        {
-            DispatcherQueue.TryEnqueue(OnEtsProgramIntegrationChanged);
-            return;
-        }
-
-        bool enabled = AppPreferencesService.Current.IntegrateEtsMainProgramEnabled;
-        EtsPreviewNavigationItem.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
-        if (enabled) return;
-
-        if (((RootNavigation.SelectedItem as NavigationViewItem)?.Tag as string) == "etsPreview")
-            NavigateToTag("overview");
-        EtsWindowPreviewService.Shared.RestoreForDisabledIntegration();
     }
 
     private void ApplyTheme()
@@ -473,7 +469,6 @@ public sealed partial class MainWindow : Window
         static string? GetKey(string? tag) => tag switch
         {
             "overview" => "navigation.overview",
-            "etsPreview" => "common.program_preview",
             "papers" => "common.papers",
             "settings" => "common.answer_settings",
             "logs" => "common.logs",
@@ -502,17 +497,11 @@ public sealed partial class MainWindow : Window
     private void RootNavigation_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
         if (args.SelectedItem is not NavigationViewItem item) return;
-        if ((item.Tag as string) == "etsPreview" && !AppPreferencesService.Current.IntegrateEtsMainProgramEnabled)
-        {
-            NavigateToTag("overview");
-            return;
-        }
         DiagnosticLogService.Info("navigation.tab.selected",
             $"tag={item.Tag?.ToString() ?? "unknown"} title={item.Content?.ToString() ?? "unknown"}");
         Type? page = item.Tag?.ToString() switch
         {
             "overview" => typeof(Pages.OverviewPage),
-            "etsPreview" => typeof(Pages.EtsPreviewPage),
             "papers" => typeof(Pages.PapersPage),
             "settings" => typeof(Pages.SettingsPage),
             "logs" => typeof(Pages.LogsPage),
@@ -544,42 +533,13 @@ public sealed partial class MainWindow : Window
     private void RootNavigation_DisplayModeChanged(NavigationView sender, NavigationViewDisplayModeChangedEventArgs args)
     {
         UpdatePaneToggleButtonStyle(args.DisplayMode);
-        UpdateNavigationPaneOverlayState();
     }
 
-    private void RootNavigation_PaneOpening(NavigationView sender, object args)
-    {
+    private void RootNavigation_PaneOpening(NavigationView sender, object args) =>
         DiagnosticLogService.Info("navigation.pane.opened");
-        _paneClosingTimer?.Stop();
-        EtsWindowPreviewService.Shared.SetNavigationPaneOverlayOpen(
-            sender.DisplayMode != NavigationViewDisplayMode.Expanded);
-    }
 
-    private void RootNavigation_PaneClosing(NavigationView sender, object args)
-    {
+    private void RootNavigation_PaneClosing(NavigationView sender, object args) =>
         DiagnosticLogService.Info("navigation.pane.closing");
-        _paneClosingTimer?.Stop();
-        _paneClosingTimer ??= DispatcherQueue.CreateTimer();
-        _paneClosingTimer.Interval = TimeSpan.FromMilliseconds(350);
-        _paneClosingTimer.Tick -= PaneClosingTimer_Tick;
-        _paneClosingTimer.Tick += PaneClosingTimer_Tick;
-        _paneClosingTimer.Start();
-    }
-
-    private void PaneClosingTimer_Tick(DispatcherQueueTimer sender, object args)
-    {
-        sender.Stop();
-        UpdateNavigationPaneOverlayState();
-    }
-
-    private void UpdateNavigationPaneOverlayState()
-    {
-        bool isOverlay = RootNavigation.IsPaneOpen &&
-                         RootNavigation.DisplayMode != NavigationViewDisplayMode.Expanded;
-        if (isOverlay)
-            _paneClosingTimer?.Stop();
-        EtsWindowPreviewService.Shared.SetNavigationPaneOverlayOpen(isOverlay);
-    }
 
     private void UpdatePaneToggleButtonStyle(NavigationViewDisplayMode displayMode)
     {

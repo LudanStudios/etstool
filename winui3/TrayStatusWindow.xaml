@@ -1,0 +1,129 @@
+<Window
+    x:Class="ETSAssistant.WinUI3.TrayStatusWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Background="#171717">
+      <Border x:Name="WindowSurface" Background="#171717" CornerRadius="14">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel x:Name="ContentPanel" Padding="12" Spacing="8">
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <Ellipse Width="10" Height="10" Fill="#00B960" />
+                    <TextBlock x:Name="HeaderText" FontSize="18" Foreground="White"
+                               Text="ETS Tool" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <Border x:Name="EmptyStateCard" Background="#262626" CornerRadius="14"
+                        Padding="20" MinHeight="148" Visibility="Visible">
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
+                                Spacing="14" MaxWidth="280">
+                        <Border Width="48" Height="48" CornerRadius="24" Background="#343434"
+                                HorizontalAlignment="Center">
+                            <FontIcon Glyph="&#xE8A5;" FontSize="24" Foreground="#AEB9DD"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <TextBlock x:Name="EmptyStateTitleText" FontSize="15" FontWeight="SemiBold"
+                                   Foreground="White" TextAlignment="Center" TextWrapping="Wrap" />
+                        <TextBlock x:Name="EmptyStateDescriptionText" FontSize="12"
+                                   Foreground="#B8B8B8" TextAlignment="Center" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="PaperCard" Background="#262626" CornerRadius="12" Padding="12"
+                        Visibility="Collapsed">
+                    <StackPanel Spacing="6">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Border Width="4" Height="16" Background="#00B960" VerticalAlignment="Center" />
+                            <TextBlock x:Name="PaperHeaderText" FontSize="14" Foreground="White"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                        <TextBlock x:Name="PaperIdText" FontSize="18" FontWeight="Bold"
+                                   Foreground="White" Margin="0" />
+                        <TextBlock x:Name="PaperSummaryText" FontSize="12" Foreground="#E0E0E0"
+                                   TextWrapping="Wrap" Margin="0" />
+                        <Button x:Name="CopyAnswersButton" Click="CopyAnswers_Click"
+                                HorizontalAlignment="Stretch" Margin="0,4,0,0"
+                                Background="#96A4D5" Foreground="#171717" CornerRadius="10"
+                                Height="30" />
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="ChoiceCard" Background="#262626" CornerRadius="12" Padding="12"
+                        Visibility="Collapsed">
+                    <StackPanel Spacing="6">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Border Width="4" Height="16" Background="#96A4D5" VerticalAlignment="Center" />
+                            <TextBlock x:Name="ChoiceHeaderText" FontSize="14" Foreground="White"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                        <Grid x:Name="ChoiceGrid" ColumnSpacing="4" RowSpacing="4" />
+                        <Grid ColumnSpacing="8" Margin="0,4,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="26" />
+                            </Grid.ColumnDefinitions>
+                            <Grid Grid.Column="0" Height="30">
+                                <Border Background="#3B3B3B" CornerRadius="9" />
+                                <ProgressBar x:Name="ChoiceProgressBar" Minimum="0" Maximum="100"
+                                             Height="3" VerticalAlignment="Bottom" CornerRadius="5"
+                                             Foreground="#96A4D5" Background="Transparent" />
+                                <Grid Padding="8,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="ChoiceProgressLabel" FontSize="12" VerticalAlignment="Center"
+                                               Foreground="White" />
+                                    <TextBlock x:Name="ChoiceCountText" FontSize="12" Grid.Column="1"
+                                               VerticalAlignment="Center" Foreground="White" />
+                                </Grid>
+                            </Grid>
+                            <TextBlock Grid.Column="1" Text="✓" FontSize="24" FontWeight="Bold"
+                                       Foreground="#8BD14F" VerticalAlignment="Center"
+                                       HorizontalAlignment="Center" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="SpeakingCard" Background="#262626" CornerRadius="12" Padding="12"
+                        Visibility="Collapsed">
+                    <StackPanel Spacing="6">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Border Width="4" Height="16" Background="#96A4D5" VerticalAlignment="Center" />
+                            <TextBlock x:Name="SpeakingHeaderText" FontSize="14" Foreground="White"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                        <Grid x:Name="SpeakingGrid" ColumnSpacing="4" RowSpacing="4" />
+                        <Grid ColumnSpacing="8" Margin="0,4,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="26" />
+                            </Grid.ColumnDefinitions>
+                            <Grid Grid.Column="0" Height="30">
+                                <Border Background="#3B3B3B" CornerRadius="9" />
+                                <ProgressBar x:Name="SpeakingProgressBar" Minimum="0" Maximum="100"
+                                             Height="3" VerticalAlignment="Bottom" CornerRadius="5"
+                                             Foreground="#8BD14F" Background="Transparent" />
+                                <Grid Padding="8,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="SpeakingProgressLabel" FontSize="12" VerticalAlignment="Center"
+                                               Foreground="White" />
+                                    <TextBlock x:Name="SpeakingCountText" FontSize="12" Grid.Column="1"
+                                               VerticalAlignment="Center" Foreground="White" />
+                                </Grid>
+                            </Grid>
+                            <TextBlock Grid.Column="1" Text="↻" FontSize="24" FontWeight="Bold"
+                                       Foreground="#E8E500" VerticalAlignment="Center"
+                                       HorizontalAlignment="Center" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+                <TextBlock x:Name="HintText" FontSize="12" Foreground="#929292"
+                           HorizontalAlignment="Center" />
+            </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+</Window>

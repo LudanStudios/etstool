@@ -13,6 +13,7 @@ public sealed class SpeakingAutoRunner
     private int _readLineCount;
     public bool LastStartFailureRequiresRegeneration { get; private set; }
     public int? LastExitCode { get; private set; }
+    public string? SessionPath { get; private set; }
 
     public bool IsRunning
     {
@@ -25,11 +26,12 @@ public sealed class SpeakingAutoRunner
     public event Action<string>? Output;
     public event Action? Exited;
 
-    public bool Start(string appRoot, string dataRoot, string sessionPath, out string error)
+    public bool Start(string appRoot, string dataRoot, string sessionPath, out string error, int startIndex = 0)
     {
         error = string.Empty;
         LastStartFailureRequiresRegeneration = false;
         LastExitCode = null;
+        SessionPath = sessionPath;
         string engine = Path.Combine(appRoot, "ETS-Assistant-Engine.exe");
         string player = Path.Combine(appRoot, "tools", "CablePlayer", "CablePlayer.exe");
         if (!File.Exists(engine))
@@ -75,6 +77,8 @@ public sealed class SpeakingAutoRunner
         startInfo.ArgumentList.Add("--speaking-auto");
         startInfo.ArgumentList.Add("--session");
         startInfo.ArgumentList.Add(sessionPath);
+        startInfo.ArgumentList.Add("--start-index");
+        startInfo.ArgumentList.Add(Math.Max(0, startIndex).ToString(System.Globalization.CultureInfo.InvariantCulture));
         startInfo.ArgumentList.Add("--data-root");
         startInfo.ArgumentList.Add(dataRoot);
         startInfo.ArgumentList.Add("--log");
@@ -121,6 +125,13 @@ public sealed class SpeakingAutoRunner
             if (session?.Items is not { Count: > 0 })
             {
                 error = L("speaking_auto.session_has_no_audio");
+                return false;
+            }
+
+            if (session.PromptVersion != SpeakingTimingService.SessionVersion || session.Items.Any(item =>
+                    SpeakingTimingService.MinimumSpeed(SpeakingTimingService.WavSeconds(item.WavPath), item.RecordingSeconds) is null))
+            {
+                error = L("speaking.timing_reprepare");
                 return false;
             }
 

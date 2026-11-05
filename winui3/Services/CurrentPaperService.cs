@@ -37,9 +37,10 @@ public sealed class CurrentPaperService
         _catalog = new PaperCatalog(_dataRoot);
     }
 
-    public async Task<CurrentPaperSnapshot?> LoadAsync()
+    public async Task<CurrentPaperSnapshot?> LoadAsync(bool activeOnly = false)
     {
         string? activePackId = await FindActivePackIdAsync().ConfigureAwait(false);
+        if (activeOnly && activePackId is null) return null;
         return await Task.Run(() =>
         {
             IReadOnlyList<AnswerRecord> history = _history.Load().Records;

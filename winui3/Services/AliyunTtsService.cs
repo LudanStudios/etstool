@@ -29,8 +29,9 @@ public sealed class AliyunTtsService
 
     public AliyunTtsService(string programDirectory) => _programDirectory = programDirectory;
 
-    public async Task<AliyunTtsResult> SynthesizeToWavAsync(string text, CancellationToken cancellationToken = default)
+    public async Task<AliyunTtsResult> SynthesizeToWavAsync(string text, CancellationToken cancellationToken = default, int speechRate = 0)
     {
+        if (speechRate is < -500 or > 500) throw new ArgumentOutOfRangeException(nameof(speechRate));
         text = (text ?? string.Empty).Trim();
         if (text.Length == 0)
             return new AliyunTtsResult(false, Error: LocalizationService.Current.Translate("aliyun_tts.no_text"));
@@ -52,7 +53,7 @@ public sealed class AliyunTtsService
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 string token = await GetTokenAsync(credentials!, cancellationToken).ConfigureAwait(false);
-                waveFiles.Add(await SynthesizeChunkAsync(credentials!.AppKey, token, chunk, cancellationToken)
+                waveFiles.Add(await SynthesizeChunkAsync(credentials!.AppKey, token, chunk, cancellationToken, speechRate)
                     .ConfigureAwait(false));
             }
 
@@ -129,7 +130,7 @@ public sealed class AliyunTtsService
     }
 
     private static async Task<byte[]> SynthesizeChunkAsync(string appKey, string token, string text,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, int speechRate)
     {
         string payload = JsonSerializer.Serialize(new
         {
@@ -140,7 +141,7 @@ public sealed class AliyunTtsService
             sample_rate = 16000,
             voice = "betty",
             volume = 50,
-            speech_rate = 0,
+            speech_rate = speechRate,
             pitch_rate = 0
         });
 

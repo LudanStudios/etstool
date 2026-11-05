@@ -5,6 +5,8 @@ namespace ETSAssistant.WinUI3.Services;
 
 public sealed record SpeakingSessionItem(int Number, string Type, string Prompt, string Answer, string WavPath)
 {
+    public double? RecordingSeconds { get; init; }
+    public double PlaybackSpeed { get; init; } = 1;
     [JsonIgnore] public string Display => LocalizationService.Current.Format("speaking.question_display",
         ("number", Number), ("kind", LocalizationService.Current.Translate(Type)), ("prompt", Prompt));
     [JsonIgnore] public string WavName => Path.GetFileName(WavPath);

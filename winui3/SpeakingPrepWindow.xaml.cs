@@ -80,6 +80,7 @@ public sealed partial class SpeakingPrepWindow : Window
     private bool _sessionReady;
     private bool _autoStartInProgress;
     private bool _windowOpenedLogged;
+    private int _resumeStartIndex;
     private string? _autoRunnerFailureStatus;
 
     public SpeakingPrepWindow()
@@ -118,6 +119,11 @@ public sealed partial class SpeakingPrepWindow : Window
         _autoRunner.Exited += () => DispatcherQueue.TryEnqueue(() =>
         {
             StartAutoButtonText.Text = LocalizationService.Current.Translate("common.start_automatic_speaking");
+            if (_autoRunner.LastExitCode == 10)
+            {
+                _ = RepairTimingAsync();
+                return;
+            }
             if (_autoRunner.LastExitCode is > 0 && !string.IsNullOrWhiteSpace(_autoRunnerFailureStatus))
             {
                 StatusText.Text = _autoRunnerFailureStatus;
@@ -168,6 +174,7 @@ public sealed partial class SpeakingPrepWindow : Window
 
     private async Task PrepareAsync()
     {
+        _resumeStartIndex = 0;
         DiagnosticLogService.Info("speaking_prep.tts_generation.started", $"pack={_packId} questionCount={_items.Count}");
         _cancellation?.Cancel();
         _cancellation = new CancellationTokenSource();
@@ -347,7 +354,7 @@ public sealed partial class SpeakingPrepWindow : Window
             }
             DiagnosticLogService.Info("speaking_prep.auto_speaking.virtual_mic_ready",
                 $"device={audioInput.Name}; result={audioInputResult}");
-            if (!_autoRunner.Start(assistant.AppRoot, assistant.DataRoot, sessionPath, out string error))
+            if (!_autoRunner.Start(assistant.AppRoot, assistant.DataRoot, sessionPath, out string error, _resumeStartIndex))
             {
                 DiagnosticLogService.Error("speaking_prep.auto_speaking.start_failed", error);
                 ErrorBar.Severity = InfoBarSeverity.Error;
@@ -377,6 +384,47 @@ public sealed partial class SpeakingPrepWindow : Window
             _autoStartInProgress = false;
             StartAutoButton.IsEnabled = true;
         }
+    }
+
+    private sealed record TimingRequest(string PackId, int Index, double RecordingSeconds);
+
+    private async Task RepairTimingAsync()
+    {
+        StartAutoButton.IsEnabled = false;
+        _sessionReady = false;
+        try
+        {
+            string path = _autoRunner.SessionPath ?? throw new InvalidOperationException("Missing timing session");
+            string requestPath = path + ".timing-request.json";
+            var request = System.Text.Json.JsonSerializer.Deserialize<TimingRequest>(await File.ReadAllTextAsync(requestPath))
+                ?? throw new InvalidOperationException("Invalid timing request");
+            if (request.PackId != _packId || request.Index < 0 || request.Index >= _items.Count ||
+                request.RecordingSeconds <= 0 || request.RecordingSeconds > 600)
+                throw new InvalidOperationException("Timing request does not match the active paper");
+            StatusText.Text = LocalizationService.Current.Translate("speaking.timing_regenerating");
+            ErrorBar.IsOpen = false;
+            _items[request.Index].Status = "speaking.status_generating";
+            var assistant = AssistantService.Current;
+            var service = new SpeakingPrepService(assistant.AppRoot, assistant.DataRoot);
+            await service.RepairTimingAsync(path, request.Index, request.RecordingSeconds,
+                _cancellation?.Token ?? CancellationToken.None);
+            _resumeStartIndex = request.Index;
+            _items[request.Index].Status = "speaking.status_completed";
+            _sessionReady = true;
+            File.Delete(requestPath);
+            // Timed mock exams may have moved on while synthesis ran. Resume only after the user returns to this question.
+            StatusText.Text = LocalizationService.Current.Translate("speaking.timing_repaired");
+            DiagnosticLogService.Info("speaking.timing.repaired", $"pack={_packId} index={request.Index}");
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogService.Error("speaking.timing.repair_failed", ex);
+            ErrorBar.Severity = InfoBarSeverity.Error;
+            ErrorBar.Message = ex.Message;
+            ErrorBar.IsOpen = true;
+            StatusText.Text = LocalizationService.Current.Translate("speaking.preparation_failed");
+        }
+        finally { StartAutoButton.IsEnabled = true; }
     }
 
     private void ApplyTheme()

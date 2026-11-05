@@ -59,9 +59,6 @@ public partial class App : Application
             _window = new MainWindow();
             _window.Activate();
             DiagnosticLogService.Info("etstool.window.activation.requested");
-            if (Environment.GetCommandLineArgs().Skip(1).Any(argument =>
-                    string.Equals(argument, "--open-ets-preview", StringComparison.OrdinalIgnoreCase)))
-                ((MainWindow)_window).NavigateToTag("etsPreview");
         }
         catch (Exception ex) { DiagnosticLogService.Fatal("etstool.startup.failed", ex); throw; }
     }

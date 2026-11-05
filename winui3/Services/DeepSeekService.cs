@@ -27,7 +27,8 @@ public sealed class DeepSeekService
         return null;
     }
 
-    public async Task<DeepSeekResult> AskSpeakingAsync(string stem, CancellationToken cancellationToken = default)
+    public async Task<DeepSeekResult> AskSpeakingAsync(string stem, CancellationToken cancellationToken = default,
+        string? timingInstruction = null)
     {
         stem = (stem ?? string.Empty).Trim();
         if (stem.Length == 0) return new DeepSeekResult(false, string.Empty, LocalizationService.Current.Translate("deepseek.empty_prompt"));
@@ -52,6 +53,7 @@ public sealed class DeepSeekService
                 ("file", Path.GetFileName(attachment)), ("detail", ex.Message)));
         }
 
+        if (!string.IsNullOrWhiteSpace(timingInstruction)) instructions += "\n\n" + timingInstruction;
         string payload = JsonSerializer.Serialize(new
         {
             model = Model,

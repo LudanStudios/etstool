@@ -149,7 +149,7 @@ public sealed partial class AssistantService
             $"random_seed: '{seed}'\n" +
             $"skip_interval_seconds: {settings.SkipInterval.ToString("0.###", CultureInfo.InvariantCulture)}\n" +
             $"verbose_logging_enabled: {settings.VerboseLoggingEnabled.ToString().ToLowerInvariant()}\n";
-        File.WriteAllText(ConfigPath, contents, new UTF8Encoding(false));
+        SettingsFileStore.Write(ConfigPath, contents);
         DiagnosticLogService.Info("settings.answer.saved",
             $"accuracy={settings.Accuracy.ToString("0.##", CultureInfo.InvariantCulture)} skipIntervalSeconds={settings.SkipInterval.ToString("0.###", CultureInfo.InvariantCulture)} startAtLogin={settings.StartAtLogin}");
     }

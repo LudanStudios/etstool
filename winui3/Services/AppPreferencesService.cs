@@ -27,7 +27,7 @@ public sealed class AppPreferencesService
     public bool VirtualCableReminderShown { get; private set; }
     public bool WelcomeCompleted { get; private set; }
     public bool AutoUpdateEnabled { get; private set; } = true;
-    public bool IntegrateEtsMainProgramEnabled { get; private set; }
+    public bool MinimizeToTrayEnabled { get; private set; }
     public bool InternalTestNoUpdatesEnabled => InternalTestNoUpdates;
     public bool VerboseLoggingEnabled { get; private set; }
     public bool DeveloperToolsUnlocked { get; private set; }
@@ -35,7 +35,7 @@ public sealed class AppPreferencesService
     public event Action? ThemeChanged;
     public event Action? LanguageChanged;
     public event Action? SpeakingModeChanged;
-    public event Action? EtsProgramIntegrationChanged;
+    public event Action? MinimizeToTrayChanged;
 
     public void SetTheme(string theme)
     {
@@ -75,13 +75,13 @@ public sealed class AppPreferencesService
         Save();
     }
 
-    public void SetEtsProgramIntegration(bool enabled)
+    public void SetMinimizeToTray(bool enabled)
     {
-        if (IntegrateEtsMainProgramEnabled == enabled) return;
-        IntegrateEtsMainProgramEnabled = enabled;
+        if (MinimizeToTrayEnabled == enabled) return;
+        MinimizeToTrayEnabled = enabled;
         Save();
-        DiagnosticLogService.Info("settings.ets_program_integration.changed", $"enabled={enabled}");
-        EtsProgramIntegrationChanged?.Invoke();
+        DiagnosticLogService.Info("settings.minimize_to_tray.changed", $"enabled={enabled}");
+        MinimizeToTrayChanged?.Invoke();
     }
 
     public void SetVerboseLogging(bool enabled)
@@ -167,7 +167,7 @@ public sealed class AppPreferencesService
             WelcomeCompleted = ReadBool(document.RootElement, "welcome_completed");
             AutoUpdateEnabled = !document.RootElement.TryGetProperty("auto_update_enabled", out JsonElement update) ||
                                 update.ValueKind is not (JsonValueKind.True or JsonValueKind.False) || update.GetBoolean();
-            IntegrateEtsMainProgramEnabled = ReadBool(document.RootElement, "integrate_ets_main_program_enabled");
+            MinimizeToTrayEnabled = ReadBool(document.RootElement, "minimize_to_tray_enabled");
             VerboseLoggingEnabled = ReadBool(document.RootElement, "verbose_logging_enabled");
             DeveloperToolsUnlocked = ReadBool(document.RootElement, "developer_tools_unlocked");
             if (document.RootElement.TryGetProperty("last_update_check_utc", out JsonElement lastCheck) &&
@@ -183,7 +183,7 @@ public sealed class AppPreferencesService
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-            File.WriteAllText(_path, JsonSerializer.Serialize(new
+            SettingsFileStore.Write(_path, JsonSerializer.Serialize(new
             {
                 theme = Theme,
                 language = Language,
@@ -192,13 +192,13 @@ public sealed class AppPreferencesService
                 virtual_cable_reminder_shown = VirtualCableReminderShown,
                 welcome_completed = WelcomeCompleted,
                 auto_update_enabled = AutoUpdateEnabled,
-                integrate_ets_main_program_enabled = IntegrateEtsMainProgramEnabled,
+                minimize_to_tray_enabled = MinimizeToTrayEnabled,
                 verbose_logging_enabled = VerboseLoggingEnabled,
                 developer_tools_unlocked = DeveloperToolsUnlocked,
                 last_update_check_utc = LastUpdateCheckUtc?.ToString("O")
             }));
         }
-        catch (Exception) { }
+        catch (Exception ex) { DiagnosticLogService.Warn("settings.preferences.save_failed", ex.Message); }
     }
 
     private static bool ReadBool(JsonElement root, string name) =>

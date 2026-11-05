@@ -5,6 +5,7 @@ namespace ETSAssistant.WinUI3.Services;
 public sealed record SpeakingPrepProgress(int Completed, int Total, string Message);
 
 public sealed record SpeakingPrepOutcome(SpeakingSession? Session, IReadOnlyList<string> Errors);
+public sealed record SpeakingPrepProgressSnapshot(string PackId, int Completed, int Total);
 
 /// <summary>
 /// Prepares a whole speaking paper for automation: resolves each answer,
@@ -12,8 +13,21 @@ public sealed record SpeakingPrepOutcome(SpeakingSession? Session, IReadOnlyList
 /// </summary>
 public sealed class SpeakingPrepService
 {
-    private const int CurrentPromptVersion = 2;
+    private const int CurrentPromptVersion = SpeakingTimingService.SessionVersion;
+    private readonly string _dataRoot;
     private static readonly SemaphoreSlim Gate = new(1, 1);
+    private static readonly object ProgressLock = new();
+    private static SpeakingPrepProgressSnapshot? _activeProgress;
+
+    public static SpeakingPrepProgressSnapshot? ActiveProgress
+    {
+        get { lock (ProgressLock) return _activeProgress; }
+    }
+
+    private static void SetActiveProgress(SpeakingPrepProgressSnapshot? progress)
+    {
+        lock (ProgressLock) _activeProgress = progress;
+    }
     private readonly SpeakingAnswerService _answers;
     private readonly DeepSeekService _deepSeek;
     private readonly AliyunTtsService _tts;
@@ -21,6 +35,7 @@ public sealed class SpeakingPrepService
 
     public SpeakingPrepService(string appRoot, string dataRoot)
     {
+        _dataRoot = dataRoot;
         _answers = new SpeakingAnswerService(dataRoot);
         _deepSeek = new DeepSeekService(appRoot);
         _tts = new AliyunTtsService(appRoot);
@@ -35,16 +50,18 @@ public sealed class SpeakingPrepService
     /// for the whole paper again.
     /// </summary>
     private SpeakingSession? FindReusableSession(string packId, string mode,
-        IReadOnlyList<SpeakingQuestion> questions)
+        IReadOnlyList<SpeakingQuestion> questions, IReadOnlyList<double> limits)
     {
         SpeakingSession? session = _sessionStore.Load();
         if (session is null || session.PackId != packId) return null;
         if (!string.Equals(session.Mode, mode, StringComparison.Ordinal)) return null;
-        if (mode == "flexible" && session.PromptVersion != CurrentPromptVersion) return null;
+        if (session.PromptVersion != CurrentPromptVersion) return null;
         if (session.Items.Count != questions.Count) return null;
         if (!session.Items.Select(item => item.Number).SequenceEqual(questions.Select(question => question.Number)))
             return null;
-        return session.Items.All(item => SpeakingSessionStore.IsUsableWavFile(item.WavPath))
+        return session.Items.Select((item, i) => SpeakingSessionStore.IsUsableWavFile(item.WavPath) &&
+            item.RecordingSeconds == (limits.Count == questions.Count ? (double?)limits[i] : null) &&
+            SpeakingTimingService.MinimumSpeed(SpeakingTimingService.WavSeconds(item.WavPath), item.RecordingSeconds) is not null).All(valid => valid)
             ? session
             : null;
     }
@@ -62,7 +79,8 @@ public sealed class SpeakingPrepService
                 LocalizationService.Current.Translate("common.invalid_credentials_error")
             });
 
-        SpeakingSession? reusable = FindReusableSession(packId, mode, questions);
+        IReadOnlyList<double> limits = SpeakingTimingService.ReadLimits(_dataRoot, packId, questions.Count);
+        SpeakingSession? reusable = FindReusableSession(packId, mode, questions, limits);
         if (reusable is not null)
         {
             progress?.Report(new SpeakingPrepProgress(reusable.Items.Count, questions.Count,
@@ -79,6 +97,7 @@ public sealed class SpeakingPrepService
         }
 
         await Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        SetActiveProgress(new SpeakingPrepProgressSnapshot(packId, 0, questions.Count));
         try
         {
             var items = new List<SpeakingSessionItem>();
@@ -90,6 +109,8 @@ public sealed class SpeakingPrepService
                     ("mode", LocalizationService.Current.Translate(mode == "flexible"
                         ? "speaking.mode_generated" : "speaking.mode_standard")))));
 
+            SpeakingSession? previous = _sessionStore.Load();
+            bool reusePrevious = previous?.PackId == packId && previous.Mode == mode && previous.Items.Count == questions.Count;
             foreach (SpeakingQuestion question in questions)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -98,8 +119,11 @@ public sealed class SpeakingPrepService
                         ("current", question.Number), ("total", questions.Count),
                         ("kind", LocalizedQuestionType(question.Type)))));
 
-                string answer = question.StandardAnswer;
-                if (mode == "flexible")
+                SpeakingSessionItem? prior = reusePrevious ? previous!.Items.FirstOrDefault(item =>
+                    item.Number == question.Number && item.Type == question.Type && item.Prompt == question.Prompt &&
+                    SpeakingSessionStore.IsUsableWavFile(item.WavPath)) : null;
+                string answer = prior?.Answer ?? question.StandardAnswer;
+                if (mode == "flexible" && prior is null)
                 {
                     DeepSeekResult generated = await _deepSeek
                         .AskSpeakingAsync(question.RequestText, cancellationToken).ConfigureAwait(false);
@@ -114,22 +138,32 @@ public sealed class SpeakingPrepService
                     errors.Add(LocalizationService.Current.Format("speaking.no_answer_available",
                         ("question", question.Number)));
                     completed++;
+                    SetActiveProgress(new SpeakingPrepProgressSnapshot(packId, completed, questions.Count));
                     continue;
                 }
 
-                AliyunTtsResult tts = await _tts.SynthesizeToWavAsync(answer, cancellationToken)
-                    .ConfigureAwait(false);
+                AliyunTtsResult tts = prior is not null ? new AliyunTtsResult(true, prior.WavPath)
+                    : await _tts.SynthesizeToWavAsync(answer, cancellationToken).ConfigureAwait(false);
                 if (!tts.Success)
                 {
                     errors.Add(LocalizationService.Current.Format("speaking.tts_failed",
                         ("question", question.Number), ("detail", LocalizationService.Current.Translate(tts.Error))));
                     completed++;
+                    SetActiveProgress(new SpeakingPrepProgressSnapshot(packId, completed, questions.Count));
                     continue;
                 }
 
-                items.Add(new SpeakingSessionItem(question.Number, question.Type, question.Prompt, answer,
-                    tts.FilePath));
+                try
+                {
+                    double? limit = limits.Count == questions.Count ? limits[completed] : null;
+                    items.Add(await FitAudioAsync(question, answer, tts, limit, cancellationToken).ConfigureAwait(false));
+                }
+                catch (InvalidOperationException ex)
+                {
+                    errors.Add(LocalizationService.Current.Format("speaking.timing_failed", ("question", question.Number), ("detail", ex.Message)));
+                }
                 completed++;
+                SetActiveProgress(new SpeakingPrepProgressSnapshot(packId, completed, questions.Count));
                 progress?.Report(new SpeakingPrepProgress(completed, questions.Count,
                     LocalizationService.Current.Format("speaking.generated_progress",
                         ("completed", completed), ("total", questions.Count),
@@ -154,8 +188,73 @@ public sealed class SpeakingPrepService
         }
         finally
         {
+            SetActiveProgress(null);
             Gate.Release();
         }
+    }
+
+    private async Task<SpeakingSessionItem> FitAudioAsync(SpeakingQuestion question, string answer,
+        AliyunTtsResult audio, double? limit, CancellationToken cancellationToken)
+    {
+        for (int attempt = 0; attempt <= 3; attempt++)
+        {
+            double duration = SpeakingTimingService.WavSeconds(audio.FilePath);
+            double? speed = SpeakingTimingService.MinimumSpeed(duration, limit);
+            if (speed is not null)
+            {
+                DiagnosticLogService.Info("speaking.timing.fitted", $"question={question.Number} source={duration:F2}s budget={limit:F2}s speed={speed:F2}x");
+                return new SpeakingSessionItem(question.Number, question.Type, question.Prompt, answer, audio.FilePath)
+                    { RecordingSeconds = limit, PlaybackSpeed = speed.Value };
+            }
+            if (attempt == 3 || limit is null || duration <= 0)
+                throw new InvalidOperationException(LocalizationService.Current.Translate("speaking.timing_still_too_long"));
+            cancellationToken.ThrowIfCancellationRequested();
+            DiagnosticLogService.Info("speaking.timing.regenerating", $"question={question.Number} source={duration:F2}s budget={limit:F2}s attempt={attempt + 1}");
+            int speechRate = 0;
+            if (question.Type == "speaking.kind_read_aloud")
+            {
+                // Preserve assigned words; request a more compact synthesis, never summarize a read-aloud passage.
+                speechRate = (attempt + 1) * 100;
+                answer = question.SourceText.Length > 0 ? question.SourceText : question.StandardAnswer;
+            }
+            else
+            {
+                int words = System.Text.RegularExpressions.Regex.Matches(answer, @"\S+").Count;
+                int maxWords = Math.Max(1, (int)Math.Floor(words * SpeakingTimingService.UsableSeconds(limit.Value) * 1.35 / duration * .9));
+                var generated = await _deepSeek.AskSpeakingAsync(question.RequestText + "\n\nPrevious answer:\n" + answer,
+                    cancellationToken, $"This is a timed response. Regenerate a shorter English answer, at most {maxWords} words. " +
+                    "Keep the essential answer and required number of questions. Remove filler and examples. Return only spoken text.").ConfigureAwait(false);
+                if (!generated.Success || string.IsNullOrWhiteSpace(generated.Text))
+                    throw new InvalidOperationException(generated.Error);
+                answer = generated.Text.Trim();
+            }
+            audio = await _tts.SynthesizeToWavAsync(answer, cancellationToken, speechRate).ConfigureAwait(false);
+            if (!audio.Success) throw new InvalidOperationException(audio.Error);
+        }
+        throw new InvalidOperationException();
+    }
+
+    public async Task<SpeakingSession> RepairTimingAsync(string sessionPath, int index, double seconds,
+        CancellationToken cancellationToken = default)
+    {
+        if (!double.IsFinite(seconds) || seconds <= 0 || seconds > 600) throw new ArgumentOutOfRangeException(nameof(seconds));
+        await Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var session = System.Text.Json.JsonSerializer.Deserialize<SpeakingSession>(await File.ReadAllTextAsync(sessionPath, cancellationToken))
+                ?? throw new InvalidOperationException("Invalid speaking session");
+            if (index < 0 || index >= session.Items.Count) throw new ArgumentOutOfRangeException(nameof(index));
+            var original = session.Items[index];
+            var question = _answers.Load(session.PackId).FirstOrDefault(q => q.Number == original.Number)
+                ?? throw new InvalidOperationException("Speaking question no longer exists");
+            var item = await FitAudioAsync(question, original.Answer, new AliyunTtsResult(true, original.WavPath), seconds, cancellationToken).ConfigureAwait(false);
+            var items = session.Items.ToArray();
+            items[index] = item;
+            session = session with { Items = items, PromptVersion = CurrentPromptVersion };
+            _sessionStore.Save(session);
+            return session;
+        }
+        finally { Gate.Release(); }
     }
 
     private static string LocalizedQuestionType(string type)

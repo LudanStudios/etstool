@@ -43,9 +43,6 @@
                 <NavigationViewItem Content="navigation.overview" Tag="overview">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Home" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem x:Name="EtsPreviewNavigationItem" Content="common.program_preview" Tag="etsPreview" Visibility="Collapsed">
-                    <NavigationViewItem.Icon><SymbolIcon Symbol="View" /></NavigationViewItem.Icon>
-                </NavigationViewItem>
                 <NavigationViewItem Content="common.papers" Tag="papers">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Folder" /></NavigationViewItem.Icon>
                 </NavigationViewItem>

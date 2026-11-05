@@ -52,6 +52,13 @@ public sealed partial class PapersPage : Page
 
     private void Refresh_Click(object sender, RoutedEventArgs e) => _ = ReloadAsync();
 
+    private void PaperRow_Loaded(object sender, RoutedEventArgs e)
+    {
+        // Rows are realized after the page's localization pass, including recycled list rows.
+        if (sender is DependencyObject row)
+            LocalizationService.Current.Apply(row);
+    }
+
     private void OpenFolder_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.DataContext is not PaperEntry paper) return;

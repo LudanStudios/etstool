@@ -260,6 +260,8 @@ public sealed class LocalizationService
         TranslateStringProperty(root, "PlaceholderText");
         if (ToolTipService.GetToolTip(root) is string toolTip)
             ToolTipService.SetToolTip(root, TranslateElementValue(root, "ToolTip", toolTip));
+        else if (ToolTipService.GetToolTip(root) is DependencyObject toolTipObject)
+            Apply(toolTipObject, visited);
         if (AutomationProperties.GetName(root) is string automationName)
             AutomationProperties.SetName(root, TranslateElementValue(root, "AutomationName", automationName));
 

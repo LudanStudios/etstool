@@ -27,7 +27,7 @@
                         <StackPanel Spacing="7">
                             <TextBlock Text="settings.skip_interval_seconds" FontWeight="SemiBold" />
                             <NumberBox x:Name="SkipBox" Minimum="0" Maximum="60" SmallChange="0.5"
-                                       SpinButtonPlacementMode="Inline" Value="0" />
+                                       SpinButtonPlacementMode="Inline" Value="0" ValueChanged="SkipBox_ValueChanged" />
                             <TextBlock Text="settings.set_minimum_retry_interval_next" FontSize="12" Opacity="0.68" />
                         </StackPanel>
                         <StackPanel Grid.Column="1" Spacing="7">
@@ -43,14 +43,14 @@
                     </Grid>
                     <Rectangle Height="1" Fill="{ThemeResource CardStrokeColorDefaultBrush}" />
                     <StackPanel Spacing="3">
-                        <CheckBox x:Name="AutostartCheck" Content="settings.start_listener_background_when_sign" />
+                        <CheckBox x:Name="AutostartCheck" Content="settings.start_listener_background_when_sign" Click="Autostart_Click" />
                         <TextBlock Text="settings.wait_ets_start_show_assistant" FontSize="12" Opacity="0.68" />
                     </StackPanel>
                     <StackPanel Spacing="3">
-                        <CheckBox x:Name="EtsProgramIntegrationCheck" IsChecked="False"
-                                  Click="EtsProgramIntegration_Click">
+                        <CheckBox x:Name="MinimizeToTrayCheck" IsChecked="False"
+                                  Click="MinimizeToTray_Click">
                             <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                <TextBlock Text="settings.integrate_ets_main_app" FontSize="14" FontWeight="SemiBold"
+                                <TextBlock Text="settings.minimize_to_tray" FontSize="14" FontWeight="SemiBold"
                                            VerticalAlignment="Center" />
                                 <Border Style="{StaticResource BetaBadgeStyle}">
                                     <TextBlock Text="BETA" FontSize="10" FontWeight="SemiBold"
@@ -59,15 +59,11 @@
                                 </Border>
                             </StackPanel>
                         </CheckBox>
-                        <TextBlock Text="settings.show_program_preview_embed_ets"
+                        <TextBlock Text="settings.minimize_to_tray_description"
                                    FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                     </StackPanel>
                     <InfoBar x:Name="SaveInfoBar" IsOpen="False" />
-                    <Button Click="Save_Click" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Left">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <SymbolIcon Symbol="Save" /><TextBlock Text="settings.save_settings" />
-                        </StackPanel>
-                    </Button>
+                    <TextBlock Text="settings.saved_applied_automatically" FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
                 </StackPanel>
             </Border>
 

@@ -13,7 +13,8 @@ namespace ETSAssistant.WinUI3.Pages;
 public sealed partial class SettingsPage : Page
 {
     private readonly AssistantService _service = AssistantService.Current;
-    private bool _loading;
+    private bool _loading = true;
+    private AssistantSettings? _savedSettings;
     private bool _virtualCableBusy;
     private bool _csvPickerActive;
     private static string T(string key) => LocalizationService.Current.Translate(key);
@@ -34,15 +35,16 @@ public sealed partial class SettingsPage : Page
 
     private void LoadValues()
     {
+        _loading = true;
         var settings = _service.LoadSettings();
+        _savedSettings = settings;
         AccuracySlider.Value = settings.Accuracy;
         AccuracyText.Text = $"{Math.Round(settings.Accuracy * 100):0}%";
         SkipBox.Value = settings.SkipInterval;
         AutostartCheck.IsChecked = settings.StartAtLogin;
+        MinimizeToTrayCheck.IsChecked = AppPreferencesService.Current.MinimizeToTrayEnabled;
         EtsPathText.Text = _service.EtsExe ?? T("settings.ets_path_not_found");
-        _loading = true;
         SpeakingModeBox.SelectedIndex = AppPreferencesService.Current.SpeakingMode == "flexible" ? 1 : 0;
-        EtsProgramIntegrationCheck.IsChecked = AppPreferencesService.Current.IntegrateEtsMainProgramEnabled;
         _loading = false;
         UpdateApiKeyStatus();
         UpdateAliyunStatus();
@@ -182,10 +184,10 @@ public sealed partial class SettingsPage : Page
             AppPreferencesService.Current.SetSpeakingMode(mode);
     }
 
-    private void EtsProgramIntegration_Click(object sender, RoutedEventArgs e)
+    private void MinimizeToTray_Click(object sender, RoutedEventArgs e)
     {
         if (_loading || sender is not CheckBox checkBox) return;
-        AppPreferencesService.Current.SetEtsProgramIntegration(checkBox.IsChecked == true);
+        AppPreferencesService.Current.SetMinimizeToTray(checkBox.IsChecked == true);
     }
 
     private void UpdateApiKeyStatus() =>
@@ -363,7 +365,12 @@ public sealed partial class SettingsPage : Page
     private void AccuracySlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
     {
         if (AccuracyText is not null) AccuracyText.Text = $"{Math.Round(e.NewValue * 100):0}%";
+        SaveAnswerSettings();
     }
+
+    private void SkipBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args) => SaveAnswerSettings();
+
+    private void Autostart_Click(object sender, RoutedEventArgs e) => SaveAnswerSettings(updateAutostart: true);
 
     private void Rescan_Click(object sender, RoutedEventArgs e)
     {
@@ -401,28 +408,44 @@ public sealed partial class SettingsPage : Page
         catch (Exception ex) { InfoBarPresenter.Show(SaveInfoBar, T("settings.select_folder_failed"), ex.Message, InfoBarSeverity.Error); }
     }
 
-    private void Save_Click(object sender, RoutedEventArgs e)
+    private void SaveAnswerSettings(bool updateAutostart = false)
     {
+        if (_loading || _savedSettings is null) return;
+        // An unfinished NumberBox edit is not a valid setting. Keep the last saved value.
+        if (!double.IsFinite(SkipBox.Value) || SkipBox.Value < 0 || SkipBox.Value > 60) return;
         try
         {
-            if (!double.IsFinite(SkipBox.Value) || SkipBox.Value < 0 || SkipBox.Value > 60)
-                throw new ArgumentOutOfRangeException(nameof(SkipBox), T("settings.skip_interval_validation"));
-            var settings = new AssistantSettings(AccuracySlider.Value,
-                Guid.NewGuid().ToString("N"), SkipBox.Value,
-                AutostartCheck.IsChecked == true,
-                AppPreferencesService.Current.VerboseLoggingEnabled);
+            var settings = _savedSettings with
+            {
+                Accuracy = AccuracySlider.Value,
+                SkipInterval = SkipBox.Value,
+                StartAtLogin = AutostartCheck.IsChecked == true,
+                VerboseLoggingEnabled = AppPreferencesService.Current.VerboseLoggingEnabled
+            };
+            if (settings == _savedSettings && !updateAutostart) return;
             _service.SaveSettings(settings);
-            string warning = _service.TryInstallAutostart(settings.StartAtLogin);
-            if (settings.StartAtLogin) _service.EnsureListener();
-            InfoBarPresenter.Show(SaveInfoBar, T(warning.Length == 0 ? "settings.saved" : "settings.saved_autostart_warning"),
-                warning.Length == 0 ? T("settings.saved_autostart_detail") : warning,
-                warning.Length == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
+            _savedSettings = settings with { Seed = _service.LoadSettings().Seed };
+            if (updateAutostart)
+            {
+                string warning = _service.TryInstallAutostart(settings.StartAtLogin);
+                if (warning.Length > 0)
+                {
+                    AutostartCheck.IsChecked = _service.IsAutostartEnabled;
+                    _savedSettings = _savedSettings with { StartAtLogin = AutostartCheck.IsChecked == true };
+                    InfoBarPresenter.Show(SaveInfoBar, T("settings.saved_autostart_warning"), warning, InfoBarSeverity.Warning);
+                    return;
+                }
+                if (settings.StartAtLogin) _service.EnsureListener();
+            }
+            SaveInfoBar.IsOpen = false;
         }
         catch (Exception ex)
         {
+            DiagnosticLogService.Error("settings.auto_save.failed", ex);
             InfoBarPresenter.Show(SaveInfoBar, T("settings.settings_save_failed"), ex.Message, InfoBarSeverity.Error);
         }
     }
+
 }
 
 /// <summary>

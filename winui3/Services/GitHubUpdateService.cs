@@ -33,7 +33,7 @@ public sealed class GitHubUpdateService
     private static HttpClient CreateClient()
     {
         var client = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
-        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("ETS-Tool", "1.2.5"));
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("ETS-Tool", "1.3.0"));
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
         return client;
     }

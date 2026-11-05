@@ -54,27 +54,20 @@ def warn_throttled(key: str, message: str, interval_seconds: float = 20.0) -> No
 
 NAV_STATUS_JS = r"""(()=>{
  const docs=[document,document.querySelector('iframe.examIframe')?.contentDocument].filter(Boolean);
- const green=value=>{
-   const m=String(value||'').match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
-   if(!m)return false;
-   const r=Number(m[1]),g=Number(m[2]),b=Number(m[3]);
-   return g>=90&&g>r*1.18&&g>b*0.82;
- };
  const hasDoneMarker=tile=>{
    const nodes=[tile,...tile.querySelectorAll('*')].slice(0,64);
-   for(let parent=tile.parentElement,depth=0;parent&&depth<4;parent=parent.parentElement,depth++)nodes.push(parent);
    for(const node of nodes){
      const tokens=(node.getAttribute('class')||'').split(/\s+/).filter(Boolean);
      if(tokens.some(token=>/(^|[-_])(answered|complete|completed|done|finished|success|correct)([-_]|$)/i.test(token)&&! /^(un|not)[-_]/i.test(token)))return true;
      const label=[node.getAttribute('aria-label'),node.getAttribute('title'),node.getAttribute('data-status')].filter(Boolean).join(' ');
      if(/已答|已完成|已作答|\banswered\b|\bcompleted\b|\bfinished\b|\bdone\b/i.test(label))return true;
      if(/^[✓✔√]$/.test((node.textContent||'').trim()))return true;
-     const view=node.ownerDocument.defaultView,style=view.getComputedStyle(node);
-     if(green(style.color)||green(style.backgroundColor)||green(style.borderColor)||green(style.fill)||green(style.stroke))return true;
+     // A green ancestor can style the whole navigation group, including unanswered
+     // tiles. Only explicit status markers inside the exact tile count as answered.
+     const view=node.ownerDocument.defaultView;
      for(const pseudo of ['::before','::after']){
        const ps=view.getComputedStyle(node,pseudo);
        if(ps.content&&ps.content!=='none'&&/[✓✔√]/.test(ps.content))return true;
-       if(green(ps.color)||green(ps.backgroundColor)||green(ps.borderColor))return true;
      }
    }
    return false;
@@ -120,7 +113,7 @@ QUESTION_JS = r"""(questionOrder={})=>{
  const fr=f.getBoundingClientRect();
  const sx=fr.width/(f.clientWidth||fr.width),sy=fr.height/(f.clientHeight||fr.height);
  const frameLeft=fr.left+f.clientLeft*sx,frameTop=fr.top+f.clientTop*sy;
- const questions=qs.map(q=>{const order=questionOrder[q.id]||null,nav=order?navStatus(order):{done:false,found:false,answeredCount:null};return {id:q.id,order,contentText:(q.innerText||q.textContent||'').replace(/\s+/g,' ').trim(),recorded:nav.done,navFound:nav.found,answeredCount:nav.answeredCount,options:[...q.querySelectorAll('.choose2')].map(e=>{
+ const questions=qs.map(q=>{const order=questionOrder[q.id]||null,nav=order?navStatus(order):{done:false,found:false,answeredCount:null};const options=[...q.querySelectorAll('.choose2')].map(e=>{
    const t=e.querySelector('.choose2_text')||e,r=t.getBoundingClientRect(),er=e.getBoundingClientRect();
    const candidates=[e.querySelector('input[type="radio"]:not(:disabled)'),e.querySelector('label,[role="radio"]'),t,e];
    const clicks=candidates.filter(Boolean).map(target=>{
@@ -131,7 +124,7 @@ QUESTION_JS = r"""(questionOrder={})=>{
    const classSelected=[...e.classList].some(c=>/(?:^|[_-])(selected|checked)$/i.test(c));
    return {id:e.id,cls:e.className,text:t.innerText,selected:classSelected||e.getAttribute('aria-checked')==='true'||e.getAttribute('aria-selected')==='true'||e.getAttribute('aria-pressed')==='true'||e.matches(':checked')||!!e.querySelector(':checked'),
      clicks:clicks.length?clicks:[{x:frameLeft+(hit.left+hit.width/2)*sx,y:frameTop+(hit.top+hit.height/2)*sy}]};
-  })}});
+  });return {id:q.id,order,contentText:(q.innerText||q.textContent||'').replace(/\s+/g,' ').trim(),recorded:nav.done,navFound:nav.found,answeredCount:nav.answeredCount,anySelected:options.some(option=>option.selected),options};});
  return JSON.stringify({ready:true,questions,pageText:pageText(),url:location.href});
 }"""
 
@@ -187,8 +180,9 @@ CHECK_JS = r"""(id,index,number)=>{
  const e=q?.querySelectorAll('.choose2')[index];
  const classSelected=!!e&&[...e.classList].some(c=>/(?:^|[_-])(selected|checked)$/i.test(c));
  const selected=!!e&&(classSelected||e.getAttribute('aria-checked')==='true'||e.getAttribute('aria-selected')==='true'||e.getAttribute('aria-pressed')==='true'||e.matches(':checked')||!!e.querySelector(':checked'));
+ const anySelected=!!q&&[...q.querySelectorAll('.choose2')].some(option=>[...option.classList].some(c=>/(?:^|[_-])(selected|checked)$/i.test(c))||option.getAttribute('aria-checked')==='true'||option.getAttribute('aria-selected')==='true'||option.getAttribute('aria-pressed')==='true'||option.matches(':checked')||!!option.querySelector(':checked'));
  const nav=navStatus(number);
- return JSON.stringify({id:q?.id,cls:e?.className,selected,recorded:nav.done,navFound:nav.found,answeredCount:nav.answeredCount});
+ return JSON.stringify({id:q?.id,cls:e?.className,selected,anySelected,recorded:nav.done,navFound:nav.found,answeredCount:nav.answeredCount});
 }"""
 
 
@@ -495,9 +489,11 @@ def first_unanswered_in_visible_range(
     return min(missed, key=lambda question_id: question_order_key(question_id, question_order)) if missed else None
 
 
-def load_answer_config(path: Path = DEFAULT_CONFIG) -> tuple[float, str, float, bool]:
+def load_answer_config(path: Path = DEFAULT_CONFIG, *, allow_missing: bool = True) -> tuple[float, str, float, bool]:
     """Read the small, flat YAML subset used for QA answer settings."""
     if not path.is_file():
+        if not allow_missing:
+            raise FileNotFoundError(path)
         return 1.0, "default", 0.0, False
     values: dict[str, str] = {}
     try:
@@ -592,6 +588,13 @@ def question_signature(questions: list[dict[str, Any]]) -> tuple[tuple[str, str]
     )
 
 
+def question_has_selected_option(question: dict[str, Any]) -> bool:
+    """A completion marker is not enough; at least one answer must be selected."""
+    return bool(question.get("anySelected")) or any(
+        bool(option.get("selected")) for option in question.get("options") or []
+    )
+
+
 def choose_answer(client: CDPClient, question: dict[str, Any], letter: str) -> bool:
     question_id = str(question.get("id", ""))
     index = "ABCD".find(letter)
@@ -599,7 +602,6 @@ def choose_answer(client: CDPClient, question: dict[str, Any], letter: str) -> b
     if index < 0 or index >= len(options):
         return False
     order_number = question.get("order")
-    initial_answered_count = question.get("answeredCount")
     check_expr = f"({CHECK_JS})({json.dumps(question_id)},{index},{json.dumps(order_number)})"
 
     def read_state() -> dict[str, Any]:
@@ -608,8 +610,21 @@ def choose_answer(client: CDPClient, question: dict[str, Any], letter: str) -> b
         except (CDPError, TypeError, json.JSONDecodeError):
             return {}
 
-    def is_recorded() -> bool:
-        return bool(read_state().get("recorded"))
+    # Take the global count baseline immediately before this individual option click.
+    # The page snapshot may contain a stale count shared by several visible questions.
+    initial_state = read_state()
+    initial_answered_count = initial_state.get("answeredCount")
+    if (
+        initial_state.get("id") == question_id
+        and initial_state.get("recorded")
+        and initial_state.get("anySelected")
+    ):
+        return True
+    if initial_state.get("recorded") and not initial_state.get("anySelected"):
+        warn_throttled(
+            f"recorded-without-selection:{question_id}",
+            f"题目 {question_id} 的导航状态显示已答，但没有检测到任何选项；忽略该状态并重新录入。",
+        )
 
     def is_confirmed() -> bool:
         state = read_state()
@@ -623,9 +638,6 @@ def choose_answer(client: CDPClient, question: dict[str, Any], letter: str) -> b
             and current_count is not None
             and int(current_count) > int(initial_answered_count)
         )
-
-    if question.get("recorded") or is_recorded():
-        return True
 
     # Use a real DevTools input click first. Some ETS builds ignore HTMLElement.click()
     # because the option handler checks for a trusted user input event.
@@ -823,6 +835,32 @@ def run_once(
                     )
                     continue
                 visible_ids = {str(question.get("id", "")) for question in questions}
+
+                def click_next_after_audit() -> bool:
+                    current_questions = visible_questions(client, question_order)
+                    current_by_id = {
+                        str(question.get("id", "")): question
+                        for question in current_questions
+                        if question.get("id")
+                    }
+                    unconfirmed = []
+                    for question_id in visible_ids:
+                        current = current_by_id.get(question_id)
+                        if current is None or not question_has_selected_option(current):
+                            unconfirmed.append(question_id)
+                    if unconfirmed:
+                        warn_throttled(
+                            f"next-blocked-unselected:{pack_id}:{','.join(sorted(unconfirmed))}",
+                            f"切题前复核发现可见题目未检测到已选选项（{', '.join(sorted(unconfirmed))}）；已阻止跳题并等待重试。",
+                        )
+                        return False
+                    return click_next(
+                        client,
+                        set(current_by_id),
+                        skip_interval_seconds,
+                        current_questions,
+                    )
+
                 if processed is not None and visible_ids:
                     # Only count a visible question as processed when its selected
                     # state is confirmed. Do not infer that earlier IDs were answered
@@ -830,7 +868,7 @@ def run_once(
                     # a page is rendering, which otherwise permanently skips them.
                     for question in questions:
                         question_id = str(question.get("id", ""))
-                        if question.get("recorded"):
+                        if question.get("recorded") and question_has_selected_option(question):
                             processed.add(question_id)
                         else:
                             processed.discard(question_id)
@@ -847,11 +885,11 @@ def run_once(
                             f"试卷 {pack_id} 检测到尚未确认作答的题目 {missed_id}；已暂停切题以避免漏答。",
                         )
                         return "waiting", missed_id
-                    if remaining and click_next(client, visible_ids, skip_interval_seconds, questions):
+                    if remaining and click_next_after_audit():
                         return "advanced", None
                     if not remaining:
                         last_id = max(answers, key=lambda question_id: question_order_key(question_id, question_order))
-                        if click_next(client, visible_ids, skip_interval_seconds, questions):
+                        if click_next_after_audit():
                             print("Advanced past the last local question group; ETS may complete the section automatically.", flush=True)
                             return "complete", last_id
                         print("Next button click was not confirmed; will retry while this ETS page remains open.", flush=True)
@@ -889,11 +927,11 @@ def run_once(
                     )
                     return "waiting", missed_id
                 if remaining:
-                    if not click_next(client, visible_ids, skip_interval_seconds, questions):
+                    if not click_next_after_audit():
                         print("Next button did not advance the visible questions; will retry.", flush=True)
                         return "waiting", None
                 else:
-                    if click_next(client, visible_ids, skip_interval_seconds, questions):
+                    if click_next_after_audit():
                         print("Advanced past the last local question group; ETS may complete the section automatically.", flush=True)
                         return "complete", sorted(selected_ids, key=lambda question_id: question_order_key(question_id, question_order))[-1]
                     print("Last answers are selected, but ETS did not advance; will retry the next button.", flush=True)
@@ -932,12 +970,13 @@ def watch(root: Path, endpoint: str, config_path: Path | None = None) -> int:
     last_config_check = time.monotonic()
     while True:
         try:
-            if time.monotonic() - last_config_check >= 1:
+            if time.monotonic() - last_config_check >= 0.25:
                 last_config_check = time.monotonic()
                 try:
                     current_mtime = settings_path.stat().st_mtime_ns
                     if current_mtime != config_mtime:
-                        new_accuracy, new_seed, new_skip, new_verbose = load_answer_config(settings_path)
+                        # Keep the last valid settings if a file replacement is in progress.
+                        new_accuracy, new_seed, new_skip, new_verbose = load_answer_config(settings_path, allow_missing=False)
                         accuracy, random_seed, skip_interval = new_accuracy, new_seed, new_skip
                         verbose_logging_enabled = new_verbose
                         config_mtime = current_mtime

@@ -182,8 +182,6 @@ public sealed partial class OverviewPage : Page
                 ? LocalizationService.Current.Translate("overview.listener_started_ets_opening") : warnings;
             InfoBarPresenter.Show(GeneralInfoBar, title, message,
                 warnings.Length == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
-            if (AppPreferencesService.Current.IntegrateEtsMainProgramEnabled)
-                MainWindow.Current?.NavigateToTag("etsPreview");
         }
         catch (Exception ex) { await ShowErrorAsync(ex.Message); }
     }

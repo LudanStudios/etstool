@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import subprocess
@@ -101,9 +102,62 @@ def wav_duration_seconds(path: str | Path) -> float:
         return 0.0
 
 
-def playback_speed_factor(path: str | Path) -> float:
-    """Play generated speech at its natural speed; do not compress by duration."""
-    return PLAYER_SPEED_FACTOR
+MAX_PLAYBACK_SPEED = 1.5
+
+
+class TimingBudgetError(ValueError):
+    pass
+
+
+def usable_recording_seconds(seconds: float) -> float:
+    return max(0.0, seconds - min(1.25, seconds * 0.15))
+
+
+def playback_speed_factor(path: str | Path, available_seconds: float | None = None) -> float:
+    """Smallest 0.01x step that fits; retain natural speed whenever possible."""
+    duration = wav_duration_seconds(path)
+    if available_seconds is None:
+        return PLAYER_SPEED_FACTOR
+    usable = usable_recording_seconds(available_seconds)
+    if not math.isfinite(usable) or usable <= 0 or duration <= 0:
+        raise TimingBudgetError("No usable recording time")
+    speed = max(1.0, math.ceil((duration / usable - 1e-9) * 100) / 100)
+    if speed > MAX_PLAYBACK_SPEED:
+        raise TimingBudgetError(f"{duration:.2f}s cannot fit {available_seconds:.2f}s at <=1.50x")
+    return speed
+
+
+def read_recording_limits(data_root: Path, pack_id: str, count: int) -> list[float]:
+    if not re.fullmatch(r"[0-9]+", pack_id):
+        return []
+    candidates = []
+    for path in (data_root / pack_id).glob("template_*/ctrl.json"):
+        try:
+            rows = json.loads(path.read_text(encoding="utf-8-sig"))
+            ordered = sorted((r for r in rows if r.get("filetype") == "action.record"),
+                             key=lambda r: float(r.get("order", "inf")))
+            limits = [float(r["playtime"]) for r in ordered]
+            if len(limits) == count and all(math.isfinite(x) and 0 < x <= 600 for x in limits):
+                candidates.append(limits)
+        except (OSError, ValueError, TypeError, KeyError):
+            continue
+    return candidates[0] if candidates and all(x == candidates[0] for x in candidates) else []
+
+
+def recording_budget(state: dict, declared_seconds: float | None) -> float | None:
+    remaining = state.get("recording_remaining_seconds")
+    if isinstance(remaining, (int, float)) and math.isfinite(remaining) and remaining >= 0:
+        return min(remaining, declared_seconds) if declared_seconds is not None else remaining
+    return declared_seconds
+
+
+def request_timing_regeneration(session_path: Path, session: dict, index: int, seconds: float) -> None:
+    request_path = Path(str(session_path) + ".timing-request.json")
+    temporary = Path(str(request_path) + ".tmp")
+    temporary.write_text(json.dumps({"PackId": str(session.get("PackId")), "Index": index,
+                                     "RecordingSeconds": seconds}), encoding="utf-8")
+    temporary.replace(request_path)
+    log(f"[{index + 1}/{len(session['Items'])}] 音频在 1.50x 内仍无法适配 {seconds:.1f}s 录音时间；已请求重新生成更短版本，本轮暂停，不跳题。")
 
 
 def playback_duration_seconds(path: str | Path, speed_factor: float | None = None) -> float:
@@ -163,19 +217,48 @@ def finished_player_status(player: subprocess.Popen[str]) -> tuple[bool, str] | 
     return failed, status or f"exit={player.returncode}; no DONE marker"
 
 
+PAGE_STATE_JS = r"""(()=>{
+ const docs=[document];
+ try {const d=document.querySelector('iframe.examIframe')?.contentDocument;if(d)docs.push(d);} catch{}
+ const visible=e=>!!e&&e.getClientRects().length>0&&e.ownerDocument.defaultView.getComputedStyle(e).visibility!=='hidden';
+ const text=docs.map(d=>d.body?.innerText||'').join('\n');
+ const phase=/(?:录音中|正在录音|recording)/i;
+ let remaining=null;
+ for(const doc of docs) {
+   for(const e of doc.querySelectorAll('span,div,p,label')) {
+     const own=(e.innerText||'').trim();
+     if(!visible(e)||own.length>90||!phase.test(own))continue;
+     let node=e;
+     for(let depth=0;node&&depth<3;node=node.parentElement,depth++) {
+       const value=(node.innerText||'').trim();
+       if(value.length>200)break;
+       const marker=value.match(phase);
+       if(!marker)continue;
+       const tail=value.slice(marker.index+marker[0].length).trim();
+       const clock=tail.match(/^[^\d]{0,12}(\d{1,2}):(\d{2})(?:[^\d]|$)/);
+       const secs=tail.match(/^[^\d]{0,12}(\d{1,3}(?:\.\d+)?)(?:\s*(?:秒|s(?:ec(?:onds)?)?)|\s*$)/i);
+       const n=clock?Number(clock[1])*60+Number(clock[2]):secs?Number(secs[1]):null;
+       if(n!==null&&n>=0&&n<=600){remaining=n;break;}
+     }
+     if(remaining!==null)break;
+   }
+   if(remaining!==null)break;
+ }
+ const buttons=docs.flatMap(d=>[...d.querySelectorAll('button')]);
+ return JSON.stringify({text,
+   stop:buttons.some(b=>b.matches('.btn-stopRecord')&&visible(b)),
+   play:buttons.some(b=>b.matches('.btn-play')&&visible(b)),
+   exam:docs.some(d=>!!d.querySelector('.exam-panel,.exam-progress,video.examVideo')),
+   recording:/(?:^|\n)\s*(?:录音中|正在录音|recording)(?=\s|\d|$)/im.test(text),
+   recording_remaining_seconds:remaining,
+   fix:docs.some(d=>[...d.querySelectorAll('button,span')].some(e=>visible(e)&&e.innerText?.trim()==='订正')),
+   next:buttons.some(b=>visible(b)&&b.innerText.trim()==='下一步'&&!b.disabled)
+ });
+})()"""
+
+
 def page_state(client: CDPClient) -> dict:
-    raw = client.evaluate(
-        "(()=>{const text=document.body.innerText;return JSON.stringify({"
-        "text,"
-        "stop:!!document.querySelector('button.btn-stopRecord'),"
-        "play:!!document.querySelector('button.btn-play'),"
-        "exam:!!document.querySelector('.exam-panel, .exam-progress, video.examVideo'),"
-        "recording:/(?:^|\\n)\\s*录音中(?:\\s|$)/.test(text),"
-        "fix:[...document.querySelectorAll('button,span')].some(e=>e.offsetParent!==null&&e.innerText&&e.innerText.trim()==='订正'),"
-        "next:[...document.querySelectorAll('button')].some(b=>b.offsetParent!==null&&b.innerText.trim()==='下一步'&&!b.disabled)"
-        "})})()"
-    )
-    return json.loads(raw)
+    return json.loads(client.evaluate(PAGE_STATE_JS))
 
 
 def click_next(client: CDPClient) -> bool:
@@ -218,7 +301,8 @@ def _main(argv: list[str] | None = None) -> int:
 
     DATA_ROOT = args.data_root.resolve()
     LOG_PATH = args.log.resolve() if args.log else DATA_ROOT / "ets_speaking_auto.log"
-    session = json.loads(find_session(args.session, DATA_ROOT).read_text(encoding="utf-8-sig"))
+    session_path = find_session(args.session, DATA_ROOT)
+    session = json.loads(session_path.read_text(encoding="utf-8-sig"))
     wavs = [item["WavPath"] for item in session.get("Items", [])]
     if not wavs:
         log("session has no WAV files")
@@ -237,6 +321,17 @@ def _main(argv: list[str] | None = None) -> int:
             details += f" 等 {len(invalid_wavs)} 题"
         log(f"口语音频文件已缺失或无效：{details}；已在 ETS 开始录音前中止，没有跳题。请重新生成音频。")
         return 6
+    limits = read_recording_limits(DATA_ROOT, str(session.get("PackId")), len(wavs))
+    budgets = []
+    for i, item in enumerate(session["Items"]):
+        declared = limits[i] if limits else item.get("RecordingSeconds")
+        budget = float(declared) if isinstance(declared, (int, float)) and 0 < declared <= 600 else None
+        budgets.append(budget)
+        try:
+            playback_speed_factor(wavs[i], budget)
+        except TimingBudgetError:
+            request_timing_regeneration(session_path, session, i, budget or 0)
+            return 10
     log(f"session pack={session.get('PackId')} items={len(wavs)} mode={session.get('Mode')}")
 
     targets = devtools_targets()
@@ -264,6 +359,7 @@ def _main(argv: list[str] | None = None) -> int:
     played = 0
     fix_attempts = 0
     mock_waiting_for_recording_end = False
+    recording_missing_since = None
 
     initial = page_state(client)
     log(f"page={page_url[:160]}")
@@ -277,6 +373,15 @@ def _main(argv: list[str] | None = None) -> int:
         while True:
             state = page_state(client)
             text = state["text"]
+            active_recording = state["recording"] if mock_exam else state["stop"]
+            if player is not None and player.poll() is None and not active_recording:
+                if recording_missing_since is None:
+                    recording_missing_since = time.monotonic()
+                if time.monotonic() - recording_missing_since < 0.5:
+                    time.sleep(0.1)
+                    continue
+            else:
+                recording_missing_since = None
             player_status = finished_player_status(player) if player is not None else None
             if player_status is not None and player_status[0]:
                 return_code = player.returncode
@@ -324,7 +429,12 @@ def _main(argv: list[str] | None = None) -> int:
                     if player is None and not mock_waiting_for_recording_end and index < len(wavs):
                         started_at = time.monotonic()
                         duration = wav_duration_seconds(wavs[index])
-                        current_speed_factor = playback_speed_factor(wavs[index])
+                        budget = recording_budget(state, budgets[index])
+                        try:
+                            current_speed_factor = playback_speed_factor(wavs[index], budget)
+                        except TimingBudgetError:
+                            request_timing_regeneration(session_path, session, index, budget or 0)
+                            return 10
                         playback_duration = duration / current_speed_factor
                         expected_playback_end = started_at + playback_duration + 0.25
                         playback_timeout_at = started_at + max(args.max_question_seconds, playback_duration + 10.0)
@@ -333,7 +443,7 @@ def _main(argv: list[str] | None = None) -> int:
                         played += 1
                         log(
                             f"[{index + 1}/{len(wavs)}] mock recording, playing {Path(wavs[index]).name} "
-                            f"({duration:.1f}s source, {playback_duration:.1f}s at {current_speed_factor:.2f}x)"
+                            f"({duration:.1f}s source, {playback_duration:.1f}s at {current_speed_factor:.2f}x; recording budget={budget}s)"
                         )
                         player = subprocess.Popen(
                             [args.player, "--speed", f"{current_speed_factor:.2f}", wavs[index]],
@@ -388,7 +498,12 @@ def _main(argv: list[str] | None = None) -> int:
                 if player is None and index < len(wavs):
                     started_at = time.monotonic()
                     duration = wav_duration_seconds(wavs[index])
-                    current_speed_factor = playback_speed_factor(wavs[index])
+                    budget = recording_budget(state, budgets[index])
+                    try:
+                        current_speed_factor = playback_speed_factor(wavs[index], budget)
+                    except TimingBudgetError:
+                        request_timing_regeneration(session_path, session, index, budget or 0)
+                        return 10
                     playback_duration = duration / current_speed_factor
                     expected_playback_end = started_at + playback_duration + 0.25
                     playback_timeout_at = started_at + max(args.max_question_seconds, playback_duration + 10.0)
@@ -397,7 +512,7 @@ def _main(argv: list[str] | None = None) -> int:
                     played += 1
                     log(
                         f"[{index + 1}/{len(wavs)}] recording, playing {Path(wavs[index]).name} "
-                        f"({duration:.1f}s source, {playback_duration:.1f}s at {current_speed_factor:.2f}x)"
+                        f"({duration:.1f}s source, {playback_duration:.1f}s at {current_speed_factor:.2f}x; recording budget={budget}s)"
                     )
                     player = subprocess.Popen(
                         [args.player, "--speed", f"{current_speed_factor:.2f}", wavs[index]],
@@ -423,6 +538,7 @@ def _main(argv: list[str] | None = None) -> int:
                     click_stop(client)
                     log(f"[{index + 1}/{len(wavs)}] 播放超时；已中止本轮自动口语，不推进下一题。")
                     return 8
+                time.sleep(0.1)
                 continue
 
             # Not recording: if a recording was auto-stopped, close the player.
@@ -453,7 +569,7 @@ def _main(argv: list[str] | None = None) -> int:
                 time.sleep(1.6)
             elif state["play"]:
                 click_play(client)
-                time.sleep(2.0)
+                time.sleep(0.1)
             else:
                 time.sleep(0.5)
     finally:
