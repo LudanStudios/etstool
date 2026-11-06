@@ -47,6 +47,8 @@ public sealed partial class PapersPage : Page
         _busy = busy;
         BusyRing.IsActive = busy;
         PaperList.IsEnabled = !busy;
+        RefreshButton.IsEnabled = !busy;
+        ClearAllButton.IsEnabled = !busy && PaperList.Items.Count > 0;
         if (busy && message.Length > 0) SummaryText.Text = message;
     }
 
@@ -242,6 +244,118 @@ public sealed partial class PapersPage : Page
         };
         if (await ETSAssistant.WinUI3.Services.DiagnosticLogService.ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
         await DeletePaperAsync(paper);
+    }
+
+    private async void ClearAll_Click(object sender, RoutedEventArgs e)
+    {
+        if (_busy) return;
+        DiagnosticLogService.Info("papers.clear_all.button.pressed");
+
+        IReadOnlyList<PaperEntry> papers;
+        try { papers = await Task.Run(_catalog.Scan); }
+        catch (Exception ex)
+        {
+            DiagnosticLogService.Error("papers.clear_all.scan.failed", ex);
+            ShowMessage(T("papers.read_failed"), ex.Message, InfoBarSeverity.Error);
+            return;
+        }
+
+        if (papers.Count == 0)
+        {
+            ShowMessage(T("papers.clear_all_none_title"), T("papers.clear_all_none_detail"), InfoBarSeverity.Informational);
+            return;
+        }
+
+        var dialog = new ContentDialog
+        {
+            Title = T("papers.clear_all_confirmation_title"),
+            Content = BuildClearAllWarning(papers.Count),
+            PrimaryButtonText = T("papers.clear_all_confirm"),
+            CloseButtonText = T("papers.cancel"),
+            DefaultButton = ContentDialogButton.None,
+            XamlRoot = XamlRoot
+        };
+        dialog.Opened += (_, _) =>
+        {
+            FocusCancelButton(dialog);
+            if (FindButton(dialog, T("papers.clear_all_confirm")) is Button confirm)
+            {
+                var danger = new SolidColorBrush(Color.FromArgb(255, 220, 38, 38));
+                confirm.Background = danger;
+                confirm.BorderBrush = danger;
+                confirm.Foreground = new SolidColorBrush(Color.FromArgb(255, 255, 255, 255));
+            }
+        };
+        if (await DiagnosticLogService.ShowDialogAsync(dialog, "papers.clear_all.confirmation") != ContentDialogResult.Primary)
+            return;
+
+        DiagnosticLogService.Info("papers.clear_all.started", $"confirmedCount={papers.Count}");
+        SetBusy(true, T("papers.clear_all_in_progress"));
+        try
+        {
+            (int deleted, List<string> failures) = await Task.Run(() =>
+            {
+                int removed = 0;
+                var failed = new List<string>();
+                foreach (PaperEntry paper in _catalog.Scan())
+                {
+                    try
+                    {
+                        _catalog.Delete(paper.PackId);
+                        removed++;
+                    }
+                    catch (Exception ex)
+                    {
+                        failed.Add(paper.PackId);
+                        DiagnosticLogService.Warn("papers.clear_all.paper.failed", $"paperId={paper.PackId} detail={ex.Message}");
+                    }
+                }
+                return (removed, failed);
+            });
+
+            SetBusy(false);
+            await ReloadAsync();
+            if (failures.Count == 0)
+            {
+                DiagnosticLogService.Info("papers.clear_all.completed", $"deleted={deleted}");
+                ShowMessage(T("papers.clear_all_completed_title"),
+                    F("papers.clear_all_completed_detail", ("count", deleted)), InfoBarSeverity.Success);
+            }
+            else
+            {
+                DiagnosticLogService.Warn("papers.clear_all.partial", $"deleted={deleted} failed={failures.Count}");
+                ShowMessage(T("papers.clear_all_partial_title"),
+                    F("papers.clear_all_partial_detail", ("deleted", deleted), ("failed", failures.Count),
+                        ("paperIds", string.Join(", ", failures))), InfoBarSeverity.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogService.Error("papers.clear_all.failed", ex);
+            ShowMessage(T("papers.clear_all_failed"), ex.Message, InfoBarSeverity.Error);
+        }
+        finally { SetBusy(false); }
+    }
+
+    private static FrameworkElement BuildClearAllWarning(int count)
+    {
+        Color warning = Color.FromArgb(255, 248, 113, 113);
+        var heading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        heading.Children.Add(new SymbolIcon(Symbol.Important) { Foreground = new SolidColorBrush(warning) });
+        heading.Children.Add(new TextBlock
+        {
+            Text = T("papers.delete_irreversible"), FontWeight = FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(warning)
+        });
+
+        var panel = new StackPanel { Spacing = 10 };
+        panel.Children.Add(heading);
+        panel.Children.Add(new TextBlock
+        {
+            Text = F("papers.clear_all_confirmation_message", ("count", count)),
+            TextWrapping = TextWrapping.Wrap
+        });
+        return panel;
     }
 
     private static void FocusCancelButton(DependencyObject root)

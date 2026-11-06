@@ -3,7 +3,8 @@ param(
     [string]$RuntimeRoot = $PSScriptRoot,
     [string]$AnswerConfigPath = (Join-Path $PSScriptRoot 'ets_answer_config.yaml'),
     [switch]$NoRestore,
-    [switch]$SuppressValidation
+    [switch]$SuppressValidation,
+    [switch]$MsiOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -117,15 +118,19 @@ if ($fileRows -eq 0) { throw 'The MSI File table is empty.' }
 
 New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
 $msiPath = Join-Path $releaseRoot $msiName
-$zipPath = Join-Path $releaseRoot $zipName
 Copy-Item -LiteralPath $builtMsi -Destination $msiPath -Force
-if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
-Compress-Archive -Path (Join-Path $payload '*') -DestinationPath $zipPath -CompressionLevel Optimal
-$zipArchive = [IO.Compression.ZipFile]::OpenRead($zipPath)
-try { $entryCount = @($zipArchive.Entries | Where-Object { -not $_.FullName.EndsWith('/') }).Count } finally { $zipArchive.Dispose() }
-$fileCount = @(Get-ChildItem -LiteralPath $payload -Recurse -File -Force).Count
-if ($entryCount -ne $fileCount) { throw "Portable ZIP entry count mismatch: expected $fileCount, got $entryCount." }
+if (-not $MsiOnly) {
+    $zipPath = Join-Path $releaseRoot $zipName
+    if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
+    Compress-Archive -Path (Join-Path $payload '*') -DestinationPath $zipPath -CompressionLevel Optimal
+    $zipArchive = [IO.Compression.ZipFile]::OpenRead($zipPath)
+    try { $entryCount = @($zipArchive.Entries | Where-Object { -not $_.FullName.EndsWith('/') }).Count } finally { $zipArchive.Dispose() }
+    $fileCount = @(Get-ChildItem -LiteralPath $payload -Recurse -File -Force).Count
+    if ($entryCount -ne $fileCount) { throw "Portable ZIP entry count mismatch: expected $fileCount, got $entryCount." }
+}
 
-Get-Item -LiteralPath $msiPath, $zipPath | Select-Object FullName, Length
-Get-FileHash -LiteralPath $msiPath, $zipPath -Algorithm SHA256 | Select-Object Path, Hash
+$outputPaths = @($msiPath)
+if (-not $MsiOnly) { $outputPaths += $zipPath }
+Get-Item -LiteralPath $outputPaths | Select-Object FullName, Length
+Get-FileHash -LiteralPath $outputPaths -Algorithm SHA256 | Select-Object Path, Hash
 Write-Output "Release package directory: $releaseRoot"

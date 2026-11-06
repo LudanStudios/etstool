@@ -19,10 +19,19 @@
                                FontWeight="SemiBold" VerticalAlignment="Center" />
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
                         <ProgressRing x:Name="BusyRing" Width="20" Height="20" IsActive="False" />
-                        <Button Click="Refresh_Click">
+                        <Button x:Name="RefreshButton" Click="Refresh_Click">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <SymbolIcon Symbol="Refresh" />
                                 <TextBlock Text="papers.refresh" />
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="ClearAllButton" Click="ClearAll_Click" IsEnabled="False"
+                                Background="#1AEF4444" BorderBrush="#33EF4444" CornerRadius="6"
+                                Foreground="#F87171" AutomationProperties.Name="papers.clear_all"
+                                ToolTipService.ToolTip="papers.clear_all">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <SymbolIcon Symbol="Delete" Foreground="#F87171" />
+                                <TextBlock Text="papers.clear_all" />
                             </StackPanel>
                         </Button>
                     </StackPanel>

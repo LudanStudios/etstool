@@ -100,6 +100,7 @@ if (Test-Path -LiteralPath (Join-Path $root '.git')) {
 $dotnetPublishArgs = @(
     'publish', $csproj, '--configuration', 'Release', '--runtime', 'win-x64',
     '--self-contained', 'true', '--output', $stageUi,
+    '-p:RestoreIgnoreFailedSources=true', '-p:NuGetAudit=false',
     "-p:BaseIntermediateOutputPath=$intermediateObj/",
     "-p:MSBuildProjectExtensionsPath=$intermediateObj/",
     "-p:BaseOutputPath=$intermediateBin/"

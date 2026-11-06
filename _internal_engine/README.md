@@ -1,5 +1,5 @@
 # ETStool
-> 本`readme.md`更新于`正式版 1.2.0 (ver.r1.2.0)`
+> 本`readme.md`更新于`正式版 1.2.2 (ver.r1.2.2)`
 
 ## 概述
 
