@@ -26,7 +26,6 @@ public sealed partial class ToolsPage : Page
     private readonly SpeakingSessionStore _sessionStore = new(AssistantService.Current.AppRoot);
     private readonly VirtualCableService _cable = new();
     private SpeakingSession? _session;
-    private int _sessionIndex;
     private string? _speakingPackId;
     private IReadOnlyList<SpeakingPaper> _speakingPapers = Array.Empty<SpeakingPaper>();
     private string? _lastTtsWavPath;
@@ -39,7 +38,6 @@ public sealed partial class ToolsPage : Page
     {
         InitializeComponent();
         _capture.StatusChanged += OnCaptureStatusChanged;
-        _cable.PlaybackEnded += OnCablePlaybackEnded;
         _autoSpeakingRunner.Output += ReportAutoSpeaking;
         _autoSpeakingRunner.Exited += () => DispatcherQueue.TryEnqueue(() =>
         {
@@ -49,7 +47,6 @@ public sealed partial class ToolsPage : Page
         Unloaded += (_, _) =>
         {
             _capture.StatusChanged -= OnCaptureStatusChanged;
-            _cable.PlaybackEnded -= OnCablePlaybackEnded;
         };
         Loaded += async (_, _) =>
         {
@@ -58,7 +55,6 @@ public sealed partial class ToolsPage : Page
             RefreshDeepSeekStatus();
             RefreshAliyunTtsStatus();
             RefreshAudioStatus();
-            RefreshSessionUi();
             UpdateSpeakingModeUi();
             UpdateCaptureUi();
             _updatingVerbose = true;
@@ -66,7 +62,6 @@ public sealed partial class ToolsPage : Page
             _updatingVerbose = false;
             EnvironmentText.Text = BuildEnvironmentText();
             await RefreshCableAsync();
-            await RefreshDefaultMicStatusAsync();
             await ProbePortAsync();
         };
     }
@@ -99,37 +94,6 @@ public sealed partial class ToolsPage : Page
         AppPreferencesService.Current.SetVerboseLogging(VerboseLoggingToggle.IsOn);
         ShowMessage(T("tools.verbose_logs_updated"), T(VerboseLoggingToggle.IsOn
             ? "tools.listener_verbose_on" : "tools.listener_verbose_off"), InfoBarSeverity.Informational);
-    }
-
-    private async Task RefreshDefaultMicStatusAsync()
-    {
-        DefaultAudioInputService audioInput = DefaultAudioInputService.Current;
-        DefaultAudioInputStatus? status = await DefaultAudioInputService.Current.GetStatusAsync();
-        string systemStatus = status is null
-            ? T("tools.default_input_unreadable")
-            : F("tools.default_input_status", ("device", status.Name),
-                ("kind", T(status.IsVirtualCable ? "tools.cable_output" : "tools.physical_other_device")));
-        string routeStatus = F("tools.ets_capture_route_status", ("device",
-            audioInput.HasActiveEtsRoute
-                ? audioInput.RoutedDeviceName ?? T("common.not_available")
-                : T("tools.ets_capture_route_inactive")));
-        DefaultMicStatusText.Text = systemStatus + Environment.NewLine + routeStatus;
-    }
-
-    private async void SetVirtualMicDefault_Click(object sender, RoutedEventArgs e)
-    {
-        string result = await DefaultAudioInputService.Current.SetVirtualDefaultAsync();
-        await RefreshDefaultMicStatusAsync();
-        bool succeeded = DefaultAudioInputService.Current.LastSetVirtualDefaultSucceeded;
-        ShowMessage(T(succeeded ? "tools.virtual_microphone_enabled" : "tools.set_virtual_microphone_failed"),
-            result, succeeded ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
-    }
-
-    private async void RestoreDefaultMic_Click(object sender, RoutedEventArgs e)
-    {
-        string result = await DefaultAudioInputService.Current.RestorePreviousAsync();
-        await RefreshDefaultMicStatusAsync();
-        ShowMessage(T("tools.default_input_status_title"), result, InfoBarSeverity.Informational);
     }
 
     private void OpenCapture_Click(object sender, RoutedEventArgs e)
@@ -288,230 +252,14 @@ public sealed partial class ToolsPage : Page
         }
     }
 
-    private void OnCablePlaybackEnded() =>
-        DispatcherQueue.TryEnqueue(() => SessionStatusText.Text = T("tools.playback_completed"));
-
-    private async Task RefreshCableAsync()
+    private async Task<bool> RefreshCableAsync()
     {
-        try
-        {
-            VirtualCableDevice? device = await _cable.RefreshAsync();
-            if (_cable.IsReady)
-            {
-                CableStatusText.Text = F("tools.virtual_cable_status", ("input", _cable.Current!.Name), ("output", _cable.Capture!.Name));
-            }
-            else if (_cable.IsAvailable)
-            {
-                CableStatusText.Text = F("tools.virtual_cable_capture_missing", ("input", _cable.Current!.Name));
-            }
-            else
-            {
-                CableStatusText.Text = T("tools.virtual_cable_not_installed");
-            }
-        }
+        try { await _cable.RefreshAsync(); return true; }
         catch (Exception ex)
         {
-            CableStatusText.Text = F("tools.virtual_cable_check_failed", ("detail", ex.Message));
+            DiagnosticLogService.Warn("developer_tools.virtual_cable.refresh_failed", ex.Message);
+            return false;
         }
-    }
-
-    private async void RefreshCable_Click(object sender, RoutedEventArgs e)
-    {
-        await RefreshCableAsync();
-        if (_cable.IsReady)
-            ShowMessage(T("tools.virtual_cable_ready_title"), F("tools.virtual_cable_status", ("input", _cable.Current!.Name), ("output", _cable.Capture!.Name)), InfoBarSeverity.Success);
-        else if (_cable.IsAvailable)
-            ShowMessage(T("tools.virtual_cable_missing_output_title"), T("tools.cable_input_needs_output"), InfoBarSeverity.Warning);
-        else
-            ShowMessage(T("tools.virtual_cable_missing_title"), T("tools.install_cable_in_settings"), InfoBarSeverity.Warning);
-    }
-
-    private void OpenSoundSettings_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            Process.Start(new ProcessStartInfo("ms-settings:sound") { UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            ShowMessage(T("tools.open_sound_settings_failed"), ex.Message, InfoBarSeverity.Error);
-        }
-    }
-
-    private void RefreshSessionUi()
-    {
-        _session ??= _sessionStore.Load();
-        SessionItemBox.ItemsSource = _session?.Items;
-        if (_session is null)
-        {
-            SessionStatusText.Text = T("tools.no_generated_audio_yet");
-            return;
-        }
-        SessionStatusText.Text = F("tools.session_summary", ("paperId", _session.PackId),
-            ("count", _session.Items.Count), ("mode", T(_session.Mode == "flexible" ? "tools.generated_mode" : "tools.standard_mode")));
-        if (_session.Items.Count > 0)
-        {
-            SessionItemBox.SelectedIndex = 0;
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                if (SessionItemBox.SelectedIndex < 0) SessionItemBox.SelectedIndex = 0;
-            });
-        }
-    }
-
-    private SpeakingSessionItem? SelectedSessionItem() =>
-        SessionItemBox.SelectedItem as SpeakingSessionItem ?? _session?.Items.FirstOrDefault();
-
-    private async void GenerateSession_Click(object sender, RoutedEventArgs e)
-    {
-        if (SpeakingPaperBox.SelectedItem is not SpeakingPaper paper)
-        {
-            ShowMessage(T("tools.paper_required"), T("tools.load_questions_then_choose_paper"),
-                InfoBarSeverity.Warning);
-            return;
-        }
-        if (paper.Questions.Count == 0)
-        {
-            ShowMessage(T("tools.no_speaking_questions"), T("tools.no_speaking_questions_for_paper"), InfoBarSeverity.Warning);
-            return;
-        }
-        string mode = AppPreferencesService.Current.SpeakingMode;
-        if (!AliyunTtsCredentialStore.HasCredentials || mode == "flexible" && !ApiKeyStore.HasKey)
-        {
-            if (MainWindow.Current is { } mainWindow)
-                await mainWindow.PromptForMissingCredentialsAsync();
-            return;
-        }
-
-        GenerateSessionButton.IsEnabled = false;
-        BatchProgress.Visibility = Visibility.Visible;
-        BatchProgress.Minimum = 0;
-        BatchProgress.Maximum = paper.Questions.Count;
-        BatchProgress.Value = 0;
-        var items = new List<SpeakingSessionItem>();
-        var errors = new List<string>();
-        int failed = 0;
-        try
-        {
-            for (int index = 0; index < paper.Questions.Count; index++)
-            {
-                SpeakingQuestion question = paper.Questions[index];
-                BatchStatusText.Text = F("tools.processing_questions", ("current", index + 1),
-                    ("total", paper.Questions.Count), ("kind", T(question.Type)));
-                string answer = question.StandardAnswer;
-                if (mode == "flexible")
-                {
-                    DeepSeekResult generated = await _deepSeek.AskSpeakingAsync(question.RequestText);
-                    if (generated.Success && generated.Text.Length > 0) answer = generated.Text;
-                }
-                if (string.IsNullOrWhiteSpace(answer))
-                {
-                    failed++;
-                    errors.Add(F("tools.no_answer_for_question", ("question", question.Number)));
-                    BatchProgress.Value = index + 1;
-                    continue;
-                }
-
-                AliyunTtsResult tts = await _aliyunTts.SynthesizeToWavAsync(answer);
-                if (!tts.Success)
-                {
-                    failed++;
-                    errors.Add(F("tools.tts_question_failed", ("question", question.Number), ("detail", TtsError(tts.Error))));
-                    BatchProgress.Value = index + 1;
-                    continue;
-                }
-                items.Add(new SpeakingSessionItem(question.Number, question.Type, question.Prompt,
-                    answer, tts.FilePath));
-                BatchProgress.Value = index + 1;
-            }
-
-            _session = new SpeakingSession(paper.PackId, mode, DateTimeOffset.Now, items);
-            _sessionStore.Save(_session);
-            _sessionIndex = 0;
-            RefreshSessionUi();
-            BatchStatusText.Text = F("tools.audio_generation_progress", ("count", items.Count)) +
-                (failed > 0 ? F("tools.audio_generation_failures", ("count", failed)) : string.Empty);
-            string detail = errors.Count > 0
-                ? Environment.NewLine + string.Join(Environment.NewLine, errors.Take(3))
-                : "";
-            BatchStatusText.Text += detail;
-            ShowMessage(T("tools.whole_paper_tts_complete"),
-                F("tools.paper_audio_summary", ("paperId", paper.PackId), ("count", items.Count)) +
-                (failed > 0 ? F("tools.audio_generation_failures", ("count", failed)) : string.Empty) + detail,
-                failed == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
-        }
-        catch (Exception ex)
-        {
-            ShowMessage(T("tools.whole_paper_tts_failed"), ex.Message, InfoBarSeverity.Error);
-        }
-        finally
-        {
-            GenerateSessionButton.IsEnabled = true;
-            BatchProgress.Visibility = Visibility.Collapsed;
-        }
-    }
-
-    private void PlaySessionItem_Click(object sender, RoutedEventArgs e)
-    {
-        SpeakingSessionItem? item = SelectedSessionItem();
-        if (item is null)
-        {
-            ShowMessage(T("tools.no_audio_selected"), T("tools.select_audio_from_playlist"), InfoBarSeverity.Warning);
-            return;
-        }
-        PlaySessionItem(item);
-    }
-
-    private void PreviewSessionItem_Click(object sender, RoutedEventArgs e)
-    {
-        SpeakingSessionItem? item = SelectedSessionItem();
-        if (item is null)
-        {
-            ShowMessage(T("tools.no_audio_to_preview"), T("tools.select_audio_from_playlist"), InfoBarSeverity.Warning);
-            return;
-        }
-        try
-        {
-            _cable.PlayPreview(item.WavPath);
-            SessionStatusText.Text = F("tools.local_preview_question", ("number", item.Number), ("name", item.WavName));
-        }
-        catch (Exception ex)
-        {
-            ShowMessage(T("tools.preview_failed"), ex.Message, InfoBarSeverity.Error);
-        }
-    }
-
-    private void PlayNextSessionItem_Click(object sender, RoutedEventArgs e)
-    {
-        if (_session is null || _session.Items.Count == 0)
-        {
-            ShowMessage(T("tools.no_playlist"), T("tools.generate_audio_first"), InfoBarSeverity.Warning);
-            return;
-        }
-        int index = Math.Clamp(_sessionIndex, 0, _session.Items.Count - 1);
-        PlaySessionItem(_session.Items[index]);
-        _sessionIndex = (index + 1) % _session.Items.Count;
-    }
-
-    private void PlaySessionItem(SpeakingSessionItem item)
-    {
-        try
-        {
-            _cable.Play(item.WavPath);
-            SessionItemBox.SelectedItem = item;
-            SessionStatusText.Text = F("tools.play_question", ("number", item.Number), ("name", item.WavName));
-        }
-        catch (Exception ex)
-        {
-            ShowMessage(T("tools.play_failed"), ex.Message, InfoBarSeverity.Error);
-        }
-    }
-
-    private void StopSessionPlayback_Click(object sender, RoutedEventArgs e)
-    {
-        _cable.Stop();
-        _cable.StopPreview();
-        SessionStatusText.Text = T("tools.playback_stopped");
     }
 
     private void RefreshDeepSeekStatus()
@@ -1002,8 +750,7 @@ public sealed partial class ToolsPage : Page
                 InfoBarSeverity.Warning);
             return;
         }
-        await RefreshCableAsync();
-        if (!_cable.IsReady)
+        if (!await RefreshCableAsync() || !_cable.IsReady)
         {
             ShowMessage(T("tools.virtual_cable_not_ready"),
                 _cable.IsAvailable

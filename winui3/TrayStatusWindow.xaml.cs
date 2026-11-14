@@ -136,9 +136,12 @@ public sealed partial class TrayStatusWindow : Window
                 : new HashSet<int>();
             SpeakingPrepProgressSnapshot? liveProgress = SpeakingPrepService.ActiveProgress;
             bool generating = liveProgress?.PackId == _paper.PackId;
-            int ready = generating
-                ? Math.Min(liveProgress!.Completed, questions.Count)
-                : questions.Count(question => readyNumbers.Contains(question.Number));
+            if (generating && liveProgress!.ReadyNumbers is not null)
+                readyNumbers.UnionWith(liveProgress.ReadyNumbers);
+            int ready = questions.Count(question => readyNumbers.Contains(question.Number));
+            HashSet<int> completedSpeaking = ReadCompletedSpeaking(packId, questions.Count);
+            SpeakingProgressRing.IsActive = generating;
+            SpeakingProgressRing.Visibility = generating ? Visibility.Visible : Visibility.Collapsed;
 
             EmptyStateCard.Visibility = Visibility.Collapsed;
             PaperCard.Visibility = Visibility.Visible;
@@ -148,14 +151,16 @@ public sealed partial class TrayStatusWindow : Window
             PaperIdText.Text = $"#{_paper.PackId}";
             PaperSummaryText.Text = localization.Format("tray.paper_summary",
                 ("choices", _paper.Total), ("speaking", questions.Count));
-            CopyAnswersButton.Visibility = _paper.Answers.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            CopyAnswersButton.Visibility = _paper.Answers.Count > 0 || questions.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
             var answeredNumbers = live?.DoneNumbers.Count > 0 ? live.DoneNumbers :
                 _paper.Answers.Where(a => a.Answered).Select(a => a.Number).ToHashSet();
             int answered = Math.Clamp(live?.Answered ?? answeredNumbers.Count, 0, _paper.Total);
+            ChoiceDoneIcon.Visibility = _paper.Total > 0 && answered == _paper.Total
+                ? Visibility.Visible : Visibility.Collapsed;
             SetDots(ChoiceGrid, _paper.Total, answeredNumbers.Count, doneIndices:
                 _paper.Answers.Select((a, i) => (a, i)).Where(x => answeredNumbers.Contains(x.a.Number)).Select(x => x.i).ToHashSet());
-            SetDots(SpeakingGrid, questions.Count, ready, generating && ready < questions.Count ? ready : -1);
+            SetSpeakingDots(questions, readyNumbers, completedSpeaking);
             ChoiceCountText.Text = $"{answered}/{_paper.Total}";
             SpeakingCountText.Text = $"{ready}/{questions.Count}";
             double choicePercent = _paper.Total == 0 ? 0 : Math.Round(answered * 100.0 / _paper.Total);
@@ -313,6 +318,40 @@ public sealed partial class TrayStatusWindow : Window
         EmptyStateDescriptionText.Text = localization.Translate("overview.open_paper_ets_see_progress");
     }
 
+    private HashSet<int> ReadCompletedSpeaking(string packId, int count)
+    {
+        var done = new HashSet<int>();
+        try
+        {
+            string path = System.IO.Path.Combine(AssistantService.Current.DataRoot, "ets_speaking_auto.log");
+            if (!System.IO.File.Exists(path)) return done;
+            bool current = false;
+            foreach (string line in System.IO.File.ReadLines(path).TakeLast(3000))
+            {
+                var session = System.Text.RegularExpressions.Regex.Match(line, @"session pack=(\d+) items=(\d+).*?start=(\d+)");
+                if (session.Success)
+                {
+                    current = session.Groups[1].Value == packId && int.Parse(session.Groups[2].Value) == count;
+                    if (current && session.Groups[3].Value == "0") done.Clear();
+                    continue;
+                }
+                if (!current) continue;
+                var match = System.Text.RegularExpressions.Regex.Match(line, @"\[(\d+)/(\d+)\] (?:stopped|mock recording ended|recording ended)");
+                if (match.Success && int.Parse(match.Groups[2].Value) == count) done.Add(int.Parse(match.Groups[1].Value) - 1);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException or OverflowException) { }
+        return done;
+    }
+
+    private void SetSpeakingDots(IReadOnlyList<SpeakingQuestion> questions, HashSet<int> ready, HashSet<int> completed)
+    {
+        SetDots(SpeakingGrid, questions.Count, 0, doneIndices: completed);
+        for (int index = 0; index < questions.Count; index++)
+            if (!completed.Contains(index) && ready.Contains(questions[index].Number) && SpeakingGrid.Children[index] is Border dot)
+                dot.Background = new SolidColorBrush(Color.FromArgb(255, 232, 229, 0));
+    }
+
     private static void SetDots(Grid grid, int total, int completed, int activeIndex = -1, HashSet<int>? doneIndices = null)
     {
         grid.Children.Clear();
@@ -348,11 +387,13 @@ public sealed partial class TrayStatusWindow : Window
 
     private void CopyAnswers_Click(object sender, RoutedEventArgs e)
     {
-        if (_paper is null || _paper.Answers.Count == 0) return;
+        if (_paper is null) return;
         try
         {
-            string text = string.Join("  ", _paper.Answers.Select(answer =>
-                $"{answer.Number}.{answer.CorrectAnswer}"));
+            var assistant = AssistantService.Current;
+            string text = PaperCopyService.Format(_paper.PackId,
+                _paper.Answers.Select(a => (a.Number, a.CorrectAnswer)), assistant.DataRoot, assistant.AppRoot);
+            if (text.Length == 0) return;
             var package = new DataPackage { RequestedOperation = DataPackageOperation.Copy };
             package.SetText(text);
             Clipboard.SetContent(package);

@@ -25,6 +25,39 @@ public sealed partial class SettingsPage : Page
     {
         InitializeComponent();
         LoadValues();
+        Loaded += (_, _) => { AppPreferencesService.Current.AutomationChanged += RefreshAutomation; RefreshAutomation(); };
+        Unloaded += (_, _) => AppPreferencesService.Current.AutomationChanged -= RefreshAutomation;
+    }
+
+    private void RefreshAutomation()
+    {
+        bool previousLoading = _loading;
+        _loading = true;
+        var preferences = AppPreferencesService.Current;
+        SelectionToggle.IsOn = preferences.AutomaticSelectionEnabled;
+        SpeakingToggle.IsOn = preferences.AutomaticSpeakingEnabled;
+        AccuracySlider.IsEnabled = preferences.AutomaticSelectionEnabled;
+        SkipBox.IsEnabled = preferences.AutomaticSelectionEnabled;
+        SpeakingModeBox.IsEnabled = preferences.AutomaticSpeakingEnabled;
+        AccuracySettings.Opacity = SkipSettings.Opacity = preferences.AutomaticSelectionEnabled ? 1 : 0.5;
+        SpeakingSettings.Opacity = preferences.AutomaticSpeakingEnabled ? 1 : 0.5;
+        _loading = previousLoading;
+    }
+
+    private void SelectionToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        try { AppPreferencesService.Current.SetAutomaticSelection(SelectionToggle.IsOn); }
+        catch (Exception ex)
+        {
+            RefreshAutomation();
+            InfoBarPresenter.Show(SaveInfoBar, T("overview.need_attention"), ex.Message, InfoBarSeverity.Error);
+        }
+    }
+
+    private void SpeakingToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (!_loading) AppPreferencesService.Current.SetAutomaticSpeaking(SpeakingToggle.IsOn);
     }
 
     private void CredentialsContent_Loaded(object sender, RoutedEventArgs e)
@@ -46,6 +79,7 @@ public sealed partial class SettingsPage : Page
         EtsPathText.Text = _service.EtsExe ?? T("settings.ets_path_not_found");
         SpeakingModeBox.SelectedIndex = AppPreferencesService.Current.SpeakingMode == "flexible" ? 1 : 0;
         _loading = false;
+        RefreshAutomation();
         UpdateApiKeyStatus();
         UpdateAliyunStatus();
         _ = RefreshVirtualCableStatusAsync();

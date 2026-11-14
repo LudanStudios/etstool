@@ -50,30 +50,23 @@ def find_session(explicit: str | None, data_root: Path) -> Path:
     raise FileNotFoundError("speaking_session.json not found")
 
 
-def cleanup_temp_audio(root: Path) -> None:
-    """Delete generated TTS WAVs and the virtual-mic copy after a finished run."""
+def cleanup_temp_audio(root: Path, session_wavs: list[str]) -> None:
+    """Remove only generated files used by this session, never unrelated WAVs."""
     removed = 0
     total = 0
-    folders = {root / "temp" / "tts-test", APP_ROOT / "temp" / "tts-test"}
-    for folder in folders:
-        if not folder.is_dir():
+    folders = {(root / "temp" / "tts-test").resolve(), (APP_ROOT / "temp" / "tts-test").resolve()}
+    for path in {Path(name).resolve() for name in session_wavs}:
+        if path.parent not in folders or not path.name.startswith("aliyun-tts-") or path.suffix.lower() != ".wav":
             continue
-        for wav in folder.glob("*.wav"):
-            try:
-                total += wav.stat().st_size
-                wav.unlink()
+        try:
+            if path.is_file():
+                size = path.stat().st_size
+                path.unlink()
+                total += size
                 removed += 1
-            except OSError:
-                pass
-    speaking_input = Path(os.environ.get("APPDATA", "")) / "ETS" / "_assistant" / "speaking_input.wav"
-    try:
-        if speaking_input.is_file():
-            total += speaking_input.stat().st_size
-            speaking_input.unlink()
-            removed += 1
-    except OSError:
-        pass
-    log(f"cleanup: removed {removed} audio file(s), {total / 1024 / 1024:.1f} MB")
+        except OSError:
+            pass
+    log(f"cleanup: removed {removed} session audio file(s), {total / 1024 / 1024:.1f} MB")
 
 
 def log(message: str) -> None:
@@ -119,12 +112,12 @@ def playback_speed_factor(path: str | Path, available_seconds: float | None = No
     if available_seconds is None:
         return PLAYER_SPEED_FACTOR
     usable = usable_recording_seconds(available_seconds)
-    if not math.isfinite(usable) or usable <= 0 or duration <= 0:
-        raise TimingBudgetError("No usable recording time")
+    if duration <= 0:
+        raise TimingBudgetError("Invalid audio")
+    if not math.isfinite(usable) or usable <= 0:
+        return MAX_PLAYBACK_SPEED
     speed = max(1.0, math.ceil((duration / usable - 1e-9) * 100) / 100)
-    if speed > MAX_PLAYBACK_SPEED:
-        raise TimingBudgetError(f"{duration:.2f}s cannot fit {available_seconds:.2f}s at <=1.50x")
-    return speed
+    return min(speed, MAX_PLAYBACK_SPEED)
 
 
 def read_recording_limits(data_root: Path, pack_id: str, count: int) -> list[float]:
@@ -332,7 +325,7 @@ def _main(argv: list[str] | None = None) -> int:
         except TimingBudgetError:
             request_timing_regeneration(session_path, session, i, budget or 0)
             return 10
-    log(f"session pack={session.get('PackId')} items={len(wavs)} mode={session.get('Mode')}")
+    log(f"session pack={session.get('PackId')} items={len(wavs)} mode={session.get('Mode')} start={max(0, args.start_index)}")
 
     targets = devtools_targets()
     if not targets:
@@ -418,6 +411,9 @@ def _main(argv: list[str] | None = None) -> int:
                     click_fix(client)
                     time.sleep(2.0)
                     continue
+                if index < len(wavs):
+                    log(f"Practice ended before all speaking items were played ({index}/{len(wavs)}); retaining session audio.")
+                    return 11
                 log("practice finished")
                 finished = True
                 break
@@ -481,9 +477,10 @@ def _main(argv: list[str] | None = None) -> int:
                             f"[{index + 1}/{len(wavs)}] ETS 录音窗口在音频结束前关闭 "
                             f"(已播放约 {elapsed:.1f}/{playback_duration_seconds(wavs[index], current_speed_factor):.1f}s，"
                             f"原始音频 {wav_duration_seconds(wavs[index]):.1f}s，{current_speed_factor:.2f}x)；"
-                            "本轮已中止，未把该题标记为完成。请检查 ETS 录音时长和麦克风设置后重试。"
+                            "录音已结束，停止播放并继续。"
                         )
-                        return 9
+                        player = None
+                        mock_waiting_for_recording_end = True
                 if mock_waiting_for_recording_end:
                     index += 1
                     mock_waiting_for_recording_end = False
@@ -556,9 +553,13 @@ def _main(argv: list[str] | None = None) -> int:
                     f"[{index + 1}/{len(wavs)}] ETS 录音窗口在音频结束前关闭 "
                     f"(已播放约 {elapsed:.1f}/{playback_duration_seconds(wavs[index], current_speed_factor):.1f}s，"
                     f"原始音频 {wav_duration_seconds(wavs[index]):.1f}s，{current_speed_factor:.2f}x)；"
-                    "本轮已中止，未把该题标记为完成。请检查 ETS 录音时长和麦克风设置后重试。"
+                    "录音已结束，停止播放并继续。"
                 )
-                return 9
+                player = None
+                log(f"[{index + 1}/{len(wavs)}] recording ended")
+                index += 1
+                time.sleep(1.0)
+                continue
 
             if index >= len(wavs):
                 log("all WAV items consumed")
@@ -576,7 +577,7 @@ def _main(argv: list[str] | None = None) -> int:
         terminate_player(player)
         client.close()
     if finished and played > 0 and not args.keep_temp:
-        cleanup_temp_audio(DATA_ROOT)
+        cleanup_temp_audio(DATA_ROOT, wavs)
     elif played == 0:
         log("本次没有实际播放音频，保留 temp WAV 以便重试。")
     return 0

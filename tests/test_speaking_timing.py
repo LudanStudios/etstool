@@ -43,8 +43,20 @@ class SpeakingTimingTests(unittest.TestCase):
         self.assertLessEqual(34 / speed, auto.usable_recording_seconds(30))
         self.assertGreater(34 / (speed - .01), auto.usable_recording_seconds(30))
         self.assertEqual(auto.playback_speed_factor(self.wav(43.125), 30), 1.5)
-        with self.assertRaises(auto.TimingBudgetError):
-            auto.playback_speed_factor(self.wav(44), 30)
+        self.assertEqual(auto.playback_speed_factor(self.wav(44), 30), 1.5)
+
+    def test_cleanup_only_deletes_session_generated_audio(self):
+        folder = self.root / "temp" / "tts-test"
+        folder.mkdir(parents=True)
+        used = folder / "aliyun-tts-used.wav"
+        unrelated = folder / "aliyun-tts-other.wav"
+        non_generated = folder / "user-audio.wav"
+        for path in (used, unrelated, non_generated): path.write_bytes(b"sample")
+        with patch.object(auto, "APP_ROOT", self.root), patch.object(auto, "log"):
+            auto.cleanup_temp_audio(self.root, [str(used), str(non_generated)])
+        self.assertFalse(used.exists())
+        self.assertTrue(unrelated.exists())
+        self.assertTrue(non_generated.exists())
 
     def test_only_record_steps_with_exact_question_count_are_mapped(self):
         template = self.root / "123" / "template_1"
@@ -58,19 +70,6 @@ class SpeakingTimingTests(unittest.TestCase):
         self.assertEqual(auto.read_recording_limits(self.root, "123", 3), [])
         self.assertEqual(auto.recording_budget({"recording_remaining_seconds": 20}, 30), 20)
         self.assertEqual(auto.recording_budget({"recording_remaining_seconds": None}, 30), 30)
-
-    def test_oversize_requests_regeneration_before_connecting_to_ets(self):
-        session = self.root / "session.json"
-        session.write_text(json.dumps({"PackId": "123", "Items": [
-            {"WavPath": str(self.wav(60)), "RecordingSeconds": 30}]}), encoding="utf-8")
-        player = self.root / "fake-player.exe"
-        player.touch()
-        with patch.object(auto, "devtools_targets") as targets, patch.object(auto, "log"):
-            code = auto._main(["--session", str(session), "--data-root", str(self.root), "--player", str(player)])
-        self.assertEqual(code, 10)
-        targets.assert_not_called()
-        request = json.loads(Path(str(session) + ".timing-request.json").read_text())
-        self.assertEqual(request, {"PackId": "123", "Index": 0, "RecordingSeconds": 30})
 
     def run_mock_recording(self, closing_time=31, transient_gap=False):
         clock = [0.0]
@@ -118,8 +117,8 @@ class SpeakingTimingTests(unittest.TestCase):
     def test_mock_waits_for_real_recording_end_and_tolerates_short_dom_gap(self):
         self.assertEqual(self.run_mock_recording(transient_gap=True), 0)
 
-    def test_actual_early_close_still_fails_instead_of_marking_complete(self):
-        self.assertEqual(self.run_mock_recording(closing_time=20), 9)
+    def test_actual_early_close_continues(self):
+        self.assertEqual(self.run_mock_recording(closing_time=20), 0)
 
 
 if __name__ == "__main__":

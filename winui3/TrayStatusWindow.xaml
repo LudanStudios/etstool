@@ -77,7 +77,7 @@
                                                VerticalAlignment="Center" Foreground="White" />
                                 </Grid>
                             </Grid>
-                            <TextBlock Grid.Column="1" Text="✓" FontSize="24" FontWeight="Bold"
+                            <TextBlock x:Name="ChoiceDoneIcon" Grid.Column="1" Text="✓" FontSize="24" FontWeight="Bold" Visibility="Collapsed"
                                        Foreground="#8BD14F" VerticalAlignment="Center"
                                        HorizontalAlignment="Center" />
                         </Grid>
@@ -114,9 +114,9 @@
                                                VerticalAlignment="Center" Foreground="White" />
                                 </Grid>
                             </Grid>
-                            <TextBlock Grid.Column="1" Text="↻" FontSize="24" FontWeight="Bold"
-                                       Foreground="#E8E500" VerticalAlignment="Center"
-                                       HorizontalAlignment="Center" />
+                            <ProgressRing x:Name="SpeakingProgressRing" Grid.Column="1" Width="20" Height="20"
+                                          Foreground="#E8E500" VerticalAlignment="Center"
+                                          HorizontalAlignment="Center" IsActive="False" />
                         </Grid>
                     </StackPanel>
                 </Border>

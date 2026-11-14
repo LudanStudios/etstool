@@ -5,7 +5,7 @@ namespace ETSAssistant.WinUI3.Services;
 public sealed record SpeakingPrepProgress(int Completed, int Total, string Message);
 
 public sealed record SpeakingPrepOutcome(SpeakingSession? Session, IReadOnlyList<string> Errors);
-public sealed record SpeakingPrepProgressSnapshot(string PackId, int Completed, int Total);
+public sealed record SpeakingPrepProgressSnapshot(string PackId, int Completed, int Total, IReadOnlyList<int>? ReadyNumbers = null);
 
 /// <summary>
 /// Prepares a whole speaking paper for automation: resolves each answer,
@@ -57,6 +57,9 @@ public sealed class SpeakingPrepService
         if (!string.Equals(session.Mode, mode, StringComparison.Ordinal)) return null;
         if (session.PromptVersion != CurrentPromptVersion) return null;
         if (session.Items.Count != questions.Count) return null;
+        if (questions.Where(q => q.Type == "speaking.kind_read_aloud").Any(q =>
+            session.Items.FirstOrDefault(item => item.Number == q.Number)?.Answer !=
+            (string.IsNullOrWhiteSpace(q.SourceText) ? q.StandardAnswer : q.SourceText))) return null;
         if (!session.Items.Select(item => item.Number).SequenceEqual(questions.Select(question => question.Number)))
             return null;
         return session.Items.Select((item, i) => SpeakingSessionStore.IsUsableWavFile(item.WavPath) &&
@@ -110,7 +113,8 @@ public sealed class SpeakingPrepService
                         ? "speaking.mode_generated" : "speaking.mode_standard")))));
 
             SpeakingSession? previous = _sessionStore.Load();
-            bool reusePrevious = previous?.PackId == packId && previous.Mode == mode && previous.Items.Count == questions.Count;
+            bool reusePrevious = previous?.PackId == packId && previous.Mode == mode &&
+                previous.PromptVersion == CurrentPromptVersion && previous.Items.Count == questions.Count;
             foreach (SpeakingQuestion question in questions)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -122,8 +126,11 @@ public sealed class SpeakingPrepService
                 SpeakingSessionItem? prior = reusePrevious ? previous!.Items.FirstOrDefault(item =>
                     item.Number == question.Number && item.Type == question.Type && item.Prompt == question.Prompt &&
                     SpeakingSessionStore.IsUsableWavFile(item.WavPath)) : null;
-                string answer = prior?.Answer ?? question.StandardAnswer;
-                if (mode == "flexible" && prior is null)
+                bool isReadAloud = question.Type == "speaking.kind_read_aloud";
+                string readAloudText = string.IsNullOrWhiteSpace(question.SourceText) ? question.StandardAnswer : question.SourceText;
+                if (isReadAloud && prior is not null && prior.Answer != readAloudText) prior = null;
+                string answer = isReadAloud ? readAloudText : prior?.Answer ?? question.StandardAnswer;
+                if (mode == "flexible" && prior is null && !isReadAloud)
                 {
                     DeepSeekResult generated = await _deepSeek
                         .AskSpeakingAsync(question.RequestText, cancellationToken).ConfigureAwait(false);
@@ -138,7 +145,7 @@ public sealed class SpeakingPrepService
                     errors.Add(LocalizationService.Current.Format("speaking.no_answer_available",
                         ("question", question.Number)));
                     completed++;
-                    SetActiveProgress(new SpeakingPrepProgressSnapshot(packId, completed, questions.Count));
+                    SetActiveProgress(new SpeakingPrepProgressSnapshot(packId, completed, questions.Count, items.Select(item => item.Number).ToArray()));
                     continue;
                 }
 
@@ -149,7 +156,7 @@ public sealed class SpeakingPrepService
                     errors.Add(LocalizationService.Current.Format("speaking.tts_failed",
                         ("question", question.Number), ("detail", LocalizationService.Current.Translate(tts.Error))));
                     completed++;
-                    SetActiveProgress(new SpeakingPrepProgressSnapshot(packId, completed, questions.Count));
+                    SetActiveProgress(new SpeakingPrepProgressSnapshot(packId, completed, questions.Count, items.Select(item => item.Number).ToArray()));
                     continue;
                 }
 
@@ -163,7 +170,7 @@ public sealed class SpeakingPrepService
                     errors.Add(LocalizationService.Current.Format("speaking.timing_failed", ("question", question.Number), ("detail", ex.Message)));
                 }
                 completed++;
-                SetActiveProgress(new SpeakingPrepProgressSnapshot(packId, completed, questions.Count));
+                SetActiveProgress(new SpeakingPrepProgressSnapshot(packId, completed, questions.Count, items.Select(item => item.Number).ToArray()));
                 progress?.Report(new SpeakingPrepProgress(completed, questions.Count,
                     LocalizationService.Current.Format("speaking.generated_progress",
                         ("completed", completed), ("total", questions.Count),

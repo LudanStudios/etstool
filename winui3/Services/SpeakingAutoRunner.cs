@@ -6,6 +6,14 @@ namespace ETSAssistant.WinUI3.Services;
 /// <summary>Runs the speaking automation through the Python runtime bundled with the engine.</summary>
 public sealed class SpeakingAutoRunner
 {
+    private static readonly object ActiveSync = new();
+    private static readonly HashSet<SpeakingAutoRunner> ActiveRunners = [];
+    public static void StopAll()
+    {
+        SpeakingAutoRunner[] runners;
+        lock (ActiveSync) runners = ActiveRunners.ToArray();
+        foreach (SpeakingAutoRunner runner in runners) runner.Stop();
+    }
     private readonly object _sync = new();
     private Process? _process;
     private System.Threading.Timer? _logTimer;
@@ -29,6 +37,11 @@ public sealed class SpeakingAutoRunner
     public bool Start(string appRoot, string dataRoot, string sessionPath, out string error, int startIndex = 0)
     {
         error = string.Empty;
+        if (!AppPreferencesService.Current.AutomaticSpeakingEnabled)
+        {
+            error = LocalizationService.Current.Translate("automation.speaking_disabled");
+            return false;
+        }
         LastStartFailureRequiresRegeneration = false;
         LastExitCode = null;
         SessionPath = sessionPath;
@@ -49,7 +62,7 @@ public sealed class SpeakingAutoRunner
             error = F("speaking_auto.session_missing", ("path", sessionPath));
             return false;
         }
-        if (!HasUsableAudio(sessionPath, out error))
+        if (!HasUsableAudio(sessionPath, out error, dataRoot))
         {
             LastStartFailureRequiresRegeneration = true;
             return false;
@@ -103,6 +116,7 @@ public sealed class SpeakingAutoRunner
                 _readLineCount = existingLineCount;
                 _logTimer = new System.Threading.Timer(_ => ReadNewLogLines(), null, 0, 300);
             }
+            lock (ActiveSync) ActiveRunners.Add(this);
             process.Exited += (_, _) => HandleExited(process);
             process.EnableRaisingEvents = true;
             if (process.HasExited) HandleExited(process);
@@ -116,7 +130,7 @@ public sealed class SpeakingAutoRunner
         }
     }
 
-    public static bool HasUsableAudio(string sessionPath, out string error)
+    public static bool HasUsableAudio(string sessionPath, out string error, string? dataRoot = null)
     {
         error = string.Empty;
         try
@@ -126,6 +140,17 @@ public sealed class SpeakingAutoRunner
             {
                 error = L("speaking_auto.session_has_no_audio");
                 return false;
+            }
+
+            if (dataRoot is not null)
+            {
+                IReadOnlyList<SpeakingQuestion> questions = new SpeakingAnswerService(dataRoot).Load(session.PackId);
+                if (questions.Count == 0 || questions.Count != session.Items.Count ||
+                    !questions.Select(q => (q.Number, q.Type)).SequenceEqual(session.Items.Select(i => (i.Number, i.Type))))
+                {
+                    error = L("speaking_auto.incomplete_session");
+                    return false;
+                }
             }
 
             if (session.PromptVersion != SpeakingTimingService.SessionVersion || session.Items.Any(item =>
@@ -197,6 +222,7 @@ public sealed class SpeakingAutoRunner
             _logTimer?.Dispose();
             _logTimer = null;
         }
+        lock (ActiveSync) ActiveRunners.Remove(this);
         Exited?.Invoke();
     }
 

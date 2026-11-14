@@ -152,16 +152,11 @@ public sealed class CurrentPaperService
             { }
         }
 
-        IGrouping<string, AnswerRecord>? session = history
-            .Where(record => record.PackId == packId)
-            .GroupBy(record => record.SessionId)
-            .OrderByDescending(group => group.Max(record => record.Timestamp))
-            .FirstOrDefault();
-        var selected = session?
+        var currentRecords = SelectCurrentRecords(history, packId);
+        var selected = currentRecords
             .GroupBy(record => record.QuestionId)
             .ToDictionary(group => group.Key,
-                group => group.OrderByDescending(record => record.Timestamp).First().SelectedAnswer)
-            ?? new Dictionary<string, string>(StringComparer.Ordinal);
+                group => group.OrderByDescending(record => record.Timestamp).First().SelectedAnswer);
 
         var answers = new List<CurrentPaperAnswer>();
         int position = 0;
@@ -185,8 +180,33 @@ public sealed class CurrentPaperService
             title = LocalizationService.Current.Format("dynamic.paper_title", ("paperId", packId));
         }
 
-        DateTime? lastActivity = session?.Max(record => record.Timestamp).LocalDateTime;
+        DateTime? lastActivity = currentRecords.Count > 0 ? currentRecords.Max(record => record.Timestamp).LocalDateTime : null;
         return new CurrentPaperSnapshot(packId, title, answers, lastActivity);
+    }
+
+    public static IReadOnlyList<AnswerRecord> SelectCurrentRecords(IEnumerable<AnswerRecord> history, string packId)
+    {
+        var sessions = history
+            .Where(record => record.PackId == packId)
+            .GroupBy(record => record.SessionId)
+            .OrderByDescending(group => group.Max(record => record.Timestamp))
+            .ToList();
+        IGrouping<string, AnswerRecord>? session = sessions.FirstOrDefault();
+        IEnumerable<AnswerRecord> currentRecords = session ?? Enumerable.Empty<AnswerRecord>();
+        // A completed worker can immediately restart on the last page and create
+        // a duplicate session. Recover only a matching, near-simultaneous subset.
+        if (sessions.Count > 1)
+        {
+            var newest = sessions[0].ToList();
+            var previous = sessions[1].ToList();
+            var gap = newest.Min(r => r.Timestamp) - previous.Max(r => r.Timestamp);
+            var previousAnswers = previous.GroupBy(r => r.QuestionId).ToDictionary(g => g.Key,
+                g => g.OrderByDescending(r => r.Timestamp).First().SelectedAnswer);
+            if (gap >= TimeSpan.Zero && gap <= TimeSpan.FromSeconds(2) && newest.Count < previousAnswers.Count &&
+                newest.All(r => previousAnswers.TryGetValue(r.QuestionId, out var answer) && answer == r.SelectedAnswer))
+                currentRecords = newest.Concat(previous);
+        }
+        return currentRecords.ToList();
     }
 
     private static Dictionary<string, int> ReadDisplayNumbers(string contentDirectory)

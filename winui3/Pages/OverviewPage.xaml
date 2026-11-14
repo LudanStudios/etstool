@@ -53,6 +53,23 @@
                 </StackPanel>
             </Border>
 
+            <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="automation.title" FontSize="17" FontWeight="SemiBold" />
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <StackPanel><TextBlock Text="automation.selection" FontWeight="SemiBold" />
+                            <TextBlock Text="automation.selection_description" TextWrapping="Wrap" Opacity="0.7" /></StackPanel>
+                        <ToggleSwitch x:Name="SelectionToggle" Grid.Column="1" OnContent="common.on" OffContent="common.off" Toggled="SelectionToggle_Toggled" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <StackPanel><TextBlock Text="automation.speaking" FontWeight="SemiBold" />
+                            <TextBlock Text="automation.speaking_description" TextWrapping="Wrap" Opacity="0.7" /></StackPanel>
+                        <ToggleSwitch x:Name="SpeakingToggle" Grid.Column="1" OnContent="common.on" OffContent="common.off" Toggled="SpeakingToggle_Toggled" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
             <Border Padding="22" CornerRadius="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                 <StackPanel Spacing="13">
@@ -93,7 +110,8 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,0">
+                    </StackPanel>
+                        <StackPanel x:Name="PaperActions" Orientation="Horizontal" Spacing="8" Margin="0,2,0,0" Visibility="Collapsed">
                             <Button x:Name="CopyAnswersButton" Click="CopyAnswers_Click">
                                 <StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE8C8;" FontSize="16"/><TextBlock Text="overview.view_copy_answers"/></StackPanel>
                             </Button>
@@ -104,7 +122,6 @@
                                 <StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE713;" FontSize="16"/><TextBlock Text="overview.answer_configuration"/></StackPanel>
                             </Button>
                         </StackPanel>
-                    </StackPanel>
                     <StackPanel x:Name="EmptyPaperActions" Orientation="Horizontal" Spacing="8">
                         <Button Click="OpenSettings_Click">
                             <StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE713;" FontSize="16"/><TextBlock Text="overview.answer_configuration"/></StackPanel>

@@ -27,6 +27,7 @@ public sealed partial class OverviewPage : Page
     private string _paperSignature = "\0";
     private bool _refreshingPaper;
     private bool? _initializeButtonWrapped;
+    private bool _updatingAutomation = true;
 
     public OverviewPage()
     {
@@ -34,6 +35,7 @@ public sealed partial class OverviewPage : Page
         DataPathText.Text = _service.DataRoot;
         Loaded += (_, _) =>
         {
+            RefreshAutomation();
             RefreshStatus();
             _ = RefreshPaperAsync();
             _timer = DispatcherQueue.GetForCurrentThread().CreateTimer();
@@ -46,6 +48,27 @@ public sealed partial class OverviewPage : Page
             _timer.Start();
         };
         Unloaded += (_, _) => _timer?.Stop();
+    }
+
+    private void RefreshAutomation()
+    {
+        _updatingAutomation = true;
+        SelectionToggle.IsOn = AppPreferencesService.Current.AutomaticSelectionEnabled;
+        SpeakingToggle.IsOn = AppPreferencesService.Current.AutomaticSpeakingEnabled;
+        _updatingAutomation = false;
+    }
+
+    private async void SelectionToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_updatingAutomation) return;
+        try { AppPreferencesService.Current.SetAutomaticSelection(SelectionToggle.IsOn); }
+        catch (Exception ex) { RefreshAutomation(); await ShowErrorAsync(ex.Message); }
+    }
+
+    private void SpeakingToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_updatingAutomation) return;
+        AppPreferencesService.Current.SetAutomaticSpeaking(SpeakingToggle.IsOn);
     }
 
     private void ActionButtonsGrid_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -228,6 +251,7 @@ public sealed partial class OverviewPage : Page
             PaperTitleText.Text = LocalizationService.Current.Translate("overview.no_paper_detected_yet");
             PaperMetaText.Text = LocalizationService.Current.Translate("overview.open_paper_ets_see_progress");
             PaperProgressPanel.Visibility = Visibility.Collapsed;
+            PaperActions.Visibility = Visibility.Collapsed;
             AnswerChips.ItemsSource = null;
             ManualResetButton.IsEnabled = false;
             EmptyPaperActions.Visibility = Visibility.Visible;
@@ -236,6 +260,7 @@ public sealed partial class OverviewPage : Page
         }
 
         ManualResetButton.IsEnabled = true;
+        PaperActions.Visibility = Visibility.Visible;
         EmptyPaperActions.Visibility = Visibility.Collapsed;
         PaperStateText.Text = LocalizationService.Current.Translate(paper.Complete
             ? "common.completed" : "overview.detected");
@@ -286,11 +311,12 @@ public sealed partial class OverviewPage : Page
 
     private async void CopyAnswers_Click(object sender, RoutedEventArgs e)
     {
-        if (_currentPaper is null || _currentPaper.Answers.Count == 0) return;
+        if (_currentPaper is null) return;
         try
         {
-            string text = string.Join("  ", _currentPaper.Answers
-                .Select(answer => $"{answer.Number}.{answer.CorrectAnswer}"));
+            string text = PaperCopyService.Format(_currentPaper.PackId,
+                _currentPaper.Answers.Select(answer => (answer.Number, answer.CorrectAnswer)), _service.DataRoot, _service.AppRoot);
+            if (text.Length == 0) return;
             var package = new DataPackage { RequestedOperation = DataPackageOperation.Copy };
             package.SetText(text);
             Clipboard.SetContent(package);
@@ -298,7 +324,7 @@ public sealed partial class OverviewPage : Page
             InfoBarPresenter.Show(GeneralInfoBar,
                 LocalizationService.Current.Translate("overview.answers_copied"),
                 LocalizationService.Current.Format("overview.answers_copied_detail",
-                    ("count", _currentPaper.Answers.Count)), InfoBarSeverity.Success);
+                    ("count", _currentPaper.Answers.Count + new SpeakingAnswerService(_service.DataRoot).Load(_currentPaper.PackId).Count)), InfoBarSeverity.Success);
         }
         catch (Exception ex)
         {

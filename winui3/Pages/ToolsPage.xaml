@@ -90,18 +90,7 @@
                     </StackPanel>
                 </Border>
 
-                <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="18">
-                        <StackPanel Spacing="4">
-                            <TextBlock Text="tools.verbose_logging" FontSize="16" FontWeight="SemiBold" />
-                            <TextBlock Text="tools.when_enabled_info_traces_record"
-                                       FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
-                        </StackPanel>
-                        <ToggleSwitch x:Name="VerboseLoggingToggle" Grid.Column="1" OnContent="common.on" OffContent="common.off"
-                                      Toggled="VerboseLoggingToggle_Toggled" VerticalAlignment="Center" />
-                    </Grid>
-                </Border>
+
 
                 <StackPanel Spacing="2" Margin="4,8,0,0">
                     <TextBlock Text="tools.automatic_speaking_test" FontSize="21" FontWeight="SemiBold" />
@@ -240,84 +229,51 @@
                     </StackPanel>
                 </Border>
 
-                <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                    <StackPanel Spacing="12">
-                        <StackPanel Orientation="Horizontal" Spacing="9">
-                            <SymbolIcon Symbol="Audio" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                            <TextBlock Text="tools.whole_paper_speaking_audio_generate" FontSize="17" FontWeight="SemiBold" />
-                        </StackPanel>
-                        <TextBlock Text="tools.select_paper_above_then_generate"
-                                   FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
-                        <TextBlock x:Name="CableStatusText" FontSize="12" Opacity="0.72" TextWrapping="Wrap" />
-                        <TextBlock x:Name="DefaultMicStatusText" FontSize="12" Opacity="0.72" TextWrapping="Wrap" />
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Click="SetVirtualMicDefault_Click" Content="tools.set_ets_input_only" />
-                            <Button Click="RestoreDefaultMic_Click" Content="tools.restore_ets_input" />
-                        </StackPanel>
-                        <ProgressBar x:Name="BatchProgress" Minimum="0" Maximum="1" Value="0"
-                                     Visibility="Collapsed" />
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button x:Name="GenerateSessionButton" Click="GenerateSession_Click"
-                                    Style="{StaticResource AccentButtonStyle}">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <SymbolIcon Symbol="Save" />
-                                    <TextBlock Text="tools.generate_whole_paper_tts" />
-                                </StackPanel>
-                            </Button>
-                            <Button Click="RefreshCable_Click">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <SymbolIcon Symbol="Refresh" />
-                                    <TextBlock Text="tools.refresh_virtual_cable" />
-                                </StackPanel>
-                            </Button>
-                            <Button Click="OpenSoundSettings_Click">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <SymbolIcon Symbol="Setting" />
-                                    <TextBlock Text="tools.open_sound_settings" />
-                                </StackPanel>
-                            </Button>
-                        </StackPanel>
-                        <TextBlock x:Name="BatchStatusText" FontSize="12" Opacity="0.72" TextWrapping="Wrap" />
-                        <TextBlock Text="tools.playlist" FontSize="14" FontWeight="SemiBold" />
-                        <ComboBox x:Name="SessionItemBox" HorizontalAlignment="Stretch"
-                                  DisplayMemberPath="Display" />
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Click="PlaySessionItem_Click">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <SymbolIcon Symbol="Play" />
-                                    <TextBlock Text="tools.play_virtual_cable" />
-                                </StackPanel>
-                            </Button>
-                            <Button Click="PreviewSessionItem_Click">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <SymbolIcon Symbol="Audio" />
-                                    <TextBlock Text="tools.preview_locally" />
-                                </StackPanel>
-                            </Button>
-                            <Button Click="PlayNextSessionItem_Click">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <SymbolIcon Symbol="Next" />
-                                    <TextBlock Text="tools.next_cable" />
-                                </StackPanel>
-                            </Button>
-                            <Button Click="StopSessionPlayback_Click">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <SymbolIcon Symbol="Stop" />
-                                    <TextBlock Text="tools.stop" />
-                                </StackPanel>
-                            </Button>
-                        </StackPanel>
-                        <TextBlock Text="tools.play_virtual_cable_silent_only"
-                                   FontSize="12" Opacity="0.62" TextWrapping="Wrap" />
-                        <TextBlock x:Name="SessionStatusText" FontSize="12" Opacity="0.72" TextWrapping="Wrap" />
-                    </StackPanel>
-                </Border>
+
 
                 <StackPanel Spacing="2" Margin="4,8,0,0">
                     <TextBlock Text="tools.diagnostics_maintenance" FontSize="21" FontWeight="SemiBold" />
                     <TextBlock Text="tools.runtime_logs_packet_capture_app" FontSize="12" Opacity="0.62" TextWrapping="Wrap" />
                 </StackPanel>
+
+                <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                    <StackPanel Spacing="12">
+                        <StackPanel Orientation="Horizontal" Spacing="9">
+                            <SymbolIcon Symbol="ReportHacked" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                            <TextBlock Text="tools.app_information" FontSize="17" FontWeight="SemiBold" />
+                        </StackPanel>
+                        <TextBlock x:Name="EnvironmentText" FontFamily="Consolas" FontSize="12" Opacity="0.76"
+                                   TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Click="CopyEnvironment_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="Copy" />
+                                    <TextBlock Text="tools.copy_environment_info" />
+                                </StackPanel>
+                            </Button>
+                            <Button Click="OpenProgram_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="Folder" />
+                                    <TextBlock Text="tools.open_app_folder" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="18">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="tools.verbose_logging" FontSize="16" FontWeight="SemiBold" />
+                            <TextBlock Text="tools.when_enabled_info_traces_record"
+                                       FontSize="12" Opacity="0.68" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="VerboseLoggingToggle" Grid.Column="1" OnContent="common.on" OffContent="common.off"
+                                      Toggled="VerboseLoggingToggle_Toggled" VerticalAlignment="Center" />
+                    </Grid>
+                </Border>
 
                 <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
@@ -382,31 +338,7 @@
                     </StackPanel>
                 </Border>
 
-                <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                    <StackPanel Spacing="12">
-                        <StackPanel Orientation="Horizontal" Spacing="9">
-                            <SymbolIcon Symbol="ReportHacked" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                            <TextBlock Text="tools.app_information" FontSize="17" FontWeight="SemiBold" />
-                        </StackPanel>
-                        <TextBlock x:Name="EnvironmentText" FontFamily="Consolas" FontSize="12" Opacity="0.76"
-                                   TextWrapping="Wrap" IsTextSelectionEnabled="True" />
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Click="CopyEnvironment_Click">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <SymbolIcon Symbol="Copy" />
-                                    <TextBlock Text="tools.copy_environment_info" />
-                                </StackPanel>
-                            </Button>
-                            <Button Click="OpenProgram_Click">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <SymbolIcon Symbol="Folder" />
-                                    <TextBlock Text="tools.open_app_folder" />
-                                </StackPanel>
-                            </Button>
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
+
 
                 <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                         BorderBrush="#7F1D1D" BorderThickness="1">

@@ -302,7 +302,11 @@ def main(argv: list[str] | None = None) -> int:
             except OSError as exc:
                 log(f"Could not start the converter watcher: {exc}")
                 terminal = None
-        if running and (worker is None or worker.poll() is not None):
+        selection_enabled = not (PACK_ROOT / "_assistant" / "automatic_selection.disabled").exists()
+        if not selection_enabled and worker is not None:
+            stop_process(worker, "auto-answer listener", tree=True)
+            worker = None
+        if running and selection_enabled and (worker is None or worker.poll() is not None):
             worker = start_auto_answer_worker()
         if running and not was_running:
             log("ETS process detected; opening the assistant window.")

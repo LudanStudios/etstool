@@ -50,6 +50,7 @@ public sealed partial class MainWindow : Window
             _trayStatusWindow = null;
             AnalysisActivityService.Current.Changed -= UpdateActivityNavigation;
             _audioSessionTimer?.Stop();
+            AppPreferencesService.Current.AutomationChanged -= OnAutomationChanged;
             try { await DefaultAudioInputService.Current.EndSessionAsync(); }
             catch (Exception) { }
             Current = null;
@@ -109,6 +110,7 @@ public sealed partial class MainWindow : Window
                     page.Loaded += onLoaded;
             }
         };
+        preferences.AutomationChanged += OnAutomationChanged;
         preferences.ThemeChanged += ApplyTheme;
         preferences.LanguageChanged += OnLanguageChanged;
 
@@ -116,6 +118,15 @@ public sealed partial class MainWindow : Window
         PageFrame.Navigate(typeof(Pages.OverviewPage));
         RootGrid.Loaded += async (_, _) =>
         {
+            if (preferences.AutomaticSelectionEnabled)
+            {
+                try { AssistantService.Current.EnsureListener(); }
+                catch (Exception ex)
+                {
+                    AssistantService.Current.LastError = ex.Message;
+                    DiagnosticLogService.Warn("listener.startup.failed", ex.Message);
+                }
+            }
             UpdatePaneToggleButtonStyle(RootNavigation.DisplayMode);
             _audioSessionTimer = DispatcherQueue.CreateTimer();
             _audioSessionTimer.Interval = TimeSpan.FromSeconds(2);
@@ -150,6 +161,18 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private async void OnAutomationChanged()
+    {
+        if (AppPreferencesService.Current.AutomaticSpeakingEnabled) return;
+        SpeakingAutoRunner.StopAll();
+        try { _prepWindow?.Close(); } catch (Exception) { }
+        _lastPrepPackId = null;
+        _promptedMissingCredentialsPackId = null;
+        try { await DefaultAudioInputService.Current.EndSessionAsync(); }
+        catch (Exception ex) { DiagnosticLogService.Warn("automation.audio_stop.failed", ex.Message); }
+        _audioSessionActive = false;
+    }
+
     private async Task SyncAudioSessionWithEtsAsync()
     {
         if (_checkingAudioSession) return;
@@ -157,7 +180,7 @@ public sealed partial class MainWindow : Window
         try
         {
             AssistantService assistant = AssistantService.Current;
-            bool etsRunning = assistant.GetEtsProcessIds().Count > 0;
+            bool etsRunning = AppPreferencesService.Current.AutomaticSpeakingEnabled && assistant.GetEtsProcessIds().Count > 0;
             if (!etsRunning)
             {
                 if (_audioSessionActive)
@@ -168,10 +191,12 @@ public sealed partial class MainWindow : Window
             }
 
             string result = await DefaultAudioInputService.Current.BeginSessionAsync();
-            if (!DefaultAudioInputService.Current.LastSetVirtualDefaultSucceeded)
+            if (!DefaultAudioInputService.Current.LastEtsAudioRouteSucceeded)
             {
                 string detail = LocalizationService.Current.Format("main.virtual_mic_sync_failed",
-                    ("device", LocalizationService.Current.Translate("main.ets_process_input")), ("result", result));
+                    ("captureDevice", DefaultAudioInputService.Current.RoutedDeviceName ?? LocalizationService.Current.Translate("common.not_available")),
+                    ("renderDevice", DefaultAudioInputService.Current.RoutedPlaybackDeviceName ?? LocalizationService.Current.Translate("common.not_available")),
+                    ("result", result));
                 if (!string.Equals(_lastAudioSessionError, detail, StringComparison.Ordinal))
                 {
                     DiagnosticLogService.Warn("audio_session.sync.virtual_mic_not_active", detail);
@@ -181,6 +206,12 @@ public sealed partial class MainWindow : Window
                 return;
             }
 
+            if (!AppPreferencesService.Current.AutomaticSpeakingEnabled)
+            {
+                await DefaultAudioInputService.Current.EndSessionAsync();
+                _audioSessionActive = false;
+                return;
+            }
             _audioSessionActive = true;
             _lastAudioSessionError = null;
         }
@@ -197,11 +228,12 @@ public sealed partial class MainWindow : Window
 
     private async Task CheckSpeakingPaperAsync()
     {
-        if (_checkingSpeakingPaper) return;
+        if (_checkingSpeakingPaper || !AppPreferencesService.Current.AutomaticSpeakingEnabled) return;
         _checkingSpeakingPaper = true;
         try
         {
             string? packId = await CurrentPaperService.FindActivePackIdAsync();
+            if (!AppPreferencesService.Current.AutomaticSpeakingEnabled) return;
             if (packId is null)
             {
                 _lastPrepPackId = null;
@@ -235,7 +267,7 @@ public sealed partial class MainWindow : Window
             string title = _speakingAnswers.LoadAllPapers()
                 .FirstOrDefault(paper => paper.PackId == packId)?.Title ??
                 LocalizationService.Current.Format("dynamic.paper_title", ("paperId", packId));
-            ShowSpeakingPrep(packId, title, questions);
+            if (AppPreferencesService.Current.AutomaticSpeakingEnabled) ShowSpeakingPrep(packId, title, questions);
         }
         catch (Exception ex)
         {

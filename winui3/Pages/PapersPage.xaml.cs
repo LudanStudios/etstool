@@ -85,15 +85,10 @@ public sealed partial class PapersPage : Page
                 return;
             }
 
-            var selected = _history.Load().Records
-                .Where(record => record.PackId == paper.PackId)
-                .GroupBy(record => record.SessionId)
-                .OrderByDescending(group => group.Max(record => record.Timestamp))
-                .FirstOrDefault()?
+            var selected = CurrentPaperService.SelectCurrentRecords(_history.Load().Records, paper.PackId)
                 .GroupBy(record => record.QuestionId)
                 .ToDictionary(group => group.Key,
-                    group => group.OrderByDescending(record => record.Timestamp).First().SelectedAnswer)
-                ?? new Dictionary<string, string>(StringComparer.Ordinal);
+                    group => group.OrderByDescending(record => record.Timestamp).First().SelectedAnswer);
 
             int answered = answers.Count(answer => selected.ContainsKey(answer.QuestionId));
             int correct = answers.Count(answer =>
@@ -183,13 +178,14 @@ public sealed partial class PapersPage : Page
         try
         {
             IReadOnlyList<PaperAnswerItem> answers = await Task.Run(() => _catalog.ReadAnswers(paper.PackId));
-            if (answers.Count == 0)
+            string text = PaperCopyService.Format(paper.PackId, answers.Select(a => (a.Number, a.Answer)), _service.DataRoot, _service.AppRoot);
+            int answerCount = answers.Count + new SpeakingAnswerService(_service.DataRoot).Load(paper.PackId).Count;
+            if (text.Length == 0)
             {
                 ShowMessage(T("papers.no_answers_title"), T("papers.no_extractable_answers"), InfoBarSeverity.Warning);
                 return;
             }
 
-            string text = string.Join("  ", answers.Select(answer => $"{answer.Number}.{answer.Answer}"));
             var viewer = new ScrollViewer
             {
                 MaxHeight = 340,
@@ -200,7 +196,7 @@ public sealed partial class PapersPage : Page
             };
             var dialog = new ContentDialog
             {
-                Title = F("papers.paper_answers_title", ("paperId", paper.PackId), ("count", answers.Count)),
+                Title = F("papers.paper_answers_title", ("paperId", paper.PackId), ("count", answerCount)),
                 Content = viewer,
                 PrimaryButtonText = T("papers.copy_answers"),
                 CloseButtonText = T("papers.close"),
@@ -213,7 +209,7 @@ public sealed partial class PapersPage : Page
             package.SetText(text);
             Clipboard.SetContent(package);
             Clipboard.Flush();
-            ShowMessage(T("papers.answers_copied_title"), F("papers.answers_copied", ("count", answers.Count)), InfoBarSeverity.Success);
+            ShowMessage(T("papers.answers_copied_title"), F("papers.answers_copied", ("count", answerCount)), InfoBarSeverity.Success);
         }
         catch (Exception ex) { ShowMessage(T("papers.extract_answers_failed"), ex.Message, InfoBarSeverity.Error); }
     }

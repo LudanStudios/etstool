@@ -595,6 +595,37 @@ def question_has_selected_option(question: dict[str, Any]) -> bool:
     )
 
 
+def answer_confirmation_diagnostic(client: CDPClient, question: dict[str, Any], letter: str) -> str:
+    """Report only boolean/counter state; never record page content or credentials."""
+    try:
+        question_id = str(question.get("id", ""))
+        index = "ABCD".find(letter)
+        expression = f"({CHECK_JS})({json.dumps(question_id)},{index},{json.dumps(question.get('order'))})"
+        state = json.loads(client.evaluate(expression) or "{}")
+        count = state.get("answeredCount")
+        if not isinstance(count, int) or isinstance(count, bool):
+            count = None
+        classes = set(str(state.get("cls") or "").split())
+        return (f"matched={state.get('id') == question_id} selected={state.get('selected') is True} "
+                f"ets_extraction_class={'choose_selected' in classes} "
+                f"visual_selection_class={'choose2_selected' in classes} "
+                f"any_selected={state.get('anySelected') is True} recorded={state.get('recorded') is True} "
+                f"nav_found={state.get('navFound') is True} answered_count={count}")
+    except (CDPError, TypeError, ValueError, json.JSONDecodeError):
+        return "state_unavailable"
+
+
+def has_ets_extraction_selection(question: dict[str, Any]) -> bool:
+    return any("choose_selected" in str(option.get("cls") or "").split()
+               for option in question.get("options") or [])
+
+
+def is_listening_extraction_state(state: dict[str, Any], question_id: str) -> bool:
+    return (state.get("id") == question_id and state.get("selected") is True
+            and "choose_selected" in str(state.get("cls") or "").split()
+            and state.get("navFound") is False and state.get("answeredCount") is None)
+
+
 def choose_answer(client: CDPClient, question: dict[str, Any], letter: str) -> bool:
     question_id = str(question.get("id", ""))
     index = "ABCD".find(letter)
@@ -633,11 +664,18 @@ def choose_answer(client: CDPClient, question: dict[str, Any], letter: str) -> b
         if state.get("recorded"):
             return True
         current_count = state.get("answeredCount")
-        return (
-            initial_answered_count is not None
-            and current_count is not None
-            and int(current_count) > int(initial_answered_count)
-        )
+        if initial_answered_count is not None and current_count is not None:
+            return int(current_count) > int(initial_answered_count)
+        # This listening layout exposes neither a completed marker nor a count.
+        # Its cached answer extractor reads the explicit choose_selected class;
+        # a visual-only selected class is insufficient.
+        if is_listening_extraction_state(state, question_id):
+            time.sleep(0.2)
+            return is_listening_extraction_state(read_state(), question_id)
+        return False
+
+    if is_listening_extraction_state(initial_state, question_id) and is_confirmed():
+        return True
 
     # Use a real DevTools input click first. Some ETS builds ignore HTMLElement.click()
     # because the option handler checks for a trusted user input event.
@@ -848,6 +886,9 @@ def run_once(
                         current = current_by_id.get(question_id)
                         if current is None or not question_has_selected_option(current):
                             unconfirmed.append(question_id)
+                        elif (not current.get("navFound") and current.get("answeredCount") is None
+                              and not has_ets_extraction_selection(current)):
+                            unconfirmed.append(question_id)
                     if unconfirmed:
                         warn_throttled(
                             f"next-blocked-unselected:{pack_id}:{','.join(sorted(unconfirmed))}",
@@ -870,7 +911,9 @@ def run_once(
                         question_id = str(question.get("id", ""))
                         if question.get("recorded") and question_has_selected_option(question):
                             processed.add(question_id)
-                        else:
+                        elif not (question_id in processed and not question.get("navFound")
+                                  and question.get("answeredCount") is None
+                                  and has_ets_extraction_selection(question)):
                             processed.discard(question_id)
                 pending = [
                     question for question in questions
@@ -907,6 +950,11 @@ def run_once(
                         accuracy, random_seed, session_key,
                     )
                     if not choose_answer(client, question, answer):
+                        warn_throttled(
+                            f"answer-confirmation-state:{pack_id}:{question_id}",
+                            "答案确认诊断: " + answer_confirmation_diagnostic(client, question, answer),
+                            interval_seconds=10.0,
+                        )
                         print(
                             f"WARN: 未确认 ETS 已录入答案：试卷 {pack_id}，题目 {question_id}，"
                             f"选项 {answer}，当前识别到 {len(question.get('options') or [])} 个选项。",
@@ -1028,7 +1076,10 @@ def watch(root: Path, endpoint: str, config_path: Path | None = None) -> int:
                         has_recorded_answer = any(
                             bool(question.get("recorded")) for question in current
                         )
-                        if current and not has_recorded_answer:
+                        first_id = min(answers, key=lambda item: question_order_key(item, question_order)) if answers else None
+                        on_first_question = first_id is not None and any(q.get("id") == first_id for q in current)
+                        has_selected_answer = any(question_has_selected_option(q) for q in current)
+                        if on_first_question and not has_recorded_answer and not has_selected_answer:
                             handled.discard(session_key)
                             processed.pop(session_key, None)
                             analysis_sessions.pop(session_key, None)

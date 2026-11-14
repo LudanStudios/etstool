@@ -31,6 +31,32 @@ public sealed class AppPreferencesService
     public bool InternalTestNoUpdatesEnabled => InternalTestNoUpdates;
     public bool VerboseLoggingEnabled { get; private set; }
     public bool DeveloperToolsUnlocked { get; private set; }
+    public bool AutomaticSpeakingEnabled { get; private set; } = true;
+    public bool AutomaticSelectionEnabled => !File.Exists(SelectionDisabledPath);
+    private string SelectionDisabledPath => Path.Combine(AssistantService.Current.DataRoot, "_assistant", "automatic_selection.disabled");
+    public event Action? AutomationChanged;
+
+    public void SetAutomaticSelection(bool enabled)
+    {
+        if (enabled)
+        {
+            // Start the listener before releasing the disabled marker so a
+            // failed startup leaves selection safely disabled.
+            AssistantService.Current.EnsureListener();
+            File.Delete(SelectionDisabledPath);
+        }
+        else SettingsFileStore.Write(SelectionDisabledPath, "disabled\n");
+        AutomationChanged?.Invoke();
+    }
+
+    public void SetAutomaticSpeaking(bool enabled)
+    {
+        if (AutomaticSpeakingEnabled == enabled) return;
+        AutomaticSpeakingEnabled = enabled;
+        Save();
+        AutomationChanged?.Invoke();
+    }
+
     public DateTimeOffset? LastUpdateCheckUtc { get; private set; }
     public event Action? ThemeChanged;
     public event Action? LanguageChanged;
@@ -170,6 +196,8 @@ public sealed class AppPreferencesService
             MinimizeToTrayEnabled = ReadBool(document.RootElement, "minimize_to_tray_enabled");
             VerboseLoggingEnabled = ReadBool(document.RootElement, "verbose_logging_enabled");
             DeveloperToolsUnlocked = ReadBool(document.RootElement, "developer_tools_unlocked");
+            AutomaticSpeakingEnabled = !document.RootElement.TryGetProperty("automatic_speaking_enabled", out JsonElement speakingEnabled) ||
+                speakingEnabled.ValueKind is not (JsonValueKind.True or JsonValueKind.False) || speakingEnabled.GetBoolean();
             if (document.RootElement.TryGetProperty("last_update_check_utc", out JsonElement lastCheck) &&
                 lastCheck.ValueKind == JsonValueKind.String &&
                 DateTimeOffset.TryParse(lastCheck.GetString(), out DateTimeOffset parsedCheck))
@@ -195,6 +223,7 @@ public sealed class AppPreferencesService
                 minimize_to_tray_enabled = MinimizeToTrayEnabled,
                 verbose_logging_enabled = VerboseLoggingEnabled,
                 developer_tools_unlocked = DeveloperToolsUnlocked,
+                automatic_speaking_enabled = AutomaticSpeakingEnabled,
                 last_update_check_utc = LastUpdateCheckUtc?.ToString("O")
             }));
         }

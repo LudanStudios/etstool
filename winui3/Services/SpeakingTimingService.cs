@@ -7,7 +7,7 @@ namespace ETSAssistant.WinUI3.Services;
 /// <summary>Uses the paper's action.record durations, never its preparation/listening timers.</summary>
 public static class SpeakingTimingService
 {
-    public const int SessionVersion = 3;
+    public const int SessionVersion = 4;
     public const double MaximumSpeed = 1.5;
 
     public static double UsableSeconds(double seconds) => Math.Max(0, seconds - Math.Min(1.25, seconds * .15));
@@ -17,9 +17,9 @@ public static class SpeakingTimingService
         if (!double.IsFinite(duration) || duration <= 0) return null;
         if (seconds is null) return 1;
         double usable = UsableSeconds(seconds.Value);
-        if (usable <= 0) return null;
+        if (usable <= 0) return MaximumSpeed;
         double speed = Math.Max(1, Math.Ceiling((duration / usable - 1e-9) * 100) / 100);
-        return speed <= MaximumSpeed ? speed : null;
+        return Math.Min(speed, MaximumSpeed);
     }
 
     public static IReadOnlyList<double> ReadLimits(string dataRoot, string packId, int count)

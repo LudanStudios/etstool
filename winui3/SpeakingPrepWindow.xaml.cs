@@ -287,7 +287,7 @@ public sealed partial class SpeakingPrepWindow : Window
 
     private async Task StartAutoAsync()
     {
-        if (!_sessionReady || _autoStartInProgress || _autoRunner.IsRunning) return;
+        if (!AppPreferencesService.Current.AutomaticSpeakingEnabled || !_sessionReady || _autoStartInProgress || _autoRunner.IsRunning) return;
         _autoStartInProgress = true;
         DiagnosticLogService.Info("speaking_prep.auto_speaking.start_requested", $"pack={_packId}");
         StartAutoButton.IsEnabled = false;
@@ -331,29 +331,32 @@ public sealed partial class SpeakingPrepWindow : Window
                 await PrepareAsync();
                 return;
             }
-            string audioInputResult = await DefaultAudioInputService.Current.BeginSessionAsync();
-            DefaultAudioInputStatus? audioInput = null;
-            for (int attempt = 0; attempt < 8; attempt++)
+            DefaultAudioInputService audioRouting = DefaultAudioInputService.Current;
+            if (!AppPreferencesService.Current.AutomaticSpeakingEnabled) return;
+            string audioInputResult = await audioRouting.BeginSessionAsync();
+            if (!AppPreferencesService.Current.AutomaticSpeakingEnabled)
             {
-                audioInput = await DefaultAudioInputService.Current.GetStatusAsync();
-                if (audioInput?.Name.Contains("CABLE Output", StringComparison.OrdinalIgnoreCase) == true)
-                    break;
-                await Task.Delay(250);
+                await audioRouting.EndSessionAsync();
+                return;
             }
-            if (audioInput?.Name.Contains("CABLE Output", StringComparison.OrdinalIgnoreCase) != true)
+            string? etsInputDevice = audioRouting.RoutedDeviceName;
+            string? etsOutputDevice = audioRouting.RoutedPlaybackDeviceName;
+            if (!audioRouting.LastEtsAudioRouteSucceeded || string.IsNullOrWhiteSpace(etsInputDevice) ||
+                string.IsNullOrWhiteSpace(etsOutputDevice))
             {
-                string currentInput = audioInput?.Name ?? LocalizationService.Current.Translate("common.not_available");
                 string message = LocalizationService.Current.Format("speaking.virtual_mic_confirmation_error",
-                    ("device", currentInput), ("result", audioInputResult));
+                    ("captureDevice", etsInputDevice ?? LocalizationService.Current.Translate("common.not_available")),
+                    ("renderDevice", etsOutputDevice ?? LocalizationService.Current.Translate("common.not_available")),
+                    ("result", audioInputResult));
                 DiagnosticLogService.Warn("speaking_prep.auto_speaking.virtual_mic_not_ready", message);
                 ErrorBar.Severity = InfoBarSeverity.Error;
                 ErrorBar.Message = message;
                 ErrorBar.IsOpen = true;
-                StatusText.Text = LocalizationService.Current.Translate("speaking.virtual_mic_not_ready");
+                StatusText.Text = LocalizationService.Current.Translate("speaking.virtual_audio_route_not_ready");
                 return;
             }
             DiagnosticLogService.Info("speaking_prep.auto_speaking.virtual_mic_ready",
-                $"device={audioInput.Name}; result={audioInputResult}");
+                $"capture={etsInputDevice}; render={etsOutputDevice}; route=ets_only; result={audioInputResult}");
             if (!_autoRunner.Start(assistant.AppRoot, assistant.DataRoot, sessionPath, out string error, _resumeStartIndex))
             {
                 DiagnosticLogService.Error("speaking_prep.auto_speaking.start_failed", error);
@@ -377,7 +380,7 @@ public sealed partial class SpeakingPrepWindow : Window
             DiagnosticLogService.Info("speaking_prep.auto_speaking.started", $"pack={_packId}");
             StartAutoButtonText.Text = LocalizationService.Current.Translate("common.stop_automatic_speaking");
             StatusText.Text = LocalizationService.Current.Format("speaking.default_mic_waiting_for_ets",
-                ("device", audioInput.Name));
+                ("device", etsInputDevice));
         }
         finally
         {

@@ -3,6 +3,7 @@
   <ItemGroup>
     <Compile Include="../../winui3/Services/SpeakingTimingService.cs" Link="SpeakingTimingService.cs" />
     <Compile Include="../../winui3/Services/SpeakingPrepService.cs" Link="SpeakingPrepService.cs" />
+    <Compile Include="../../winui3/Services/SpeakingAutoRunner.cs" Link="SpeakingAutoRunner.cs" />
     <Compile Include="../../winui3/Services/SettingsFileStore.cs" Link="SettingsFileStore.cs" />
   </ItemGroup>
 </Project>

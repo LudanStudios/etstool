@@ -182,7 +182,8 @@ public sealed class FullResetService
         string assistantFolder = Path.Combine(_dataRoot, "_assistant");
         foreach (string name in new[]
                  {
-                     "speaking_input.wav", "reset_request.json", "reset_ack.json", "speaking_session.json"
+                     "speaking_input.wav", "reset_request.json", "reset_ack.json", "speaking_session.json",
+                     "automatic_selection.disabled"
                  })
             if (DeleteFile(Path.Combine(assistantFolder, name))) removed++;
 

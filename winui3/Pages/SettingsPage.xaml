@@ -10,10 +10,27 @@
                 <TextBlock Grid.Column="1" Text="common.answer_settings" FontSize="30" FontWeight="SemiBold" />
                 <TextBlock Grid.Row="1" Grid.Column="1" Text="settings.configure_answer_behavior_listener_speaking" FontSize="15" Opacity="0.72" />
             </Grid>
+            <Border Padding="20" CornerRadius="14" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="automation.title" FontSize="17" FontWeight="SemiBold" />
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <StackPanel><TextBlock Text="automation.selection" FontWeight="SemiBold" />
+                            <TextBlock Text="automation.selection_description" TextWrapping="Wrap" Opacity="0.7" /></StackPanel>
+                        <ToggleSwitch x:Name="SelectionToggle" Grid.Column="1" OnContent="common.on" OffContent="common.off" Toggled="SelectionToggle_Toggled" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <StackPanel><TextBlock Text="automation.speaking" FontWeight="SemiBold" />
+                            <TextBlock Text="automation.speaking_description" TextWrapping="Wrap" Opacity="0.7" /></StackPanel>
+                        <ToggleSwitch x:Name="SpeakingToggle" Grid.Column="1" OnContent="common.on" OffContent="common.off" Toggled="SpeakingToggle_Toggled" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
             <Border Padding="24" CornerRadius="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                 <StackPanel Spacing="18">
-                    <StackPanel Spacing="4">
+                    <StackPanel x:Name="AccuracySettings" Spacing="4">
                         <Grid ColumnDefinitions="*,Auto">
                             <TextBlock Text="settings.target_accuracy" FontSize="16" FontWeight="SemiBold" />
                             <TextBlock x:Name="AccuracyText" Grid.Column="1" Text="100%" FontSize="16"
@@ -24,13 +41,13 @@
                                 ValueChanged="AccuracySlider_ValueChanged" />
                     </StackPanel>
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="18">
-                        <StackPanel Spacing="7">
+                        <StackPanel x:Name="SkipSettings" Spacing="7">
                             <TextBlock Text="settings.skip_interval_seconds" FontWeight="SemiBold" />
                             <NumberBox x:Name="SkipBox" Minimum="0" Maximum="60" SmallChange="0.5"
                                        SpinButtonPlacementMode="Inline" Value="0" ValueChanged="SkipBox_ValueChanged" />
                             <TextBlock Text="settings.set_minimum_retry_interval_next" FontSize="12" Opacity="0.68" />
                         </StackPanel>
-                        <StackPanel Grid.Column="1" Spacing="7">
+                        <StackPanel x:Name="SpeakingSettings" Grid.Column="1" Spacing="7">
                             <TextBlock Text="settings.speaking_mode" FontWeight="SemiBold" />
                             <ComboBox x:Name="SpeakingModeBox" HorizontalAlignment="Stretch"
                                       SelectionChanged="SpeakingModeBox_SelectionChanged">

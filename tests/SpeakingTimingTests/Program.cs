@@ -22,14 +22,14 @@ void Setup(string type, double sourceSeconds, double replacementSeconds)
     File.WriteAllText(Path.Combine(template, "ctrl.json"), "[{\"order\":\"1\",\"filetype\":\"wait\",\"playtime\":\"90\"},{\"order\":\"2\",\"filetype\":\"action.record\",\"playtime\":\"30\"}]");
     SpeakingAnswerService.Questions = [new(1, type, "Synthetic question", "Full assigned reading text.", "Full assigned reading text.")];
     SpeakingSessionStore.Stored = new("123", "flexible", DateTimeOffset.Now,
-        [new(1, type, "Synthetic question", "Existing synthetic response", Wav(sourceSeconds))]) { PromptVersion = 2 };
+        [new(1, type, "Synthetic question", type == "speaking.kind_read_aloud" ? "Full assigned reading text." : "Existing synthetic response", Wav(sourceSeconds))]) { PromptVersion = SpeakingTimingService.SessionVersion };
     AliyunTtsService.Replacement = Wav(replacementSeconds);
 }
 try
 {
     Check(SpeakingTimingService.MinimumSpeed(34, 30) == 1.19, "34s/30s must select 1.19x");
     Check(SpeakingTimingService.MinimumSpeed(5, 30) == 1, "Short audio must stay natural");
-    Check(SpeakingTimingService.MinimumSpeed(44, 30) is null, "Oversize audio must request regeneration");
+    Check(SpeakingTimingService.MinimumSpeed(44, 30) == 1.5, "Oversize audio uses maximum speed");
     var service = new SpeakingPrepService(root, root);
 
     Setup("speaking.kind_question_answer", 34, 10);
@@ -39,21 +39,32 @@ try
     Check(fitted.Session!.Items[0].RecordingSeconds == 30, "Use recording time, not wait time");
 
     Setup("speaking.kind_question_answer", 60, 10);
-    var shorter = await service.PrepareAsync("123");
-    Check(shorter.Session!.Items[0].PlaybackSpeed == 1 && DeepSeekService.Calls == 1, "Regenerate oversize answer and measure result");
-    Check(AliyunTtsService.Rates.SequenceEqual([0]), "Answer shortening should retain natural TTS rate");
+    var longer = await service.PrepareAsync("123");
+    Check(longer.Session!.Items[0].PlaybackSpeed == 1.5 && DeepSeekService.Calls == 0, "Oversize answers must not be regenerated");
+    Check(AliyunTtsService.Rates.Count == 0, "Existing audio must not be resynthesized");
 
     Setup("speaking.kind_read_aloud", 60, 35);
     var reading = await service.PrepareAsync("123");
-    Check(reading.Errors.Count == 0 && DeepSeekService.Calls == 0, "Read-aloud must not be summarized");
-    Check(AliyunTtsService.Texts.Single() == "Full assigned reading text.", "Preserve every assigned word");
-    Check(AliyunTtsService.Rates.Single() == 100 && reading.Session!.Items[0].PlaybackSpeed <= 1.5, "Resynthesize compact read-aloud within playback cap");
-
-    Setup("speaking.kind_question_answer", 100, 100);
-    var failed = await service.PrepareAsync("123");
-    Check(failed.Session is null && failed.Errors.Count > 0 && DeepSeekService.Calls == 3, "Bound retries and reject unfit output");
+    Check(reading.Errors.Count == 0 && DeepSeekService.Calls == 0 && AliyunTtsService.Rates.Count == 0, "Read-aloud audio must be retained");
+    Check(reading.Session!.Items[0].PlaybackSpeed == 1.5, "Read-aloud speed must be capped");
     Check(SpeakingPrepService.ActiveProgress is null, "Always release generation state");
-    Console.WriteLine("PASS: minimal speed, authoritative recording limits, API-free reuse, shorter-answer regeneration, verbatim read-aloud resynthesis, bounded failure");
+    Console.WriteLine("PASS: timing cap and no regeneration");
+
+    Setup("speaking.kind_read_aloud", 60, 3);
+    SpeakingSessionStore.Stored = null;
+    var readNew = await service.PrepareAsync("123");
+    Check(DeepSeekService.Calls == 0 && AliyunTtsService.Texts.Single() == "Full assigned reading text.", "Flexible mode must synthesize exact read-aloud text");
+    Check(readNew.Session!.Items[0].Answer == "Full assigned reading text.", "Store the assigned passage unchanged");
+
+    Setup("speaking.kind_question_answer", 4, 4);
+    string sessionFile = Path.Combine(root, "runner-session.json");
+    var completeSession = SpeakingSessionStore.Stored!;
+    File.WriteAllText(sessionFile, JsonSerializer.Serialize(completeSession));
+    Check(SpeakingAutoRunner.HasUsableAudio(sessionFile, out _, root), "Matching full session should be accepted");
+    SpeakingAnswerService.Questions = [.. SpeakingAnswerService.Questions, new(2, "speaking.kind_question_answer", "Second", "Answer", "")];
+    Check(!SpeakingAutoRunner.HasUsableAudio(sessionFile, out var incompleteError, root) && incompleteError.Contains("incomplete_session"),
+        "Partial session must not start");
+    Console.WriteLine("PASS: incomplete speaking session rejected");
 
     string settingsPath = Path.Combine(root, "settings.json");
     SettingsFileStore.Write(settingsPath, JsonSerializer.Serialize(new { revision = 0, body = new string('0', 8192) }));
@@ -107,7 +118,7 @@ namespace ETSAssistant.WinUI3.Services
     public class SpeakingSessionStore(string root) { public static SpeakingSession? Stored; public SpeakingSession? Load()=>Stored; public void Save(SpeakingSession session)=>Stored=session; public static bool IsUsableWavFile(string path)=>SpeakingTimingService.WavSeconds(path)>0; }
     public static class ApiKeyStore {public static bool HasKey=>true;}
     public static class AliyunTtsCredentialStore {public static bool HasCredentials=>true;}
-    public class AppPreferencesService {public static AppPreferencesService Current {get;}=new();public string SpeakingMode=>"flexible";}
+    public class AppPreferencesService {public static AppPreferencesService Current {get;}=new();public string SpeakingMode=>"flexible";public bool AutomaticSpeakingEnabled=>true;}
     public record DeepSeekResult(bool Success,string Text,string Error="");
     public class DeepSeekService(string root) {public static int Calls;public Task<DeepSeekResult> AskSpeakingAsync(string text,CancellationToken cancellationToken=default,string? timingInstruction=null){Calls++;return Task.FromResult(new DeepSeekResult(true,"A concise synthetic answer."));}}
     public record AliyunTtsResult(bool Success,string FilePath="",string Error="");
