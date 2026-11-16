@@ -112,7 +112,10 @@ public sealed class SpeakingAnswerService
         int number = 0;
         foreach (string contentDirectory in Directory
                      .EnumerateDirectories(packDirectory, "content_*")
-                     .OrderBy(Path.GetFileName, StringComparer.Ordinal))
+                     // ETS extracts contents in paper order; content IDs are not question numbers.
+                     // Creation timestamps are a fallback when the pack has no explicit ordering metadata.
+                     .OrderBy(Directory.GetCreationTimeUtc)
+                     .ThenBy(Path.GetFileName, StringComparer.Ordinal))
         {
             string path = Path.Combine(contentDirectory, "content.json");
             if (!File.Exists(path)) continue;

@@ -977,5 +977,19 @@
   "automation.speaking": "自動口語",
   "automation.speaking_description": "關閉後停止自動口語及準備工作，並還原 ETS 音訊路由。",
   "automation.speaking_disabled": "自動口語已關閉，請先在首頁開啟。",
-  "speaking_auto.incomplete_session": "口語音訊不完整或與試卷不符，請重新準備後再開始。"
+  "speaking_auto.incomplete_session": "口語音訊不完整或與試卷不符，請重新準備後再開始。",
+  "overview.network_internet": "網路：已連線至網際網路",
+  "overview.network_local": "網路：僅限本機連線",
+  "overview.network_offline": "網路：未連線",
+  "overview.network_unknown": "網路：狀態未知",
+  "tray.status_waiting": "等待中",
+  "tray.status_answering": "答題中",
+  "tray.status_generating": "產生中",
+  "tray.status_complete": "完成",
+  "overview.network_checking": "網路：正在檢測…",
+  "overview.network_test_succeeded": "網路：連線正常（{site}，{ms} 毫秒）",
+  "overview.network_test_failed": "網路：無法連線至網際網路",
+  "overview.network_launch_warning_title": "無法連線至網際網路",
+  "overview.network_launch_warning_content": "網路連線測試失敗，ETS 可能無法正常使用。關閉提示後將繼續開啟 ETS。",
+  "overview.network_launch_continue": "繼續開啟"
 }

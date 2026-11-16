@@ -60,7 +60,8 @@ public sealed class SpeakingPrepService
         if (questions.Where(q => q.Type == "speaking.kind_read_aloud").Any(q =>
             session.Items.FirstOrDefault(item => item.Number == q.Number)?.Answer !=
             (string.IsNullOrWhiteSpace(q.SourceText) ? q.StandardAnswer : q.SourceText))) return null;
-        if (!session.Items.Select(item => item.Number).SequenceEqual(questions.Select(question => question.Number)))
+        if (!session.Items.Select(item => (item.Number, item.Type, item.Prompt))
+                .SequenceEqual(questions.Select(question => (question.Number, question.Type, question.Prompt))))
             return null;
         return session.Items.Select((item, i) => SpeakingSessionStore.IsUsableWavFile(item.WavPath) &&
             item.RecordingSeconds == (limits.Count == questions.Count ? (double?)limits[i] : null) &&

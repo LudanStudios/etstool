@@ -59,7 +59,7 @@
                         <Grid ColumnSpacing="8" Margin="0,4,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="26" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <Grid Grid.Column="0" Height="30">
                                 <Border Background="#3B3B3B" CornerRadius="9" />
@@ -77,9 +77,10 @@
                                                VerticalAlignment="Center" Foreground="White" />
                                 </Grid>
                             </Grid>
-                            <TextBlock x:Name="ChoiceDoneIcon" Grid.Column="1" Text="✓" FontSize="24" FontWeight="Bold" Visibility="Collapsed"
-                                       Foreground="#8BD14F" VerticalAlignment="Center"
-                                       HorizontalAlignment="Center" />
+                            <Border x:Name="ChoiceStatusBadge" Grid.Column="1" CornerRadius="8" Padding="8,4"
+                                    VerticalAlignment="Center">
+                                <TextBlock x:Name="ChoiceStatusText" FontSize="12" FontWeight="SemiBold" />
+                            </Border>
                         </Grid>
                     </StackPanel>
                 </Border>
@@ -96,7 +97,7 @@
                         <Grid ColumnSpacing="8" Margin="0,4,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="26" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <Grid Grid.Column="0" Height="30">
                                 <Border Background="#3B3B3B" CornerRadius="9" />
@@ -114,9 +115,10 @@
                                                VerticalAlignment="Center" Foreground="White" />
                                 </Grid>
                             </Grid>
-                            <ProgressRing x:Name="SpeakingProgressRing" Grid.Column="1" Width="20" Height="20"
-                                          Foreground="#E8E500" VerticalAlignment="Center"
-                                          HorizontalAlignment="Center" IsActive="False" />
+                            <Border x:Name="SpeakingStatusBadge" Grid.Column="1" CornerRadius="8" Padding="8,4"
+                                    VerticalAlignment="Center">
+                                <TextBlock x:Name="SpeakingStatusText" FontSize="12" FontWeight="SemiBold" />
+                            </Border>
                         </Grid>
                     </StackPanel>
                 </Border>

@@ -993,5 +993,19 @@
   "speaking.timing_still_too_long": "",
   "speaking.timing_regenerating": "",
   "speaking.timing_repaired": "",
-  "settings.saved_applied_automatically": ""
+  "settings.saved_applied_automatically": "",
+  "overview.network_internet": "",
+  "overview.network_local": "",
+  "overview.network_offline": "",
+  "overview.network_unknown": "",
+  "tray.status_waiting": "",
+  "tray.status_answering": "",
+  "tray.status_generating": "",
+  "tray.status_complete": "",
+  "overview.network_checking": "",
+  "overview.network_test_succeeded": "",
+  "overview.network_test_failed": "",
+  "overview.network_launch_warning_title": "",
+  "overview.network_launch_warning_content": "",
+  "overview.network_launch_continue": ""
 }

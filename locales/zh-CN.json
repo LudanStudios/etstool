@@ -1000,5 +1000,19 @@
   "automation.speaking": "自动口语",
   "automation.speaking_description": "关闭后停止自动口语及准备任务，并恢复 ETS 音频路由。",
   "automation.speaking_disabled": "自动口语已关闭，请先在首页开启。",
-  "speaking_auto.incomplete_session": "口语音频不完整或与试卷不匹配，请重新准备后再开始。"
+  "speaking_auto.incomplete_session": "口语音频不完整或与试卷不匹配，请重新准备后再开始。",
+  "overview.network_internet": "网络：已连接互联网",
+  "overview.network_local": "网络：仅本地连接",
+  "overview.network_offline": "网络：未连接",
+  "overview.network_unknown": "网络：状态未知",
+  "tray.status_waiting": "等待中",
+  "tray.status_answering": "答题中",
+  "tray.status_generating": "生成中",
+  "tray.status_complete": "完成",
+  "overview.network_checking": "网络：正在检测…",
+  "overview.network_test_succeeded": "网络：连接正常（{site}，{ms} 毫秒）",
+  "overview.network_test_failed": "网络：无法连接互联网",
+  "overview.network_launch_warning_title": "无法连接互联网",
+  "overview.network_launch_warning_content": "网络连接测试失败，ETS 可能无法正常使用。关闭提示后将继续打开 ETS。",
+  "overview.network_launch_continue": "继续打开"
 }

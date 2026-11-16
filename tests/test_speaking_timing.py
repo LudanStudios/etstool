@@ -43,7 +43,8 @@ class SpeakingTimingTests(unittest.TestCase):
         self.assertLessEqual(34 / speed, auto.usable_recording_seconds(30))
         self.assertGreater(34 / (speed - .01), auto.usable_recording_seconds(30))
         self.assertEqual(auto.playback_speed_factor(self.wav(43.125), 30), 1.5)
-        self.assertEqual(auto.playback_speed_factor(self.wav(44), 30), 1.5)
+        with self.assertRaises(auto.TimingBudgetError):
+            auto.playback_speed_factor(self.wav(44), 30)
 
     def test_cleanup_only_deletes_session_generated_audio(self):
         folder = self.root / "temp" / "tts-test"
@@ -117,8 +118,8 @@ class SpeakingTimingTests(unittest.TestCase):
     def test_mock_waits_for_real_recording_end_and_tolerates_short_dom_gap(self):
         self.assertEqual(self.run_mock_recording(transient_gap=True), 0)
 
-    def test_actual_early_close_continues(self):
-        self.assertEqual(self.run_mock_recording(closing_time=20), 0)
+    def test_actual_early_close_stops(self):
+        self.assertEqual(self.run_mock_recording(closing_time=20), 9)
 
 
 if __name__ == "__main__":

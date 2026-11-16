@@ -3,6 +3,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using System.Globalization;
+using System.Diagnostics;
+using System.Net.Http;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage.Pickers;
 using Windows.UI;
@@ -18,16 +20,24 @@ public sealed partial class OverviewPage : Page
     private static readonly SolidColorBrush UnansweredChipBrush = new(Color.FromArgb(20, 148, 163, 184));
     private static readonly SolidColorBrush CorrectChipBrush = new(Color.FromArgb(46, 34, 197, 94));
     private static readonly SolidColorBrush WrongChipBrush = new(Color.FromArgb(46, 239, 68, 68));
+    private static readonly HttpClient NetworkProbe = new() { Timeout = TimeSpan.FromSeconds(4) };
 
     private readonly AssistantService _service = AssistantService.Current;
     private readonly CurrentPaperService _paperService = new(AssistantService.Current.DataRoot);
     private readonly AnswerResetService _resetService = new(AssistantService.Current.DataRoot);
     private DispatcherQueueTimer? _timer;
+    private DispatcherQueueTimer? _networkTimer;
     private CurrentPaperSnapshot? _currentPaper;
     private string _paperSignature = "\0";
     private bool _refreshingPaper;
     private bool? _initializeButtonWrapped;
     private bool _updatingAutomation = true;
+    private bool _networkChecking;
+    private Task<bool>? _networkCheckTask;
+    private bool _startingEts;
+    private bool? _networkReachable;
+    private string _networkProbeSite = string.Empty;
+    private long _networkProbeMilliseconds;
 
     public OverviewPage()
     {
@@ -37,6 +47,7 @@ public sealed partial class OverviewPage : Page
         {
             RefreshAutomation();
             RefreshStatus();
+            _ = RefreshNetworkAsync();
             _ = RefreshPaperAsync();
             _timer = DispatcherQueue.GetForCurrentThread().CreateTimer();
             _timer.Interval = TimeSpan.FromSeconds(3);
@@ -46,8 +57,12 @@ public sealed partial class OverviewPage : Page
                 await RefreshPaperAsync();
             };
             _timer.Start();
+            _networkTimer = DispatcherQueue.GetForCurrentThread().CreateTimer();
+            _networkTimer.Interval = TimeSpan.FromSeconds(10);
+            _networkTimer.Tick += (_, _) => _ = RefreshNetworkAsync();
+            _networkTimer.Start();
         };
-        Unloaded += (_, _) => _timer?.Stop();
+        Unloaded += (_, _) => { _timer?.Stop(); _networkTimer?.Stop(); };
     }
 
     private void RefreshAutomation()
@@ -109,6 +124,7 @@ public sealed partial class OverviewPage : Page
         ListenerText.Text = _service.IsAutostartEnabled
             ? localization.Translate("overview.listener_autostart_enabled")
             : localization.Translate("overview.listener_autostart_disabled");
+        UpdateNetworkStatus();
         CredentialStatusText.Text = localization.Format("overview.credentials_status",
             ("deepseek", localization.Translate(ApiKeyStore.HasKey ? "common.configured" : "common.not_configured")),
             ("aliyun", localization.Translate(AliyunTtsCredentialStore.HasCredentials
@@ -127,6 +143,67 @@ public sealed partial class OverviewPage : Page
                 LocalizationService.Current.Translate("overview.need_attention"), _service.LastError, InfoBarSeverity.Warning);
         }
         else if (found) GeneralInfoBar.IsOpen = false;
+    }
+
+    private void UpdateNetworkStatus()
+    {
+        LocalizationService localization = LocalizationService.Current;
+        NetworkStatusText.Text = _networkChecking || _networkReachable is null
+            ? localization.Translate("overview.network_checking")
+            : _networkReachable.Value
+                ? localization.Format("overview.network_test_succeeded", ("site", _networkProbeSite), ("ms", _networkProbeMilliseconds))
+                : localization.Translate("overview.network_test_failed");
+    }
+
+    private async Task<bool> RefreshNetworkAsync()
+    {
+        if (_networkCheckTask is not null) return await _networkCheckTask;
+        var completion = new TaskCompletionSource<bool>();
+        _networkCheckTask = completion.Task;
+        _networkChecking = true;
+        UpdateNetworkStatus();
+        bool reachable = false;
+        try
+        {
+            foreach (var (site, address) in new[]
+                     { ("Baidu", "https://www.baidu.com/"), ("Cloudflare", "https://www.cloudflare.com/") })
+            {
+                var timer = Stopwatch.StartNew();
+                try
+                {
+                    using var response = await NetworkProbe.GetAsync(address, HttpCompletionOption.ResponseHeadersRead);
+                    if (!response.IsSuccessStatusCode) continue;
+                    _networkProbeSite = site;
+                    _networkProbeMilliseconds = timer.ElapsedMilliseconds;
+                    reachable = true;
+                    break;
+                }
+                catch (HttpRequestException) { }
+                catch (TaskCanceledException) { }
+            }
+            return reachable;
+        }
+        finally
+        {
+            _networkReachable = reachable;
+            _networkChecking = false;
+            _networkCheckTask = null;
+            completion.TrySetResult(reachable);
+            UpdateNetworkStatus();
+        }
+    }
+
+    private async Task WarnIfNetworkUnavailableAsync()
+    {
+        if (await RefreshNetworkAsync()) return;
+        var dialog = new ContentDialog
+        {
+            Title = LocalizationService.Current.Translate("overview.network_launch_warning_title"),
+            Content = LocalizationService.Current.Translate("overview.network_launch_warning_content"),
+            CloseButtonText = LocalizationService.Current.Translate("overview.network_launch_continue"),
+            XamlRoot = XamlRoot
+        };
+        await DiagnosticLogService.ShowDialogAsync(dialog);
     }
 
     private void Rescan_Click(object sender, RoutedEventArgs e)
@@ -194,8 +271,11 @@ public sealed partial class OverviewPage : Page
 
     private async void InitializeAndOpen_Click(object sender, RoutedEventArgs e)
     {
+        if (_startingEts) return;
+        _startingEts = true;
         try
         {
+            await WarnIfNetworkUnavailableAsync();
             _service.RefreshEts();
             string warnings = _service.InitializeAndOpen(_service.LoadSettings());
             RefreshStatus();
@@ -207,12 +287,16 @@ public sealed partial class OverviewPage : Page
                 warnings.Length == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
         }
         catch (Exception ex) { await ShowErrorAsync(ex.Message); }
+        finally { _startingEts = false; }
     }
 
     private async void OpenEts_Click(object sender, RoutedEventArgs e)
     {
+        if (_startingEts) return;
+        _startingEts = true;
         try
         {
+            await WarnIfNetworkUnavailableAsync();
             _service.RefreshEts();
             _service.EnsureListener();
             _service.OpenEts();
@@ -223,6 +307,7 @@ public sealed partial class OverviewPage : Page
             RefreshStatus();
         }
         catch (Exception ex) { await ShowErrorAsync(ex.Message); }
+        finally { _startingEts = false; }
     }
 
     private async Task RefreshPaperAsync()

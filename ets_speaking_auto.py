@@ -115,9 +115,11 @@ def playback_speed_factor(path: str | Path, available_seconds: float | None = No
     if duration <= 0:
         raise TimingBudgetError("Invalid audio")
     if not math.isfinite(usable) or usable <= 0:
-        return MAX_PLAYBACK_SPEED
+        raise TimingBudgetError("No usable recording time")
     speed = max(1.0, math.ceil((duration / usable - 1e-9) * 100) / 100)
-    return min(speed, MAX_PLAYBACK_SPEED)
+    if speed > MAX_PLAYBACK_SPEED:
+        raise TimingBudgetError("Audio exceeds the maximum allowed playback speed")
+    return speed
 
 
 def read_recording_limits(data_root: Path, pack_id: str, count: int) -> list[float]:
@@ -477,10 +479,9 @@ def _main(argv: list[str] | None = None) -> int:
                             f"[{index + 1}/{len(wavs)}] ETS 录音窗口在音频结束前关闭 "
                             f"(已播放约 {elapsed:.1f}/{playback_duration_seconds(wavs[index], current_speed_factor):.1f}s，"
                             f"原始音频 {wav_duration_seconds(wavs[index]):.1f}s，{current_speed_factor:.2f}x)；"
-                            "录音已结束，停止播放并继续。"
+                            "本轮已中止，不会继续下一题。"
                         )
-                        player = None
-                        mock_waiting_for_recording_end = True
+                        return 9
                 if mock_waiting_for_recording_end:
                     index += 1
                     mock_waiting_for_recording_end = False
@@ -553,13 +554,9 @@ def _main(argv: list[str] | None = None) -> int:
                     f"[{index + 1}/{len(wavs)}] ETS 录音窗口在音频结束前关闭 "
                     f"(已播放约 {elapsed:.1f}/{playback_duration_seconds(wavs[index], current_speed_factor):.1f}s，"
                     f"原始音频 {wav_duration_seconds(wavs[index]):.1f}s，{current_speed_factor:.2f}x)；"
-                    "录音已结束，停止播放并继续。"
+                    "本轮已中止，不会继续下一题。"
                 )
-                player = None
-                log(f"[{index + 1}/{len(wavs)}] recording ended")
-                index += 1
-                time.sleep(1.0)
-                continue
+                return 9
 
             if index >= len(wavs):
                 log("all WAV items consumed")

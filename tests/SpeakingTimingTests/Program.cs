@@ -29,7 +29,7 @@ try
 {
     Check(SpeakingTimingService.MinimumSpeed(34, 30) == 1.19, "34s/30s must select 1.19x");
     Check(SpeakingTimingService.MinimumSpeed(5, 30) == 1, "Short audio must stay natural");
-    Check(SpeakingTimingService.MinimumSpeed(44, 30) == 1.5, "Oversize audio uses maximum speed");
+    Check(SpeakingTimingService.MinimumSpeed(44, 30) is null, "Oversize audio requires regeneration");
     var service = new SpeakingPrepService(root, root);
 
     Setup("speaking.kind_question_answer", 34, 10);
@@ -40,15 +40,15 @@ try
 
     Setup("speaking.kind_question_answer", 60, 10);
     var longer = await service.PrepareAsync("123");
-    Check(longer.Session!.Items[0].PlaybackSpeed == 1.5 && DeepSeekService.Calls == 0, "Oversize answers must not be regenerated");
-    Check(AliyunTtsService.Rates.Count == 0, "Existing audio must not be resynthesized");
+    Check(longer.Session!.Items[0].PlaybackSpeed == 1 && DeepSeekService.Calls == 1, "Oversize answers must be shortened");
+    Check(AliyunTtsService.Rates.Count == 1, "Shortened answer must be resynthesized");
 
     Setup("speaking.kind_read_aloud", 60, 35);
     var reading = await service.PrepareAsync("123");
-    Check(reading.Errors.Count == 0 && DeepSeekService.Calls == 0 && AliyunTtsService.Rates.Count == 0, "Read-aloud audio must be retained");
-    Check(reading.Session!.Items[0].PlaybackSpeed == 1.5, "Read-aloud speed must be capped");
+    Check(reading.Errors.Count == 0 && DeepSeekService.Calls == 0 && AliyunTtsService.Rates.SequenceEqual([100]), "Read-aloud must be resynthesized without summarizing");
+    Check(reading.Session!.Items[0].PlaybackSpeed <= 1.5, "Read-aloud speed must be capped");
     Check(SpeakingPrepService.ActiveProgress is null, "Always release generation state");
-    Console.WriteLine("PASS: timing cap and no regeneration");
+    Console.WriteLine("PASS: timing cap and regeneration");
 
     Setup("speaking.kind_read_aloud", 60, 3);
     SpeakingSessionStore.Stored = null;

@@ -140,8 +140,8 @@ public sealed partial class TrayStatusWindow : Window
                 readyNumbers.UnionWith(liveProgress.ReadyNumbers);
             int ready = questions.Count(question => readyNumbers.Contains(question.Number));
             HashSet<int> completedSpeaking = ReadCompletedSpeaking(packId, questions.Count);
-            SpeakingProgressRing.IsActive = generating;
-            SpeakingProgressRing.Visibility = generating ? Visibility.Visible : Visibility.Collapsed;
+            SetStatusBadge(SpeakingStatusBadge, SpeakingStatusText,
+                generating ? "generating" : questions.Count > 0 && ready == questions.Count ? "complete" : "waiting");
 
             EmptyStateCard.Visibility = Visibility.Collapsed;
             PaperCard.Visibility = Visibility.Visible;
@@ -156,8 +156,8 @@ public sealed partial class TrayStatusWindow : Window
             var answeredNumbers = live?.DoneNumbers.Count > 0 ? live.DoneNumbers :
                 _paper.Answers.Where(a => a.Answered).Select(a => a.Number).ToHashSet();
             int answered = Math.Clamp(live?.Answered ?? answeredNumbers.Count, 0, _paper.Total);
-            ChoiceDoneIcon.Visibility = _paper.Total > 0 && answered == _paper.Total
-                ? Visibility.Visible : Visibility.Collapsed;
+            SetStatusBadge(ChoiceStatusBadge, ChoiceStatusText,
+                _paper.Total > 0 && answered == _paper.Total ? "complete" : live is not null ? "answering" : "waiting");
             SetDots(ChoiceGrid, _paper.Total, answeredNumbers.Count, doneIndices:
                 _paper.Answers.Select((a, i) => (a, i)).Where(x => answeredNumbers.Contains(x.a.Number)).Select(x => x.i).ToHashSet());
             SetSpeakingDots(questions, readyNumbers, completedSpeaking);
@@ -316,6 +316,19 @@ public sealed partial class TrayStatusWindow : Window
         HintText.Text = localization.Translate("tray.double_click_hint");
         EmptyStateTitleText.Text = localization.Translate("overview.no_paper_detected_yet");
         EmptyStateDescriptionText.Text = localization.Translate("overview.open_paper_ets_see_progress");
+    }
+
+    private static void SetStatusBadge(Border badge, TextBlock text, string state)
+    {
+        (Color background, Color foreground) = state switch
+        {
+            "complete" => (Color.FromArgb(65, 34, 197, 94), Color.FromArgb(255, 171, 239, 187)),
+            "generating" or "answering" => (Color.FromArgb(65, 234, 179, 8), Color.FromArgb(255, 255, 224, 139)),
+            _ => (Color.FromArgb(65, 148, 163, 184), Color.FromArgb(255, 224, 227, 233))
+        };
+        badge.Background = new SolidColorBrush(background);
+        text.Foreground = new SolidColorBrush(foreground);
+        text.Text = LocalizationService.Current.Translate("tray.status_" + state);
     }
 
     private HashSet<int> ReadCompletedSpeaking(string packId, int count)

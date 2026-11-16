@@ -1000,5 +1000,19 @@
   "automation.speaking": "Automatic speaking",
   "automation.speaking_description": "Turn off to stop speaking automation and preparation and restore ETS audio routing.",
   "automation.speaking_disabled": "Automatic speaking is off. Enable it on the overview page.",
-  "speaking_auto.incomplete_session": "Speaking audio is incomplete or does not match this paper. Prepare it again before starting."
+  "speaking_auto.incomplete_session": "Speaking audio is incomplete or does not match this paper. Prepare it again before starting.",
+  "overview.network_internet": "Network: Internet access",
+  "overview.network_local": "Network: Local access only",
+  "overview.network_offline": "Network: Disconnected",
+  "overview.network_unknown": "Network: Unknown",
+  "tray.status_waiting": "Waiting",
+  "tray.status_answering": "Answering",
+  "tray.status_generating": "Generating",
+  "tray.status_complete": "Complete",
+  "overview.network_checking": "Network: Checking…",
+  "overview.network_test_succeeded": "Network: Connected ({site}, {ms} ms)",
+  "overview.network_test_failed": "Network: Unable to connect to the Internet",
+  "overview.network_launch_warning_title": "Unable to connect to the Internet",
+  "overview.network_launch_warning_content": "The connection test failed and ETS may not work properly. ETS will open after you dismiss this message.",
+  "overview.network_launch_continue": "Continue"
 }

@@ -24,6 +24,10 @@
                         </StackPanel>
                         <TextBlock x:Name="EtsPathText" TextWrapping="Wrap" Opacity="0.72" />
                         <TextBlock x:Name="ListenerText" Text="overview.listener_starts_background_when_sign" FontSize="13" Opacity="0.72" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE774;" FontSize="14" VerticalAlignment="Center" />
+                            <TextBlock x:Name="NetworkStatusText" FontSize="13" Opacity="0.8" TextWrapping="Wrap" />
+                        </StackPanel>
                         <TextBlock x:Name="CredentialStatusText" FontSize="13" Opacity="0.8" TextWrapping="Wrap" />
                         <Grid x:Name="ActionButtonsGrid" ColumnDefinitions="Auto,Auto,Auto,*"
                               RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="8" Margin="0,6,0,0"
